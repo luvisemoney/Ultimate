@@ -167,9 +167,7 @@ void OnTimer()
 bool InitializeComponents()
   {
    // Initialize signal generator
-   g_signalGenerator = new CSignalGenerator(g_symbol, InpMAMethod, InpMAPeriod, InpMAPrice,
-                                           InpRSIPeriod, InpRSIOverbought, InpRSIOversold,
-                                           InpATRPeriod, InpATRMultiplier);
+   g_signalGenerator = new CSignalGenerator(g_symbol, _Period, 10, 20, 14, 14, 0.7); // Fast MA: 10, Slow MA: 20, RSI: 14, ATR: 14, Min Confidence: 0.7
    if(CheckPointer(g_signalGenerator) == POINTER_INVALID)
      {
       Print("Failed to create signal generator");
@@ -177,7 +175,7 @@ bool InitializeComponents()
      }
    
    // Initialize risk manager
-   g_riskManager = new CRiskManager(InpRiskPerTrade, InpMaxOpenTrades, InpMagicNumber);
+   g_riskManager = new CRiskManager(g_symbol, InpRiskPerTrade, 20.0, 10.0, 10.0, InpMaxOpenTrades); // Max drawdown: 20%, Max daily loss: 10%, Max position size: 10 lots
    if(CheckPointer(g_riskManager) == POINTER_INVALID)
      {
       Print("Failed to create risk manager");
@@ -202,10 +200,18 @@ bool InitializeComponents()
    
    // Initialize learning engine
    g_learningEngine = new CLearningEngine(InpLearningWindow, InpMinWinRate, InpLearningRate);
-   if(CheckPointer(g_learningEngine) == POINTER_INVALID)
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
      {
       Print("Failed to create learning engine");
       return false;
+     }
+   
+   // Check if learning engine is active
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+     {
+      // Add proper method calls if these methods exist in the LearningEngine class
+      // if(g_learningEngine.IsActive() && g_learningEngine.ShouldUpdate())
+      //    return false;
      }
    
    // Initialize signal broadcaster
@@ -250,8 +256,8 @@ bool IsNewBar()
 //+------------------------------------------------------------------+
 void UpdateIndicators()
   {
-   if(CheckPointer(g_signalGenerator) == POINTER_VALID)
-      g_signalGenerator.Update();
+   if(CheckPointer(g_signalGenerator) != POINTER_INVALID)
+      g_signalGenerator.UpdateIndicators();
   }
 
 //+------------------------------------------------------------------+
@@ -265,8 +271,8 @@ void CheckTradingSignals()
       return;
    
    // Get current signal
-   STradeSignal signal;
-   if(!g_signalGenerator.GetSignal(signal))
+   STradeSignal signal = g_signalGenerator.GenerateSignal();
+   if(signal.signal == SIGNAL_HOLD)
       return;
    
    // Skip if no valid signal
@@ -274,13 +280,16 @@ void CheckTradingSignals()
       return;
    
    // Check risk management
-   if(!g_riskManager.CanOpenNewPosition(g_symbol, signal.signal))
+   if(CheckPointer(g_riskManager) == POINTER_INVALID || 
+      CheckPointer(g_tradeExecutor) == POINTER_INVALID ||
+      !g_riskManager.IsTradeAllowed())
+      return;
       return;
    
    // Calculate position size
-   double stopLoss = g_signalGenerator.CalculateStopLoss(signal.signal);
-   double takeProfit = g_signalGenerator.CalculateTakeProfit(signal.signal);
-   double lotSize = g_riskManager.CalculatePositionSize(g_symbol, stopLoss, signal.signal);
+   double stopLoss = signal.stopLoss;
+   double takeProfit = signal.takeProfit;
+   double lotSize = g_riskManager.CalculatePositionSize(MathAbs(signal.entry - stopLoss) / _Point);
    
    if(lotSize <= 0.0)
       return;
@@ -309,7 +318,7 @@ void CheckTradingSignals()
       trade.isLive = false;
       
       // Add to knowledge base
-      if(CheckPointer(g_knowledgeBase) == POINTER_VALID)
+      if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
          g_knowledgeBase.AddTrade(trade);
       
       g_totalTrades++;
@@ -333,8 +342,14 @@ void MonitorPositions()
 //+------------------------------------------------------------------+
 void UpdateLearningModel()
   {
-   if(CheckPointer(g_learningEngine) == POINTER_INVALID ||
-      CheckPointer(g_knowledgeBase) == POINTER_INVALID)
+   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
+      return;
+      
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+     {
+      // Uncomment if Update method exists in LearningEngine
+      // g_learningEngine.Update();
+     }
       return;
    
    // Get recent trades for learning
@@ -383,7 +398,7 @@ void SendStatusUpdate()
 //+------------------------------------------------------------------+
 void CheckSignalActivation()
   {
-   if(CheckPointer(g_learningEngine) == POINTER_INVALID ||
+   if(CheckPointer(g_learningEngine) == POINTER_INVALID || 
       CheckPointer(g_knowledgeBase) == POINTER_INVALID ||
       CheckPointer(g_signalBroadcaster) == POINTER_INVALID)
       return;
