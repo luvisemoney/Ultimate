@@ -9,7 +9,7 @@
 #include "..\Common\Structs.mqh"
 #include <Trade\PositionInfo.mqh>
 #include <Indicators\Volumes.mqh>
-#include <Indicators\ATR.mqh>
+// ATR indicator is now used via iATR() function
 
 //+------------------------------------------------------------------+
 //| Advanced Risk Manager Class                                      |
@@ -31,7 +31,8 @@ private:
    datetime          m_lastCheckTime;        // Last time risk was checked
    
    // Indicators
-   CiATR             m_atr;                  // ATR for volatility measurement
+   int               m_atr_handle;           // Handle for ATR indicator
+   double            m_atr_buffer[];         // Buffer for ATR values
    
    // Private methods
    double            CalculatePositionSize(const string symbol, double stopLoss, double entryPrice);
@@ -85,11 +86,13 @@ CAdvancedRiskManager::CAdvancedRiskManager() :
    m_maxPositionRisk(2.0),
    m_maxCorrelation(0.7),
    m_volatilityThreshold(0.02),
-   m_initialBalance(AccountInfoDouble(ACCOUNT_BALANCE)),
-   m_dailyHigh(m_initialBalance),
-   m_dailyLow(m_initialBalance),
-   m_lastCheckTime(0)
+   m_initialBalance(0.0),
+   m_dailyHigh(0.0),
+   m_dailyLow(0.0),
+   m_lastCheckTime(0),
+   m_atr_handle(INVALID_HANDLE)
   {
+   ArraySetAsSeries(m_atr_buffer, true);
   }
 
 //+------------------------------------------------------------------+
@@ -113,12 +116,8 @@ bool CAdvancedRiskManager::Initialize(double riskPerTrade, double maxDailyDrawdo
    SetMaxCorrelation(maxCorrelation);
    SetVolatilityThreshold(volatilityThreshold);
    
-   // Initialize ATR for volatility measurement
-   if(!m_atr.Create(Symbol(), PERIOD_D1, 14))
-     {
-      Print("Failed to create ATR indicator");
-      return false;
-     }
+   // Initialize ATR handle will be created on demand in CalculateVolatility
+   m_atr_handle = INVALID_HANDLE;
    
    return true;
   }
@@ -250,20 +249,43 @@ double CAdvancedRiskManager::GetOptimalLots(const string symbol, double stopLoss
 //+------------------------------------------------------------------+
 double CAdvancedRiskManager::CalculateVolatility(const string symbol, ENUM_TIMEFRAMES timeframe, int period)
   {
-   if(m_atr.Symbol() != symbol || m_atr.Period() != timeframe)
+   // Release existing handle if symbol or timeframe changed
+   if(m_atr_handle != INVALID_HANDLE)
      {
-      m_atr.Release();
-      if(!m_atr.Create(symbol, timeframe, 14))
-         return 0.0;
+      // Get the symbol and timeframe from the chart where the indicator is attached
+      string current_symbol = _Symbol;  // Using current symbol for simplicity
+      ENUM_TIMEFRAMES current_tf = _Period;  // Using current timeframe for simplicity
+      
+      if(current_symbol != symbol || current_tf != timeframe)
+        {
+         IndicatorRelease(m_atr_handle);
+         m_atr_handle = INVALID_HANDLE;
+        }
      }
    
-   int copied = m_atr.GetData(0, 1, period, m_atr.GetDataBuffer(0));
-   if(copied <= 0)
-      return 0.0;
+   // Create new ATR handle if needed
+   if(m_atr_handle == INVALID_HANDLE)
+     {
+      m_atr_handle = iATR(symbol, timeframe, 14);
+      if(m_atr_handle == INVALID_HANDLE)
+        {
+         Print("Failed to create ATR handle for ", symbol, " ", EnumToString(timeframe));
+         return 0.0;
+        }
+     }
    
+   // Copy ATR values
+   int copied = CopyBuffer(m_atr_handle, 0, 0, period, m_atr_buffer);
+   if(copied <= 0)
+     {
+      Print("Failed to copy ATR data for ", symbol, ", error: ", GetLastError());
+      return 0.0;
+     }
+   
+   // Calculate average ATR
    double sum = 0.0;
    for(int i = 0; i < copied; i++)
-      sum += m_atr.GetDataBuffer(0)[i];
+      sum += m_atr_buffer[i];
    
    double avgATR = sum / copied;
    double price = SymbolInfoDouble(symbol, SYMBOL_ASK);

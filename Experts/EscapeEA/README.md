@@ -226,4 +226,12 @@ Proprietary - All rights reserved 2025 EscapeEA
 - **v2.0** (2025-08-01): Dual-EA architecture with shared learning
 - **v1.0** (2025-07-15): Initial release with single EA
 
-Add timer-based checks, Modify signal sending, Enhance learning 
+Enhance learning 
+test on EURUSD,H1 (netting)
+ tester stopped because OnInit returns non-zero code 1
+ disconnected
+there are no trading operations
+
+ensure https://www.mql5.com/en/articles/2555 check are done and publish ready
+ensure testing checks are done and publish ready 
+compile all files, create test files for all, make sure the tests files compile, run the tests files and find issues -  1 day

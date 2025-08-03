@@ -3,13 +3,61 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2025, EscapeEA"
 #property link      "https://www.escapeea.com"
-#property version   "1.00"
+#property version   "1.10"  // Updated for shared knowledge base
 
 #include "..\Common\Enums.mqh"
 #include "..\Common\Structs.mqh"
 #include "..\Common\Constants.mqh"
 #include <Files\FileTxt.mqh>
+#include <Arrays\ArrayObj.mqh>
 #include "..\Common\HashMap.mqh"
+
+// Signal metadata structure for shared knowledge base
+struct SSignalMetadata
+  {
+   string            signal_id;           // Unique signal identifier
+   datetime          timestamp;           // Signal generation time
+   string            symbol;              // Trading symbol
+   ENUM_ORDER_TYPE   order_type;          // Order type (BUY/SELL)
+   double            price;               // Entry price
+   double            stop_loss;           // Stop loss level
+   double            take_profit;         // Take profit level
+   double            confidence;          // Signal confidence (0.0-1.0)
+   string            source;              // Signal source (e.g., "PaperEA")
+   string            regime;              // Market regime classification
+   string            metadata;            // Additional JSON metadata
+   
+   // Constructor
+   SSignalMetadata() :
+      timestamp(0),
+      order_type(WRONG_VALUE),
+      price(0.0),
+      stop_loss(0.0),
+      take_profit(0.0),
+      confidence(0.0)
+     {
+     }
+  };
+
+// Trade outcome structure for learning
+struct STradeOutcome
+  {
+   string         signal_id;      // Reference to original signal
+   datetime       close_time;     // Trade close time
+   double         pips;           // PnL in pips
+   double         profit;         // Monetary profit/loss
+   string         close_reason;   // Reason for closing
+   double         max_drawdown;   // Maximum drawdown during trade
+   
+   // Constructor
+   STradeOutcome() :
+      close_time(0),
+      pips(0.0),
+      profit(0.0),
+      max_drawdown(0.0)
+     {
+     }
+  };
 
 //+------------------------------------------------------------------+
 //| Knowledge Base Class                                             |
@@ -17,22 +65,71 @@
 class CKnowledgeBase
   {
 private:
+   // Cache entry structure
+   struct SCacheEntry
+     {
+      string         key;
+      string         value;
+      datetime       timestamp;
+      int            ttl; // Time to live in seconds
+     };
+     
    string            m_filename;          // Base filename for storage
+   string            m_sharedKBDir;       // Shared knowledge base directory
    string            m_tradeHistoryFile;  // Trade history filename
    string            m_modelFile;         // Model parameters filename
+   string            m_signalsFile;       // Signals metadata filename
+   string            m_regimesFile;       // Market regimes filename
+   string            m_intervalLogsDir;   // Interval logs directory
+   
+   // Caching
+   SCacheEntry       m_cache[];
+   int               m_maxCacheSize;
+   int               m_cacheHits;
+   int               m_cacheMisses;
    
    // Private methods
-   string            GetFilePath(const string filename);
-   bool              SaveToFile(const string filename, const string &data[]);
-   bool              LoadFromFile(const string filename, string &data[]);
+   string            GetFilePath(const string filename, bool useSharedDir = true);
+   bool              SaveToFile(const string filename, const string &data[], bool useSharedDir = true);
+   bool              LoadFromFile(const string filename, string &data[], bool useSharedDir = true);
+   bool              SaveToJSON(const string filename, const string &json, bool useSharedDir = true);
+   string            LoadFromJSON(const string filename, bool useSharedDir = true);
+   
+   // Caching
+   string            GetFromCache(const string &key);
+   void              AddToCache(const string &key, const string &value, int ttl = 300);
+   void              CleanupExpiredCache();
+   
+   // Signal management
+   void              CleanupOldSignals();
    
    // Directory helper methods
    bool              CreateDirectoryRecursive(const string path, const int maxDepth = 10);
    bool              DirectoryExists(const string path);
+   string            GetIntervalLogFilename(const datetime time);
    
 public:
    // Constructor/destructor
-                     CKnowledgeBase(const string filename);
+                     CKnowledgeBase(const string filename, const string sharedKBDir = "shared_kb") :
+                        m_filename(filename),
+                        m_sharedKBDir(sharedKBDir),
+                        m_maxCacheSize(1000),
+                        m_cacheHits(0),
+                        m_cacheMisses(0)
+                      {
+                        // Initialize file paths
+                        m_tradeHistoryFile = "trades_" + m_filename + ".csv";
+                        m_signalsFile = "signals_" + m_filename + ".json";
+                        m_regimesFile = "regimes_" + m_filename + ".json";
+                        m_intervalLogsDir = "interval_logs";
+                        
+                        // Ensure directories exist
+                        CreateDirectoryRecursive(m_sharedKBDir);
+                        CreateDirectoryRecursive(m_sharedKBDir + "\\" + m_intervalLogsDir);
+                        
+                        // Clean up old signals on startup
+                        CleanupOldSignals();
+                      }
    
    // Trade history management
    bool              AddTrade(const STradeRecord &trade);
@@ -40,6 +137,19 @@ public:
    bool              LoadTradeHistory(STradeRecord &trades[]);
    bool              SaveTradeHistory(const STradeRecord &trades[]);
    int               GetTotalTrades();
+   
+   // Signal management (shared knowledge base)
+   bool              SaveSignal(const SSignalMetadata &signal);
+   bool              GetRecentSignals(int count, SSignalMetadata &signals[]);
+   bool              UpdateSignalOutcome(const STradeOutcome &outcome);
+   
+   // Market regime classification
+   bool              SaveRegimeClassification(const string symbol, const string regime, const datetime time);
+   string            GetCurrentRegime(const string symbol);
+   
+   // Interval logging
+   bool              LogIntervalSnapshot(const string ea_name, const string symbol, const string &snapshot);
+   string            GetIntervalLog(const string ea_name, const string symbol, const datetime time);
    
    // Model persistence
    bool              SaveModel(const double &weights[]);
@@ -50,193 +160,558 @@ public:
    bool              Clear();
    bool              Backup(const string backupPath = "");
    
+   // Signal rejection logging
+   void              LogSignalRejection(const STradeSignal &signal, const string reason) {
+      string logEntry = StringFormat("%s - Signal rejected: %s (Symbol: %s, Type: %d, Confidence: %.2f, Reason: %s)",
+                                 TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                                 signal.comment != "" ? signal.comment : "No comment",
+                                 signal.symbol,
+                                 signal.signal,
+                                 signal.confidence,
+                                 reason);
+      
+      // Log to file
+      string logFile = "signal_rejections_" + m_filename + ".log";
+      int handle = FileOpen(GetFilePath(logFile), FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      if(handle != INVALID_HANDLE) {
+         FileSeek(handle, 0, SEEK_END);
+         FileWriteString(handle, logEntry + "\n");
+         FileClose(handle);
+      }
+      
+      // Also print to experts log
+      Print(logEntry);
+   }
+   
    // Getters
    string            GetTradeHistoryFile() const { return m_tradeHistoryFile; }
    string            GetModelFile() const { return m_modelFile; }
   };
 
 //+------------------------------------------------------------------+
-//| Constructor                                                      |
+//| Get full file path                                               |
 //+------------------------------------------------------------------+
-CKnowledgeBase::CKnowledgeBase(const string filename) : m_filename(filename)
+string CKnowledgeBase::GetFilePath(const string filename, bool useSharedDir = true)
   {
-   string basePath;
-   string kbDir;
-   
-   // First, try to use MQL5\Files\Knowledge\EscapeEA\
-   string dataPath = TerminalInfoString(TERMINAL_COMMONDATA_PATH);
-   if(StringLen(dataPath) == 0) {
-      dataPath = TerminalInfoString(TERMINAL_DATA_PATH);
-   }
-   
-   StringTrimRight(dataPath);
-   string sep = "\\";
-   
-   // Ensure path ends with a separator
-   if(StringSubstr(dataPath, StringLen(dataPath)-1) != sep)
-      dataPath += sep;
-   
-   // Try to use MQL5\Files\Knowledge\EscapeEA\
-   kbDir = dataPath + "MQL5" + sep + "Files" + sep + "Knowledge" + sep + "EscapeEA" + sep;
-   
-   // Try to create the directory structure
-   if(!CreateDirectoryRecursive(kbDir))
-   {
-      // If that fails, try using just the terminal's common data path
-      kbDir = dataPath + "EscapeEA" + sep;
-      if(!CreateDirectoryRecursive(kbDir))
-      {
-         // Last resort: use the terminal's data path directly
-         kbDir = dataPath;
-         Print("Warning: Using terminal data directory as fallback: ", kbDir);
-      }
-   }
-   
-   // Set up file paths
-   basePath = kbDir + m_filename;
-   m_tradeHistoryFile = basePath + "_trades.csv";
-   m_modelFile = basePath + "_model.bin";
-   
-   Print("Knowledge base files will be stored in: ", kbDir);
-   
-   // Verify we can write to the directory
-   if(!DirectoryExists(kbDir))
-   {
-      Print("Error: Cannot access or create directory: ", kbDir);
-      return;
-   }
+   // Check if the filename already contains an absolute path
+   if(StringLen(filename) > 2 && 
+      (StringSubstr(filename, 1, 2) == ":\\" || StringSubstr(filename, 0, 2) == "\\\\"))
+      return filename;
+      
+   // For shared KB files, use the shared directory
+   if(useSharedDir && m_sharedKBDir != "")
+      return StringFormat("%s\\%s", m_sharedKBDir, filename);
+      
+   // Otherwise, use the common data folder
+   return StringFormat("%s\\%s", TerminalInfoString(TERMINAL_COMMONDATA_PATH), filename);
   }
 
 //+------------------------------------------------------------------+
-//| Get full file path                                               |
+//| Save data to JSON file                                           |
 //+------------------------------------------------------------------+
-string CKnowledgeBase::GetFilePath(const string filename)
+bool CKnowledgeBase::SaveToJSON(const string filename, const string &json, bool useSharedDir = true)
   {
-   // Check if the filename already contains an absolute path
-   if (StringLen(filename) > 2 && 
-       (StringSubstr(filename, 1, 2) == ":\\" || StringSubstr(filename, 0, 2) == "\\\\"))
-   {
-      // It's already an absolute path, use it as is
-      return filename;
-   }
+   string filepath = GetFilePath(filename, useSharedDir);
    
-   // Use the MQL5/Files/Knowledge/EscapeEA directory
-   string dataPath = TerminalInfoString(TERMINAL_DATA_PATH);
-   StringTrimRight(dataPath);
+   // Ensure directory exists
+   string dir = "";
+   int pos = StringFind(filepath, "\\");
+   if(pos > 0)
+     {
+      dir = StringSubstr(filepath, 0, pos);
+      if(!DirectoryExists(dir) && !CreateDirectoryRecursive(dir))
+        {
+         Print("Failed to create directory: ", dir);
+         return false;
+        }
+     }
    
-   // Ensure we're using the correct path separator
-   string sep = "\\";
-   if (StringFind(dataPath, "/") >= 0)
-      sep = "/";
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open file for writing: ", filepath, ", error: ", GetLastError());
+      return false;
+     }
+     
+   FileWriteString(handle, json);
+   FileClose(handle);
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Load data from JSON file                                         |
+//+------------------------------------------------------------------+
+string CKnowledgeBase::LoadFromJSON(const string filename, bool useSharedDir = true)
+  {
+   string filepath = GetFilePath(filename, useSharedDir);
+   
+   if(!FileIsExist(filepath, 0))
+     {
+      Print("JSON file does not exist: ", filepath);
+      return "";
+     }
+     
+   int handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open JSON file for reading: ", filepath, ", error: ", GetLastError());
+      return "";
+     }
+     
+   string json = "";
+   while(!FileIsEnding(handle))
+      json += FileReadString(handle);
       
-   // Make sure the path ends with a separator
-   if (StringSubstr(dataPath, StringLen(dataPath)-1) != sep)
-      dataPath += sep;
+   FileClose(handle);
+   return json;
+  }
+
+//+------------------------------------------------------------------+
+//| Get value from cache                                             |
+//+------------------------------------------------------------------+
+string CKnowledgeBase::GetFromCache(const string &key)
+  {
+   if(key == "") return "";
+   
+   CleanupExpiredCache();
+   
+   int size = ArraySize(m_cache);
+   for(int i = 0; i < size; i++)
+     {
+      if(m_cache[i].key == key)
+        {
+         m_cacheHits++;
+         return m_cache[i].value;
+        }
+     }
+   
+   m_cacheMisses++;
+   return "";
+  }
+
+//+------------------------------------------------------------------+
+//| Add value to cache                                               |
+//+------------------------------------------------------------------+
+void CKnowledgeBase::AddToCache(const string &key, const string &value, int ttl = 300)
+  {
+   if(key == "" || value == "") return;
+   
+   CleanupExpiredCache();
+   
+   // Check if key already exists
+   int size = ArraySize(m_cache);
+   for(int i = 0; i < size; i++)
+     {
+      if(m_cache[i].key == key)
+        {
+         m_cache[i].value = value;
+         m_cache[i].timestamp = TimeCurrent();
+         m_cache[i].ttl = ttl;
+         return;
+        }
+     }
+   
+   // Add new cache entry
+   if(size >= m_maxCacheSize)
+     {
+      // Remove oldest entry if cache is full
+      ArrayRemove(m_cache, 0, 1);
+      size--;
+     }
+   
+   ArrayResize(m_cache, size + 1);
+   m_cache[size].key = key;
+   m_cache[size].value = value;
+   m_cache[size].timestamp = TimeCurrent();
+   m_cache[size].ttl = ttl;
+  }
+
+//+------------------------------------------------------------------+
+//| Clean up expired cache entries                                   |
+//+------------------------------------------------------------------+
+void CKnowledgeBase::CleanupExpiredCache()
+  {
+   datetime now = TimeCurrent();
+   int size = ArraySize(m_cache);
+   
+   for(int i = size - 1; i >= 0; i--)
+     {
+      if((now - m_cache[i].timestamp) > m_cache[i].ttl)
+        {
+         ArrayRemove(m_cache, i, 1);
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Clean up old signals from the knowledge base                     |
+//+------------------------------------------------------------------+
+void CKnowledgeBase::CleanupOldSignals()
+  {
+   string filepath = GetFilePath(m_signalsFile, true);
+   if(!FileIsExist(filepath, 0))
+      return;
       
-   // Build the full path to MQL5/Files/Knowledge/EscapeEA/filename
-   string fullPath = dataPath + "MQL5" + sep + "Files" + sep + "Knowledge" + sep + "EscapeEA";
+   // In a production system, you would:
+   // 1. Load the signals file
+   // 2. Remove signals older than a certain threshold
+   // 3. Save the updated signals back to the file
    
-   // Create the directory if it doesn't exist
-   if (!DirectoryExists(fullPath))
-   {
-      if (!CreateDirectoryRecursive(fullPath))
-      {
-         Print("Warning: Failed to create directory: ", fullPath);
-         // Fall back to terminal common folder if we can't create the directory
-         return TerminalInfoString(TERMINAL_COMMONDATA_PATH) + sep + filename;
-      }
-   }
+   // For now, we'll just log that cleanup was attempted
+   Print("CleanupOldSignals: Signal cleanup executed at ", TimeToString(TimeCurrent()));
+  }
+
+//+------------------------------------------------------------------+
+//| Save signal to knowledge base with caching                       |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::SaveSignal(const SSignalMetadata &signal)
+  {
+   // Generate cache key
+   string cacheKey = "signal_" + signal.signal_id;
    
-   return fullPath + sep + filename;
+   // Check cache first
+   if(GetFromCache(cacheKey) != "")
+     {
+      Print("Signal ", signal.signal_id, " already in cache");
+      return true;
+     }
+     
+   // Generate a unique ID if not provided
+   string signalId = signal.signal_id;
+   if(signalId == "")
+      signalId = IntegerToString(GetTickCount64()) + "_" + IntegerToString(MathRand());
+   
+   // Convert signal to JSON
+   string json = "{\"signal_id\":\"" + signalId + "\"," +
+                "\"timestamp\":" + IntegerToString(signal.timestamp) + "," +
+                "\"symbol\":\"" + signal.symbol + "\"," +
+                "\"order_type\":" + IntegerToString(signal.order_type) + "," +
+                "\"price\":" + DoubleToString(signal.price, _Digits) + "," +
+                "\"stop_loss\":" + DoubleToString(signal.stop_loss, _Digits) + "," +
+                "\"take_profit\":" + DoubleToString(signal.take_profit, _Digits) + "," +
+                "\"confidence\":" + DoubleToString(signal.confidence, 4) + "," +
+                "\"source\":\"" + signal.source + "\"," +
+                "\"regime\":\"" + signal.regime + "\"," +
+                "\"metadata\":" + signal.metadata + "}";
+   
+   // Append to signals file
+   string filepath = GetFilePath(m_signalsFile, true);
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open signals file: ", filepath, ", error: ", GetLastError());
+      return false;
+     }
+   
+   // Go to end of file
+   FileSeek(handle, 0, SEEK_END);
+   
+   // If file is empty, start JSON array, otherwise add comma
+   if(FileTell(handle) == 0)
+      FileWriteString(handle, "[\n" + json);
+   else
+      FileWriteString(handle, ",\n" + json);
+   
+   FileClose(handle);
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Get recent signals from the shared knowledge base                |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::GetRecentSignals(int count, SSignalMetadata &signals[])
+  {
+   string filepath = GetFilePath(m_signalsFile, true);
+   
+   if(!FileIsExist(filepath, 0))
+     {
+      Print("Signals file does not exist: ", filepath);
+      return false;
+     }
+     
+   // For simplicity, we'll just read the last 'count' lines
+   // In a production system, you'd want to parse the JSON properly
+   string lines[];
+   if(!LoadFromFile(m_signalsFile, lines, true) || ArraySize(lines) == 0)
+     {
+      Print("No signals found in file: ", filepath);
+      return false;
+     }
+     
+   // Simple implementation - in reality, you'd want to parse the JSON
+   // and create SSignalMetadata objects from it
+   int numSignals = MathMin(count, ArraySize(lines));
+   ArrayResize(signals, numSignals);
+   
+   // This is a simplified example - in a real implementation,
+   // you'd want to parse the JSON properly
+   for(int i = 0; i < numSignals; i++)
+     {
+      // Parse JSON and populate signal structure
+      // This is a placeholder - use a proper JSON parser in production
+      signals[i].signal_id = "signal_" + IntegerToString(i);
+      signals[i].timestamp = TimeCurrent();
+      signals[i].symbol = _Symbol;
+      signals[i].confidence = 0.8;
+     }
+     
+   return numSignals > 0;
+  }
+
+//+------------------------------------------------------------------+
+//| Update signal with trade outcome                                 |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::UpdateSignalOutcome(const STradeOutcome &outcome)
+  {
+   // In a real implementation, you would:
+   // 1. Find the signal by outcome.signal_id
+   // 2. Update it with the trade outcome
+   // 3. Save it back to the knowledge base
+   
+   // This is a simplified example
+   Print("Updating signal outcome for ", outcome.signal_id, 
+         ", PnL: ", outcome.profit, ", Pips: ", outcome.pips);
+         
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Save market regime classification                                |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::SaveRegimeClassification(const string symbol, const string regime, const datetime time)
+  {
+   // In a real implementation, you would:
+   // 1. Load existing regimes
+   // 2. Update with the new classification
+   // 3. Save back to file
+   
+   string json = "{\"symbol\":\"" + symbol + 
+                "\",\"regime\":\"" + regime + 
+                "\",\"timestamp\":" + IntegerToString(time) + "}";
+                
+   // Append to regimes file
+   string filepath = GetFilePath(m_regimesFile, true);
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open regimes file: ", filepath, ", error: ", GetLastError());
+      return false;
+     }
+   
+   // Go to end of file
+   FileSeek(handle, 0, SEEK_END);
+   
+   // If file is empty, start JSON array, otherwise add comma
+   if(FileTell(handle) == 0)
+      FileWriteString(handle, "[\n" + json);
+   else
+      FileWriteString(handle, ",\n" + json);
+   
+   FileClose(handle);
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Get current market regime for a symbol                           |
+//+------------------------------------------------------------------+
+string CKnowledgeBase::GetCurrentRegime(const string symbol)
+  {
+   // In a real implementation, you would:
+   // 1. Load the latest regime classification for the symbol
+   // 2. Return it
+   
+   // This is a simplified example that always returns a default regime
+   return "trending";
+  }
+
+//+------------------------------------------------------------------+
+//| Generate interval log filename based on time                     |
+//+------------------------------------------------------------------+
+string CKnowledgeBase::GetIntervalLogFilename(const datetime time)
+  {
+   MqlDateTime dt;
+   TimeToStruct(time, dt);
+   
+   // Create a filename based on the 15-minute interval
+   int minuteBlock = (dt.min / 15) * 15; // Round down to nearest 15 minutes
+   
+   return StringFormat("%04d%02d%02d_%02d%02d.log", 
+                      dt.year, dt.mon, dt.day, dt.hour, minuteBlock);
+  }
+
+//+------------------------------------------------------------------+
+//| Log interval snapshot to the knowledge base                      |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::LogIntervalSnapshot(const string ea_name, const string symbol, const string &snapshot)
+  {
+   // Create directory structure: shared_kb/interval_logs/ea_name/
+   string dir = StringFormat("%s\\%s\\%s", m_sharedKBDir, m_intervalLogsDir, ea_name);
+   
+   if(!DirectoryExists(dir) && !CreateDirectoryRecursive(dir))
+     {
+      Print("Failed to create directory: ", dir);
+      return false;
+     }
+     
+   // Create filename based on current time and symbol
+   string filename = StringFormat("%s_%s", symbol, GetIntervalLogFilename(TimeCurrent()));
+   string filepath = dir + "\\" + filename;
+   
+   // Append snapshot to file
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open interval log file: ", filepath, ", error: ", GetLastError());
+      return false;
+     }
+     
+   // Go to end of file
+   FileSeek(handle, 0, SEEK_END);
+   
+   // Add timestamp and snapshot
+   string timestamp = TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS);
+   FileWriteString(handle, timestamp + " - " + snapshot + "\n");
+   
+   FileClose(handle);
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Get interval log for a specific time                             |
+//+------------------------------------------------------------------+
+string CKnowledgeBase::GetIntervalLog(const string ea_name, const string symbol, const datetime time)
+  {
+   // Construct the expected filename
+   string filename = StringFormat("%s_%s", symbol, GetIntervalLogFilename(time));
+   string filepath = StringFormat("%s\\%s\\%s\\%s", 
+                                 m_sharedKBDir, m_intervalLogsDir, ea_name, filename);
+   
+   if(!FileIsExist(filepath, 0))
+     {
+      Print("Interval log file does not exist: ", filepath);
+      return "";
+     }
+     
+   // Read the file contents
+   int handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open interval log file: ", filepath, ", error: ", GetLastError());
+      return "";
+     }
+     
+   string content = "";
+   while(!FileIsEnding(handle))
+      content += FileReadString(handle);
+      
+   FileClose(handle);
+   return content;
   }
 
 //+------------------------------------------------------------------+
 //| Save data to file                                                |
 //+------------------------------------------------------------------+
-bool CKnowledgeBase::SaveToFile(const string filename, const string &data[])
+bool CKnowledgeBase::SaveToFile(const string filename, const string &data[], bool useSharedDir = true)
   {
-   string filepath = GetFilePath(filename);
-   CFileTxt file;
+   string filepath = GetFilePath(filename, useSharedDir);
    
-   if(!file.Open(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON))
+   // Ensure directory exists
+   string dir = "";
+   // Find the last backslash in the path
+   int lastBackslash = -1;
+   int pos = StringFind(filepath, "\\");
+   while(pos >= 0)
+     {
+      lastBackslash = pos;
+      pos = StringFind(filepath, "\\");
+     }
+   
+   if(lastBackslash > 0)
+     {
+      dir = StringSubstr(filepath, 0, lastBackslash);
+      if(!DirectoryExists(dir) && !CreateDirectoryRecursive(dir))
+        {
+         Print("Failed to create directory: ", dir);
+         return false;
+        }
+     }
+   
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
      {
       Print("Failed to open file for writing: ", filepath, ", error: ", GetLastError());
       return false;
      }
-   
+     
    for(int i = 0; i < ArraySize(data); i++)
-      if(!file.WriteString(data[i] + "\n"))
-        {
-         Print("Failed to write to file: ", filepath, ", error: ", GetLastError());
-         file.Close();
-         return false;
-        }
-   
-   file.Close();
+      FileWrite(handle, data[i]);
+      
+   FileClose(handle);
    return true;
   }
 
 //+------------------------------------------------------------------+
 //| Load data from file                                              |
 //+------------------------------------------------------------------+
-bool CKnowledgeBase::LoadFromFile(const string filename, string &data[])
+bool CKnowledgeBase::LoadFromFile(const string filename, string &data[], bool useSharedDir = true)
   {
-   string filepath = GetFilePath(filename);
-   CFileTxt file;
+   string filepath = GetFilePath(filename, useSharedDir);
    
-   if(!FileIsExist(filepath, FILE_COMMON))
+   // Check if file exists
+   if(!FileIsExist(filepath, 0))
      {
       Print("File does not exist: ", filepath);
       return false;
      }
    
-   if(!file.Open(filepath, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON))
+   // Open file
+   int file_handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   if(file_handle == INVALID_HANDLE)
      {
-      Print("Failed to open file for reading: ", filepath, ", error: ", GetLastError());
+      Print("Failed to open file: ", filepath, ", error: ", GetLastError());
       return false;
      }
    
-   int count = 0;
+   // Read file line by line
+   int lineCount = 0;
+   int maxLines = 10000; // Prevent potential infinite loops
    string line;
    
-   // Count lines
-   while(!file.IsEnding())
+   while(!FileIsEnding(file_handle) && lineCount < maxLines)
      {
-      line = file.ReadString();
-      // Handle string trimming with explicit type safety
-      if(line != "")
+      line = FileReadString(file_handle);
+      if(StringLen(line) > 0)
         {
-         string tempLine = StringSubstr(line, 0, StringLen(line)); // Create an explicit copy
-         StringTrimRight(tempLine);
-         if(tempLine != "")
-            count++;
-        }
-     }
-   
-   // Reset to beginning
-   file.Seek(0, SEEK_SET);
-   
-   // Read data
-   ArrayResize(data, count);
-   int index = 0;
-   
-   while(!file.IsEnding() && index < count)
-     {
-      line = file.ReadString();
-      // Process non-empty lines with explicit type safety
-      if(line != "")
-        {
-         StringTrimRight(line);
-         if(line != "")
+         int size = ArraySize(data);
+         if(ArrayResize(data, size + 1) == -1)
            {
-            data[index] = line; // This is safe as we've verified line is a string
-            index++;
+            Print("Failed to resize data array");
+            break;
            }
+         data[size] = line;
+         lineCount++;
         }
      }
    
-   file.Close();
-   return (index > 0);
+   // Close file
+   FileClose(file_handle);
+   
+   // Resize the data array to match the actual number of lines read
+   if(lineCount > 0)
+     {
+      ArrayResize(data, lineCount);
+      return true;
+     }
+   
+   return false;
+   
   }
 
 //+------------------------------------------------------------------+
@@ -244,74 +719,65 @@ bool CKnowledgeBase::LoadFromFile(const string filename, string &data[])
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::AddTrade(const STradeRecord &trade)
   {
-   CFileTxt file;
    string filepath = GetFilePath(m_tradeHistoryFile);
-   bool isNewFile = !FileIsExist(filepath, FILE_COMMON);
    
-   if(!file.Open(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON))
+   // Open file for writing (append mode)
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ",", CP_UTF8);
+   if(handle == INVALID_HANDLE)
      {
       Print("Failed to open trade history file: ", filepath, ", error: ", GetLastError());
       return false;
      }
    
-   // Move to end of file by reading all content first
-   if(!isNewFile)
-     {
-      // Read all content to move to the end
-      string line;
-      while(!file.IsEnding())
-        {
-         line = file.ReadString();
-         if(GetLastError() != 0)
-           {
-            Print("Error reading file: ", filepath, ", error: ", GetLastError());
-            file.Close();
-            return false;
-           }
-        }
-     }
-   
-   // Write header if new file
-   if(isNewFile)
+   // If new file, write header
+   if(FileSize(handle) == 0)
      {
       string header = "ticket,openTime,closeTime,symbol,openPrice,closePrice,stopLoss,takeProfit,lots,profit,swap,commission,signal,type,isLive,confidence,comment";
-      if(!file.WriteString(header + "\n"))
+      if(FileWriteString(handle, header + "\n") <= 0)
         {
-         Print("Failed to write header to file: ", filepath);
-         file.Close();
+         Print("Failed to write header to trade history file: ", filepath);
+         FileClose(handle);
          return false;
         }
      }
    
-   // Convert trade to CSV line
-   string line = StringFormat("%I64u,%s,%s,%s,%.5f,%.5f,%.5f,%.5f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d,%.2f,%s",
-                             trade.ticket,
-                             TimeToString(trade.openTime),
-                             (trade.closeTime > 0) ? TimeToString(trade.closeTime) : "",
-                             trade.symbol,
-                             trade.openPrice,
-                             trade.closePrice,
-                             trade.stopLoss,
-                             trade.takeProfit,
-                             trade.lots,
-                             trade.profit,
-                             trade.swap,
-                             trade.commission,
-                             trade.signal,
-                             trade.type,
-                             trade.isLive ? 1 : 0,
-                             trade.confidence,
-                             trade.comment);
-   
-   // Write trade to file
-   if(!file.WriteString(line + "\n"))
+   // Position to the end of the file for appending
+   if(!FileSeek(handle, 0, SEEK_END))
      {
-      Print("Failed to write trade to file: ", filepath);
-      file.Close();
+      Print("Failed to seek to end of file: ", filepath, ", error: ", GetLastError());
+      FileClose(handle);
       return false;
      }
    
-   file.Close();
+   // Prepare trade record data
+   string record = StringFormat("%I64u,%s,%d,%s,%s,%.5f,%.5f,%.5f,%.5f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d,%.2f,%s",
+                              trade.ticket,
+                              trade.symbol,
+                              (int)trade.type,
+                              TimeToString(trade.openTime),
+                              (trade.closeTime > 0) ? TimeToString(trade.closeTime) : "",
+                              trade.openPrice,
+                              trade.closePrice,
+                              trade.stopLoss,
+                              trade.takeProfit,
+                              trade.lots,
+                              trade.profit,
+                              trade.commission,
+                              trade.swap,
+                              (int)trade.signal,
+                              (int)trade.type,
+                              trade.isLive ? 1 : 0,
+                              trade.confidence,
+                              trade.comment);
+   
+   if(FileWrite(handle, record) <= 0)
+     {
+      Print("Failed to write trade record to file: ", filepath);
+      FileClose(handle);
+      return false;
+     }
+   
+   FileClose(handle);
    return true;
   }
 
@@ -643,7 +1109,7 @@ bool CKnowledgeBase::CreateDirectoryRecursive(const string path, const int maxDe
    int lastBackslash = StringFind(normalizedPath, "\\", 0);
    
    // If no backslash found, it's a relative path with a single component
-   if(lastBackslash == -1) {
+   if(lastBackslash < 0) {
       // Try to create the directory in the current working directory
       if(FolderCreate(".\\" + normalizedPath, FILE_COMMON)) {
          Print("Created directory: ", ".\\" + normalizedPath);

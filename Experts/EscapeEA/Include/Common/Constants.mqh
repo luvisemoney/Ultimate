@@ -28,6 +28,7 @@
 #define SIGNAL_PREFIX          "EscapeEA_" // Prefix for signal names
 #define MAX_SIGNAL_AGE         300        // Maximum signal age in seconds
 #define SIGNAL_CHECK_INTERVAL  1          // Signal check interval in seconds
+#define SIGNAL_PROTOCOL_VERSION 1         // Signal protocol version for compatibility
 
 // File paths
 #define LOG_DIRECTORY          "Logs\\EscapeEA\\"

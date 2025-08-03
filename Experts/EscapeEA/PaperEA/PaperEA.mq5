@@ -22,27 +22,43 @@
 //--- Input Parameters
 input group "=== General Settings ==="
 input string   InpSymbol = "";              // Trading symbol (empty for chart symbol)
-input bool     InpEnableLiveTrading = false; // Enable live trading (for testing)
+input bool     InpEnableLiveTrading = true; // Enable live trading (for testing)
 input double   InpRiskPerTrade = 1.0;        // Risk per trade (% of balance)
 input int      InpMaxOpenTrades = 5;         // Maximum open trades
 input int      InpMagicNumber = 123456;      // Magic number for identification
 input double   InpSlippage = 10.0;           // Slippage in points
+input int      InpEvaluationInterval = 15;    // Evaluation interval in minutes
+input int      InpMinTradesPerInterval = 10;  // Minimum trades per interval
+input double   InpDailyDrawdownLimit = 5.0;   // Max daily drawdown %
+input color    InpPanelColor = clrDodgerBlue; // Panel color
+input int      InpFontSize = 8;              // Font size
+
+// Paper EA Specific
+input bool     InpEnableSignals = true;                  // Enable signal generation
+input int      InpMaxSignalsPerInterval = 10;            // Max signals per interval
+input double   InpVirtualBalance = 10000.0;              // Virtual balance for paper trading
+input int      InpSignalExpiryBars = 5;                  // Signal expiry in bars
+input int      InpMaxSignalAge = 3600;                   // Max signal age in seconds (1 hour)
+input string   InpSharedKBDir = "shared_kb";            // Shared knowledge base directory
 
 input group "=== Signal Generation ==="
-input ENUM_MA_METHOD     InpMAMethod = MODE_EMA;       // MA Method
-input int                InpMAPeriod = 20;             // MA Period
-input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE;     // MA Price
-input int                InpRSIPeriod = 14;            // RSI Period
-input double             InpRSIOverbought = 70.0;      // RSI Overbought Level
-input double             InpRSIOversold = 30.0;        // RSI Oversold Level
-input int                InpATRPeriod = 14;            // ATR Period
-input double             InpATRMultiplier = 2.0;       // ATR Multiplier for SL/TP
+input ENUM_MA_METHOD     InpMAMethod = MODE_EMA;         // MA Method
+input int                InpMAPeriod = 20;               // MA Period
+input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE;       // MA Price
+input int                InpRSIPeriod = 14;              // RSI Period
+input double             InpRSIOverbought = 70.0;        // RSI Overbought Level
+input double             InpRSIOversold = 30.0;          // RSI Oversold Level
+input int                InpATRPeriod = 14;              // ATR Period
+input double             InpATRMultiplier = 2.0;         // ATR Multiplier for SL/TP
+input double             InpMinConfidence = 0.8;         // Minimum confidence threshold (0.0-1.0)
+input string             InpConfidenceAdjustMode = "online"; // Learning mode: online or batch
 
 input group "=== Learning Settings ==="
-input int      InpLearningWindow = 100;      // Learning window size (trades)
-input double   InpMinWinRate = 0.6;           // Minimum win rate for signal validation
-input double   InpLearningRate = 0.01;        // Learning rate for model updates
-input bool     InpEnableLearning = true;      // Enable learning from trades
+input int      InpLearningWindow = 100;        // Learning window size (trades)
+input double   InpMinWinRate = 0.6;             // Minimum win rate for signal validation
+input double   InpLearningRate = 0.01;          // Learning rate for model updates
+input bool     InpEnableLearning = true;        // Enable learning from trades
+input bool     InpEnableRegimeClassification = true; // Enable market regime classification
 
 //--- Global Variables
 CSignalGenerator  *g_signalGenerator = NULL;
@@ -289,14 +305,12 @@ void CheckTradingSignals()
       CheckPointer(g_tradeExecutor) == POINTER_INVALID)
       return;
    
-   // Get current signal
-   STradeSignal signal;
-   signal = g_signalGenerator.GenerateSignal();
-   if(signal.signal == SIGNAL_HOLD)
-      return;
+   // Get and validate current signal
+   STradeSignal signal = g_signalGenerator.GenerateSignal();
    
-   // Skip if no valid signal
-   if(signal.signal == SIGNAL_HOLD)
+   // Return if no valid signal or signal is too old
+   if(signal.signal == SIGNAL_HOLD || 
+      (TimeCurrent() - signal.timestamp) > InpMaxSignalAge)
       return;
    
    // Check risk management

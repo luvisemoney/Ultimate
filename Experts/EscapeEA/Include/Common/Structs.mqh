@@ -6,6 +6,7 @@
 #property version   "1.00"
 
 #include "Enums.mqh"
+#include "Constants.mqh"
 
 //+------------------------------------------------------------------+
 //| Trade record structure                                           |
@@ -91,6 +92,7 @@ struct SMarketCondition
 //+------------------------------------------------------------------+
 struct STradeSignal
   {
+   int                 version;      // Signal protocol version
    ENUM_TRADE_SIGNAL   signal;       // Trade signal
    double              confidence;   // Signal confidence (0-1)
    string              symbol;       // Symbol
@@ -103,9 +105,31 @@ struct STradeSignal
    string              comment;      // Signal comment
    
    // Default constructor
-   STradeSignal() : signal(SIGNAL_HOLD), confidence(0.0), symbol(""), 
-                   timeframe(PERIOD_CURRENT), timestamp(0), entry(0.0),
-                   stopLoss(0.0), takeProfit(0.0), riskReward(0.0) {}
+   STradeSignal() : 
+      version(SIGNAL_PROTOCOL_VERSION),
+      signal(SIGNAL_HOLD), 
+      confidence(0.0), 
+      symbol(""), 
+      timeframe(PERIOD_CURRENT), 
+      timestamp(0), 
+      entry(0.0),
+      stopLoss(0.0), 
+      takeProfit(0.0), 
+      riskReward(0.0) {}
+   
+   // Copy constructor
+   STradeSignal(const STradeSignal &other) :
+      version(other.version),
+      signal(other.signal),
+      confidence(other.confidence),
+      symbol(other.symbol),
+      timeframe(other.timeframe),
+      timestamp(other.timestamp),
+      entry(other.entry),
+      stopLoss(other.stopLoss),
+      takeProfit(other.takeProfit),
+      riskReward(other.riskReward),
+      comment(other.comment) {}
   };
 
 //+------------------------------------------------------------------+

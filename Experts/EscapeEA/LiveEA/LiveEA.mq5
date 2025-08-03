@@ -27,18 +27,31 @@ input int      InpMaxOpenTrades = 3;                 // Maximum open trades
 input int      InpMagicNumber = 123457;              // Magic number for identification
 input double   InpSlippage = 10.0;                   // Slippage in points
 input bool     InpEnableTrading = true;              // Enable live trading
+input int      InpEvaluationInterval = 15;           // Evaluation interval in minutes
+input int      InpMinTradesPerInterval = 10;         // Minimum trades per interval
+input double   InpDailyDrawdownLimit = 5.0;          // Max daily drawdown %
+input color    InpPanelColor = clrLimeGreen;         // Panel color
+input int      InpFontSize = 8;                      // Font size
+
+// Live EA Specific
+input bool     InpAcceptPaperSignals = true;         // Accept signals from Paper EA
+input double   InpMaxPositionSize = 10.0;            // Maximum position size in lots
+input bool     InpUseHardStops = true;               // Use hard stop losses
+input string   InpSharedKBDir = "shared_kb";        // Shared knowledge base directory
 
 input group "=== Signal Processing ==="
-input double   InpMinConfidence = 0.7;               // Minimum confidence to accept signals
+input double   InpMinConfidence = 0.7;               // Minimum confidence to accept signals (0.0-1.0)
 input int      InpMaxSignalAge = 300;                // Maximum signal age (seconds)
 input bool     InpUsePaperEASLTP = true;             // Use Paper EA's SL/TP levels
 input bool     InpEnableSignalLogging = true;        // Enable signal logging
+input string   InpConfidenceAdjustMode = "online";  // Learning mode: online or batch
 
 input group "=== Learning Settings ==="
 input int      InpLearningWindow = 100;              // Learning window size (trades)
 input double   InpMinWinRate = 0.6;                   // Minimum win rate for strategy validation
 input double   InpLearningRate = 0.01;                // Learning rate for model updates
 input bool     InpEnableLearning = true;              // Enable learning from trades
+input bool     InpEnableRegimeClassification = true;  // Enable market regime classification
 
 //--- Global Variables
 CRiskManager     *g_riskManager = NULL;
@@ -127,19 +140,30 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnTimer()
   {
-   // Check for new signals every second
-   if(TimeCurrent() - g_lastSignalCheck >= 1)
+   static int tickCounter = 0;
+   tickCounter++;
+   
+   // Check for new signals every 5 seconds (reduced from 1s)
+   if((tickCounter % 5) == 0) // 5-second interval
      {
       g_lastSignalCheck = TimeCurrent();
       CheckForNewSignals();
      }
    
-   // Perform periodic tasks every minute
-   static datetime lastMinuteCheck = 0;
-   if(TimeCurrent() - lastMinuteCheck >= 60)
+   // Perform periodic tasks every 30 seconds (reduced from 60s)
+   static datetime lastPeriodicCheck = 0;
+   if(TimeCurrent() - lastPeriodicCheck >= 30)
      {
-      lastMinuteCheck = TimeCurrent();
+      lastPeriodicCheck = TimeCurrent();
       PerformPeriodicTasks();
+     }
+      
+   // Send heartbeat every 15 seconds
+   static datetime lastHeartbeat = 0;
+   if(TimeCurrent() - lastHeartbeat >= 15)
+     {
+      lastHeartbeat = TimeCurrent();
+      SendHeartbeat();
      }
   }
 
@@ -275,9 +299,25 @@ void CheckForNewSignals()
 //+------------------------------------------------------------------+
 void ProcessSignal(const STradeSignal &signal)
   {
+   // Validate signal
    if(CheckPointer(g_riskManager) == POINTER_INVALID ||
-      CheckPointer(g_tradeExecutor) == POINTER_INVALID)
+      CheckPointer(g_tradeExecutor) == POINTER_INVALID ||
+      signal.signal == SIGNAL_HOLD ||
+      signal.confidence < InpMinConfidence ||
+      (TimeCurrent() - signal.timestamp) > InpMaxSignalAge)
+   {
+      if(g_knowledgeBase != NULL)
+         g_knowledgeBase.LogSignalRejection(signal, "Invalid or expired signal");
       return;
+   }
+   
+   // Verify signal version compatibility
+   if(signal.version != SIGNAL_PROTOCOL_VERSION)
+   {
+      if(g_knowledgeBase != NULL)
+         g_knowledgeBase.LogSignalRejection(signal, "Incompatible signal version");
+      return;
+   }
    
    // Check if we can open a new position
    if(!g_riskManager.IsTradeAllowed())
@@ -431,4 +471,35 @@ void LogStatus()
    Print(status);
    
    // In a real implementation, you might want to log this to a file or send it as a notification
+  }
+
+//+------------------------------------------------------------------+
+//| Send heartbeat with system status                                |
+//+------------------------------------------------------------------+
+void SendHeartbeat()
+  {
+   // Create a status message
+   string heartbeatMsg = StringFormat("EscapeEA Live - %s | Trades: %d (%d/%d) | Equity: %.2f | Balance: %.2f | Drawdown: %.2f%% | Memory: %d KB",
+                                    TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                                    g_totalTrades,
+                                    g_successfulTrades,
+                                    g_failedTrades,
+                                    AccountInfoDouble(ACCOUNT_EQUITY),
+                                    AccountInfoDouble(ACCOUNT_BALANCE),
+                                    AccountInfoDouble(ACCOUNT_MARGIN) > 0 ? 
+                                       ((AccountInfoDouble(ACCOUNT_BALANCE) - AccountInfoDouble(ACCOUNT_EQUITY)) / AccountInfoDouble(ACCOUNT_BALANCE)) * 100.0 : 0.0,
+                                    TerminalInfoInteger(TERMINAL_MEMORY_USED) / 1024);
+   
+   // Log to experts log
+   Print("HEARTBEAT: ", heartbeatMsg);
+   
+   // In a real implementation, you might want to send this to a monitoring system or dashboard
+   // For example: SendNotification(heartbeatMsg);
+   
+   // Also log to knowledge base if available
+   if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
+     {
+      string logEntry = StringFormat("HEARTBEAT: %s", heartbeatMsg);
+      g_knowledgeBase.LogIntervalSnapshot("LiveEA", g_symbol, logEntry);
+     }
   }

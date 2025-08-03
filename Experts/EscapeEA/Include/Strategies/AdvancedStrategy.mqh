@@ -142,7 +142,8 @@ bool CAdvancedStrategy::InitializeIndicators()
    m_macdHandle = iMACD(m_symbol, m_timeframe, 12, 26, 9, PRICE_CLOSE);
    
    // Initialize Bollinger Bands
-   m_bollingerHandle = iBands(m_symbol, m_timeframe, 20, 0, 2.0, 0, PRICE_CLOSE);
+   // Using the correct parameters for iBands: symbol, timeframe, period, shift, deviation, applied_price
+   m_bollingerHandle = iBands(m_symbol, m_timeframe, 20, 0, 2.0, PRICE_CLOSE);
    
    // Initialize ATR
    m_atrHandle = iATR(m_symbol, m_timeframe, 14);
@@ -303,7 +304,7 @@ ENUM_TRADE_SIGNAL CAdvancedStrategy::GetSignal(const MqlRates &rates[], int shif
    if(!m_isInitialized || shift >= ArraySize(rates) - 1)
      {
       confidence = 0.0;
-      return SIGNAL_NONE;
+      return SIGNAL_HOLD;
      }
    
    // Calculate confidence score
@@ -315,7 +316,7 @@ ENUM_TRADE_SIGNAL CAdvancedStrategy::GetSignal(const MqlRates &rates[], int shif
    else if(confidence < -0.5)
       return SIGNAL_SELL;
    
-   return SIGNAL_NONE;
+   return SIGNAL_HOLD;
   }
 
 //+------------------------------------------------------------------+
@@ -334,7 +335,8 @@ bool CAdvancedStrategy::Update(const MqlRates &rates[])
    
    // Get signal for the most recent completed bar
    double confidence = 0.0;
-   ENUM_TRADE_SIGNAL signal = GetSignal(rates, 1, confidence);
+   ENUM_TRADE_SIGNAL signal = SIGNAL_HOLD;
+   signal = GetSignal(rates, 1, confidence);
    
    // Here you would typically pass the signal to the trade executor
    // and use the risk manager to determine position sizing
