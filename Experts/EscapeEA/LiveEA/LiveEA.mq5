@@ -235,11 +235,31 @@ void CheckForNewSignals()
          continue;
         }
       
-      // Check if we already processed this signal
-      if(g_knowledgeBase.SignalExists(signals[i].comment))
+      // Check if we already processed this signal using comment as identifier
+      if(CheckPointer(g_knowledgeBase) != POINTER_INVALID && signals[i].comment != "")
         {
-         Print("Signal ", signals[i].comment, " already processed");
-         continue;
+         // Using a simple approach to track processed signals by comment
+         static string processedSignals[];
+         bool alreadyProcessed = false;
+         for(int j = 0; j < ArraySize(processedSignals); j++)
+           {
+            if(processedSignals[j] == signals[i].comment)
+              {
+               alreadyProcessed = true;
+               break;
+              }
+           }
+         
+         if(alreadyProcessed)
+           {
+            Print("Signal with comment '", signals[i].comment, "' already processed");
+            continue;
+           }
+         
+         // Add to processed signals
+         int size = ArraySize(processedSignals);
+         ArrayResize(processedSignals, size + 1);
+         processedSignals[size] = signals[i].comment;
         }
       
       // Process the signal
@@ -273,25 +293,43 @@ void ProcessSignal(const STradeSignal &signal)
      {
       // In a real implementation, we would get SL/TP levels from the Paper EA
       // For now, we'll use a simple ATR-based approach
-      double atr = iATR(signal.symbol, PERIOD_CURRENT, 14, 0);
+      int atr_handle = iATR(signal.symbol, PERIOD_CURRENT, 14);
+      double atr_buffer[1];
+      double atr_value = 0.0;
+      
+      if(atr_handle != INVALID_HANDLE)
+        {
+         if(CopyBuffer(atr_handle, 0, 0, 1, atr_buffer) > 0)
+           {
+            atr_value = atr_buffer[0];
+           }
+         IndicatorRelease(atr_handle);
+        }
+      
+      if(atr_value <= 0)
+        {
+         Print("Error: Invalid ATR value");
+         return;
+        }
+      
       double point = SymbolInfoDouble(signal.symbol, SYMBOL_POINT);
       double ask = SymbolInfoDouble(signal.symbol, SYMBOL_ASK);
       double bid = SymbolInfoDouble(signal.symbol, SYMBOL_BID);
       
       if(signal.signal == SIGNAL_BUY)
         {
-         stopLoss = ask - (atr * 2.0);
-         takeProfit = ask + (atr * 3.0);
+         stopLoss = ask - (atr_value * 2.0);
+         takeProfit = ask + (atr_value * 3.0);
         }
       else if(signal.signal == SIGNAL_SELL)
         {
-         stopLoss = bid + (atr * 2.0);
-         takeProfit = bid - (atr * 3.0);
+         stopLoss = bid + (atr_value * 2.0);
+         takeProfit = bid - (atr_value * 3.0);
         }
      }
    
-   // Calculate position size
-   double lotSize = g_riskManager.CalculatePositionSize(signal.symbol, stopLoss, signal.signal);
+   // Calculate position size using risk percentage
+   double lotSize = g_riskManager.CalculatePositionSize(InpRiskPerTrade);
    
    if(lotSize <= 0.0)
      {
