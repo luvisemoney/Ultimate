@@ -167,44 +167,57 @@ void OnTimer()
 bool InitializeComponents()
   {
    // Initialize signal generator
+   Print("Initializing signal generator...");
    g_signalGenerator = new CSignalGenerator(g_symbol, _Period, 10, 20, 14, 14, 0.7); // Fast MA: 10, Slow MA: 20, RSI: 14, ATR: 14, Min Confidence: 0.7
    if(CheckPointer(g_signalGenerator) == POINTER_INVALID)
      {
-      Print("Failed to create signal generator");
+      Print("Error: Failed to create signal generator");
       return false;
      }
+   Print("Signal generator initialized successfully");
    
    // Initialize risk manager
+   Print("Initializing risk manager...");
    g_riskManager = new CRiskManager(g_symbol, InpRiskPerTrade, 20.0, 10.0, 10.0, InpMaxOpenTrades); // Max drawdown: 20%, Max daily loss: 10%, Max position size: 10 lots
    if(CheckPointer(g_riskManager) == POINTER_INVALID)
      {
-      Print("Failed to create risk manager");
+      Print("Error: Failed to create risk manager");
       return false;
      }
+   Print("Risk manager initialized successfully");
    
    // Initialize trade executor (paper trading only)
+   Print("Initializing trade executor...");
    g_tradeExecutor = new CTradeExecutor(InpMagicNumber, InpEnableLiveTrading, g_symbol, InpSlippage);
    if(CheckPointer(g_tradeExecutor) == POINTER_INVALID)
      {
-      Print("Failed to create trade executor");
+      Print("Error: Failed to create trade executor");
       return false;
      }
+   Print("Trade executor initialized successfully");
    
    // Initialize knowledge base
-   g_knowledgeBase = new CKnowledgeBase("EscapeEA_Paper_" + g_symbol);
+   Print("Initializing knowledge base...");
+   string kbName = "EscapeEA_Paper_" + g_symbol;
+   Print("Creating knowledge base with name: ", kbName);
+   g_knowledgeBase = new CKnowledgeBase(kbName);
    if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
      {
-      Print("Failed to create knowledge base");
+      Print("Error: Failed to create knowledge base");
       return false;
      }
+   Print("Knowledge base initialized successfully");
    
    // Initialize learning engine
+   Print("Initializing learning engine...");
+   Print("Learning window: ", InpLearningWindow, " Min win rate: ", InpMinWinRate, " Learning rate: ", InpLearningRate);
    g_learningEngine = new CLearningEngine(InpLearningWindow, InpMinWinRate, InpLearningRate);
-   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+   if(CheckPointer(g_learningEngine) == POINTER_INVALID)
      {
-      Print("Failed to create learning engine");
+      Print("Error: Failed to create learning engine - memory allocation failed");
       return false;
      }
+   Print("Learning engine initialized successfully");
    
    // Check if learning engine is active
    if(CheckPointer(g_learningEngine) != POINTER_INVALID)
@@ -215,13 +228,19 @@ bool InitializeComponents()
      }
    
    // Initialize signal broadcaster
-   g_signalBroadcaster = new CSignalBroadcaster("ESCAPEEA_PAPER_" + g_symbol + "_" + (string)InpMagicNumber + "_");
+   Print("Initializing signal broadcaster...");
+   string broadcasterPrefix = "ESCAPEEA_PAPER_" + g_symbol + "_" + (string)InpMagicNumber + "_";
+   Print("Signal broadcaster prefix: ", broadcasterPrefix);
+   g_signalBroadcaster = new CSignalBroadcaster(broadcasterPrefix);
    if(CheckPointer(g_signalBroadcaster) == POINTER_INVALID)
      {
-      Print("Failed to create signal broadcaster");
+      Print("Error: Failed to create signal broadcaster");
       return false;
      }
+   Print("Signal broadcaster initialized successfully");
    
+   // All components initialized successfully
+   Print("All components initialized successfully");
    return true;
   }
 
@@ -271,7 +290,8 @@ void CheckTradingSignals()
       return;
    
    // Get current signal
-   STradeSignal signal = g_signalGenerator.GenerateSignal();
+   STradeSignal signal;
+   signal = g_signalGenerator.GenerateSignal();
    if(signal.signal == SIGNAL_HOLD)
       return;
    

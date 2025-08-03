@@ -26,6 +26,10 @@ private:
    bool              SaveToFile(const string filename, const string &data[]);
    bool              LoadFromFile(const string filename, string &data[]);
    
+   // Directory helper methods
+   bool              CreateDirectoryRecursive(const string path, const int maxDepth = 10);
+   bool              DirectoryExists(const string path);
+   
 public:
    // Constructor/destructor
                      CKnowledgeBase(const string filename);
@@ -56,19 +60,51 @@ public:
 //+------------------------------------------------------------------+
 CKnowledgeBase::CKnowledgeBase(const string filename) : m_filename(filename)
   {
+   string basePath;
+   string kbDir;
+   
+   // First, try to use MQL5\Files\Knowledge\EscapeEA\
+   string dataPath = TerminalInfoString(TERMINAL_COMMONDATA_PATH);
+   if(StringLen(dataPath) == 0) {
+      dataPath = TerminalInfoString(TERMINAL_DATA_PATH);
+   }
+   
+   StringTrimRight(dataPath);
+   string sep = "\\";
+   
+   // Ensure path ends with a separator
+   if(StringSubstr(dataPath, StringLen(dataPath)-1) != sep)
+      dataPath += sep;
+   
+   // Try to use MQL5\Files\Knowledge\EscapeEA\
+   kbDir = dataPath + "MQL5" + sep + "Files" + sep + "Knowledge" + sep + "EscapeEA" + sep;
+   
+   // Try to create the directory structure
+   if(!CreateDirectoryRecursive(kbDir))
+   {
+      // If that fails, try using just the terminal's common data path
+      kbDir = dataPath + "EscapeEA" + sep;
+      if(!CreateDirectoryRecursive(kbDir))
+      {
+         // Last resort: use the terminal's data path directly
+         kbDir = dataPath;
+         Print("Warning: Using terminal data directory as fallback: ", kbDir);
+      }
+   }
+   
    // Set up file paths
-   string basePath = StringFormat("%s%s", KNOWLEDGE_DIRECTORY, m_filename);
+   basePath = kbDir + m_filename;
    m_tradeHistoryFile = basePath + "_trades.csv";
    m_modelFile = basePath + "_model.bin";
    
-   // Create knowledge base directory if it doesn't exist
-   string dirPath = StringFormat("%s%s", TerminalInfoString(TERMINAL_DATA_PATH), KNOWLEDGE_DIRECTORY);
-   if(!FolderCreate(dirPath, FILE_COMMON))
-     {
-      int error = GetLastError();
-      if(error != ERR_FILE_IS_DIRECTORY) // Ignore if directory already exists
-         Print("Failed to create knowledge base directory: ", error);
-     }
+   Print("Knowledge base files will be stored in: ", kbDir);
+   
+   // Verify we can write to the directory
+   if(!DirectoryExists(kbDir))
+   {
+      Print("Error: Cannot access or create directory: ", kbDir);
+      return;
+   }
   }
 
 //+------------------------------------------------------------------+
@@ -76,7 +112,42 @@ CKnowledgeBase::CKnowledgeBase(const string filename) : m_filename(filename)
 //+------------------------------------------------------------------+
 string CKnowledgeBase::GetFilePath(const string filename)
   {
-   return StringFormat("%s%s%s", TerminalInfoString(TERMINAL_DATA_PATH), KNOWLEDGE_DIRECTORY, filename);
+   // Check if the filename already contains an absolute path
+   if (StringLen(filename) > 2 && 
+       (StringSubstr(filename, 1, 2) == ":\\" || StringSubstr(filename, 0, 2) == "\\\\"))
+   {
+      // It's already an absolute path, use it as is
+      return filename;
+   }
+   
+   // Use the MQL5/Files/Knowledge/EscapeEA directory
+   string dataPath = TerminalInfoString(TERMINAL_DATA_PATH);
+   StringTrimRight(dataPath);
+   
+   // Ensure we're using the correct path separator
+   string sep = "\\";
+   if (StringFind(dataPath, "/") >= 0)
+      sep = "/";
+      
+   // Make sure the path ends with a separator
+   if (StringSubstr(dataPath, StringLen(dataPath)-1) != sep)
+      dataPath += sep;
+      
+   // Build the full path to MQL5/Files/Knowledge/EscapeEA/filename
+   string fullPath = dataPath + "MQL5" + sep + "Files" + sep + "Knowledge" + sep + "EscapeEA";
+   
+   // Create the directory if it doesn't exist
+   if (!DirectoryExists(fullPath))
+   {
+      if (!CreateDirectoryRecursive(fullPath))
+      {
+         Print("Warning: Failed to create directory: ", fullPath);
+         // Fall back to terminal common folder if we can't create the directory
+         return TerminalInfoString(TERMINAL_COMMONDATA_PATH) + sep + filename;
+      }
+   }
+   
+   return fullPath + sep + filename;
   }
 
 //+------------------------------------------------------------------+
@@ -514,6 +585,148 @@ bool CKnowledgeBase::Clear()
         }
    
    return success;
+  }
+
+//+------------------------------------------------------------------+
+//| Helper method to create a directory and all parent directories   |
+//| maxDepth - Maximum number of recursive calls to prevent stack overflow
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::CreateDirectoryRecursive(const string path, const int maxDepth = 10)
+  {
+   // Safety check - prevent infinite recursion
+   if(maxDepth <= 0)
+   {
+      Print("CreateDirectoryRecursive: Maximum recursion depth reached for path: ", path);
+      return false;
+   }
+   
+   // Check for empty path
+   if(StringLen(path) == 0) {
+      Print("CreateDirectoryRecursive: Empty path provided");
+      return false;
+   }
+   
+   // Use the path as-is, but ensure it's not empty
+   string normalizedPath = path;
+   if(StringLen(normalizedPath) == 0) {
+      return false;
+   }
+   
+   // Try to create the directory directly
+   if(FolderCreate(normalizedPath, FILE_COMMON)) {
+      return true;
+   }
+   
+   // If we can't create it, try to check if it exists by creating a test file
+   string testFile = normalizedPath + "/testfile.tmp";
+   int handle = FileOpen(testFile, FILE_WRITE|FILE_TXT|FILE_COMMON);
+   if(handle != INVALID_HANDLE) {
+      FileClose(handle);
+      FileDelete(testFile, FILE_COMMON);
+      return true;
+   }
+   
+   // If we get here, we couldn't create or write to the directory
+   // Check if directory already exists
+   if(DirectoryExists(normalizedPath)) {
+      return true;
+   }
+   
+   // Try to create the directory directly first (in case all parent directories exist)
+   if(FolderCreate(normalizedPath, FILE_COMMON)) {
+      Print("Successfully created directory: ", normalizedPath);
+      return true;
+   }
+   
+   // If we get here, we need to create parent directories first
+   string parentPath = "";
+   int lastBackslash = StringFind(normalizedPath, "\\", 0);
+   
+   // If no backslash found, it's a relative path with a single component
+   if(lastBackslash == -1) {
+      // Try to create the directory in the current working directory
+      if(FolderCreate(".\\" + normalizedPath, FILE_COMMON)) {
+         Print("Created directory: ", ".\\" + normalizedPath);
+         return true;
+      }
+      string errorMsg = "Failed to create directory: \\" + normalizedPath + ", Error: " + IntegerToString(GetLastError());
+      Print(errorMsg);
+      return false;
+   }
+   
+   // Extract the parent directory path
+   parentPath = StringSubstr(normalizedPath, 0, lastBackslash);
+   
+   // Recursively create the parent directory
+   if(!CreateDirectoryRecursive(parentPath, maxDepth - 1)) {
+      return false;
+   }
+   
+   // Now try to create the directory again
+   if(FolderCreate(normalizedPath, FILE_COMMON)) {
+      Print("Created directory (after creating parent): ", normalizedPath);
+      return true;
+   }
+   
+   // If we still can't create it, check if it exists now (race condition)
+   if(DirectoryExists(normalizedPath)) {
+      return true;
+   }
+   
+   Print("Failed to create directory after creating parent: ", normalizedPath, " Error: ", GetLastError());
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Check if a directory exists and is accessible                    |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::DirectoryExists(const string path)
+  {
+   // Check for empty path
+   if(StringLen(path) == 0) {
+      return false;
+   }
+   
+   // Normalize the path
+   string normalizedPath = path;
+   StringReplace(normalizedPath, "//", "\\");
+   StringReplace(normalizedPath, "/", "\\");
+   
+   // Remove trailing backslash if present
+   if(StringSubstr(normalizedPath, StringLen(normalizedPath)-1) == "\\") {
+      normalizedPath = StringSubstr(normalizedPath, 0, StringLen(normalizedPath)-1);
+   }
+   
+   // Try to create the directory with read-only access (will fail if it exists)
+   if(FolderCreate(normalizedPath, FILE_COMMON|FILE_READ)) {
+      // Directory was created, so it didn't exist before
+      return true;
+   }
+   
+   // If we get here, the directory might exist or we might not have permission
+   // Try to create a test file to check directory writability
+   string testFile = normalizedPath + "\\test_" + IntegerToString(GetTickCount()) + ".tmp";
+   int fileHandle = FileOpen(testFile, FILE_WRITE|FILE_TXT|FILE_COMMON);
+   
+   if(fileHandle != INVALID_HANDLE) {
+      FileClose(fileHandle);
+      FileDelete(testFile, FILE_COMMON);
+      return true; // Directory exists and is writable
+   }
+   
+   // If we can't create a file, try to create the directory
+   if(FolderCreate(normalizedPath, FILE_COMMON)) {
+      return true; // Directory was created successfully
+   }
+   
+   // Check if it's because the directory exists but is read-only
+   if(GetLastError() == ERR_CANNOT_OPEN_FILE || GetLastError() == ERR_INVALID_PARAMETER)
+   {
+      return true;
+   }
+   
+   // If we get here, we couldn't create or write to the directory
+   return false;
   }
 
 //+------------------------------------------------------------------+
