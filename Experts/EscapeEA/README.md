@@ -1,60 +1,64 @@
 # EscapeEA - Dual-Expert Trading System
 
 ## Overview
-EscapeEA is an advanced dual-Expert Advisor system for MetaTrader 5, featuring a Paper Trader EA that operates in a demo environment and a Live Trader EA that executes real trades. The system employs a sophisticated learning mechanism where both EAs share knowledge and learn from each other's performance.
+EscapeEA is an advanced dual-Expert Advisor system for MetaTrader 5, featuring a Paper Trader EA that operates in a demo environment and a Live Trader EA that executes real trades. The system employs a sophisticated time-based learning mechanism where both EAs share knowledge and adapt based on signal quality, trade outcomes, and market conditions.
 
 ## System Architecture
 
 ```mermaid
 graph TD
     subgraph Paper Environment
-        A[Paper EA] -->|High-Confidence Signals| B[Live EA]
-        A -->|Trade Outcomes| C[Shared Knowledge Base]
+        A[Paper EA] -->|Top Signals Every Interval| C[Shared Knowledge Base]
+        A -->|Trade Outcomes| C
     end
-    
+
     subgraph Live Environment
+        C -->|Signal Evaluation| B[Live EA]
         B -->|Execute Trades| D[Broker]
         B -->|Trade Outcomes| C
     end
-    
+
     C -->|Learning Updates| A
     C -->|Learning Updates| B
-    
+
     A & B --> E[Chart Display]
-    
+
     style A fill:#e1f5fe,stroke:#01579b
-    style B fill:#e8f5e9,stroke#2e7d32
-    style C fill:#f3e5f5,stroke#6a1b9a
+    style B fill:#e8f5e9,stroke:#2e7d32
+    style C fill:#f3e5f5,stroke:#6a1b9a
 ```
 
 ## Key Features
 
 ### Paper EA (Demo Environment)
-- **Signal Generation**: Advanced technical analysis with confidence scoring
-- **Virtual Trading**: Realistic trade simulation with virtual balance
-- **Performance Validation**: Must complete minimum 20 trades before evaluation
-- **Signal Broadcasting**: Only sends signals after achieving ≥80% win rate in last 20 trades
-- **Continuous Monitoring**: Re-evaluates performance every 20 trades
-- **Multiple Positions**: Can maintain multiple open positions simultaneously
+- **Time-Based Evaluation**: Evaluates performance every fixed time interval (e.g., 15 min)
+- **Minimum Trades Per Interval**: Requires at least 10 trades per interval to evaluate signal set
+- **Signal Generation**: Uses ML-enhanced confidence scoring, profitability, and risk-adjusted return
+- **Signal Broadcasting**: Sends up to 10 top-ranked signals to shared knowledge base
+- **Persistent Trading**: Maintains trading activity even if signal threshold is not met
+- **Retry Queue**: Ensures robust signal delivery across sessions
+- **Multiple Positions**: Supports multiple concurrent virtual trades
 
 ### Live EA (Live Account)
-- **Signal Validation**: Verifies incoming signals from Paper EA
-- **Risk Management**: Implements position sizing and risk controls
-- **Live Execution**: Handles real market order execution
-- **Multiple Positions**: Can maintain multiple open positions simultaneously
-- **Performance Tracking**: Monitors and logs all trade outcomes
-- **Trade Verification**: Confirms Paper EA maintains required performance
+- **Autonomous Signal Evaluation**: Reevaluates incoming Paper EA signals using the same logic
+- **Risk Management**: Full integration of stop-loss, max exposure, and drawdown control
+- **Signal Rejection/Override**: May reject or defer Paper EA signals based on regime, exposure, or recalibrated confidence
+- **Feedback Loop**: Returns trade execution metadata to shared knowledge base
+- **Fault Tolerance**: Restarts from last interval using state store and retry queue
 
 ### Shared Knowledge System
-- **Bidirectional Learning**: Both EAs learn from each other's trades
-- **Persistent Storage**: Maintains trade history and learning parameters
-- **Performance Analytics**: Trades are analyzed for continuous improvement
+- **Bidirectional Learning**: Both EAs continuously learn from trade outcomes and signal quality
+- **Market Regime Classification**: Infers volatility regimes for adaptive strategy scoring
+- **Signal Metadata Storage**: Includes timestamps, expiration, confidence source, and regime tags
+- **Interval Snapshot Logs**: Config + metrics recorded at every evaluation tick
+- **Persistent State Storage**: Tracks evaluation timestamps, signal IDs, trade logs
 
 ## System Requirements
 - **MetaTrader 5** build 2500+
 - **Demo Account**: For Paper EA (recommended $10,000 virtual balance)
 - **Live Account**: For Live EA (minimum $1,000 recommended)
 - **VPS**: Strongly recommended for 24/7 operation
+- **Network Shared Folder**: Required for shared knowledge base
 - **Disk Space**: Minimum 100MB for logs and knowledge base
 
 ## Installation
@@ -94,126 +98,106 @@ MQL5/
 ```
 MQL5/
 ├── Experts/
-│   ├── EscapeEA/                   # Main project directory
-│   │   ├── PaperEA/                # Paper Trading EA
-│   │   │   ├── PaperEA.mq5         # Main EA file
-│   │   │   ├── PaperEA.mqh         # Core paper trading logic
-│   │   │   └── PaperEA_UI.mqh      # UI components
-│   │   │
-│   │   ├── LiveEA/                 # Live Trading EA
-│   │   │   ├── LiveEA.mq5          # Main EA file
-│   │   │   ├── LiveEA.mqh          # Core live trading logic
-│   │   │   └── LiveEA_UI.mqh       # UI components
-│   │   │
-│   │   └── Include/                # Shared include files
-│   │       ├── Common/             # Common definitions
-│   │       │   ├── Enums.mqh       # Enumerations
-│   │       │   ├── Structs.mqh     # Data structures
-│   │       │   └── Constants.mqh   # Global constants
-│   │       │
-│   │       ├── Core/               # Core trading components
-│   │       │   ├── SignalGenerator.mqh  # Signal generation
-│   │       │   ├── RiskManager.mqh      # Risk management
-│   │       │   └── TradeExecutor.mqh    # Order execution
-│   │       │
-│   │       ├── Learning/           # Learning components
-│   │       │   ├── LearningEngine.mqh   # ML logic
-│   │       │   └── KnowledgeBase.mqh    # Persistent storage
-│   │       │
-│   │       └── Communication/      # Inter-EA communication
-│   │           ├── SignalBroadcaster.mqh  # Signal sending
-│   │           └── SignalReceiver.mqh     # Signal handling
-│   │
+│   ├── EscapeEA/
+│   │   ├── PaperEA/
+│   │   │   ├── PaperEA.mq5
+│   │   │   ├── PaperEA.mqh
+│   │   │   └── PaperEA_UI.mqh
+│   │   ├── LiveEA/
+│   │   │   ├── LiveEA.mq5
+│   │   │   ├── LiveEA.mqh
+│   │   │   └── LiveEA_UI.mqh
+│   │   └── Include/
+│   │       ├── Common/
+│   │       ├── Core/
+│   │       ├── Learning/
+│   │       ├── Communication/
+│   │       └── Retry/
 │   └── (other EAs)
-│
-└── (other MQL5 directories)
+└── shared_kb/              # Network-shared knowledge base mount
 ```
-
-### Data Storage
-- **Logs**: `MQL5/Files/Logs/EscapeEA/`
-- **Knowledge Base**: `MQL5/Files/Knowledge/EscapeEA/`
-- **Configuration**: `MQL5/Profiles/`
 
 ## Configuration
 
 ### Common Parameters (Both EAs)
 ```mql5
 // Learning Parameters
-input int      LearningWindow = 20;     // Trades to analyze for learning
-input double   MinConfidence = 0.8;     // Minimum confidence to act (0.0-1.0)
-input int      MaxTradesPerDay = 5;     // Maximum trades per 24h
+input int      EvaluationIntervalMinutes = 15; // Interval in minutes
+input int      MinTradesPerInterval = 10;      // Required trades per interval
+input string   ConfidenceAdjustMode = "online"; // Learning mode: online or batch
+input double   MinConfidence = 0.8;            // Minimum confidence to act (0.0-1.0)
 
 // Risk Parameters
-input double   MaxRiskPerTrade = 1.0;   // % of balance to risk per trade
-input double   DailyDrawdownLimit = 5.0; // Max daily drawdown %
-input int      MaxOpenTrades = 3;       // Maximum concurrent positions
+input double   MaxRiskPerTrade = 1.0;          // % of balance to risk per trade
+input double   DailyDrawdownLimit = 5.0;       // Max daily drawdown %
+input int      MaxOpenTrades = 3;              // Maximum concurrent positions
 
 // Display
-input color    PanelColor = clrDodgerBlue;  // Panel color
-input int      FontSize = 8;               // Chart font size
+input color    PanelColor = clrDodgerBlue;
+input int      FontSize = 8;
 ```
 
 ### Paper EA Specific
 ```mql5
-// Performance Requirements
-input int      MinTradesForEvaluation = 20;  // Minimum trades before evaluation
-input double   RequiredWinRate = 80.0;       // Minimum win rate % to send signals
-input int      EvaluationWindow = 20;        // Trades to analyze for performance
-input bool     EnableSignals = true;         // Enable signal broadcasting
-input int      MaxOpenPositions = 5;         // Maximum concurrent positions
-input double   VirtualBalance = 10000.0;     // Starting virtual balance
-input int      SignalExpiryBars = 5;         // Bars before signal expires
+input bool     EnableSignals = true;
+input int      MaxSignalsPerInterval = 10;     // Max signals broadcasted
+input double   VirtualBalance = 10000.0;
+input int      SignalExpiryBars = 5;
 ```
 
 ### Live EA Specific
 ```mql5
-// Live Trading
-input bool     AcceptPaperSignals = true;  // Accept signals from Paper EA
-input double   MaxPositionSize = 10.0;     // Maximum position size in lots
-input bool     UseHardStops = true;        // Enforce stop loss/take profit
+input bool     AcceptPaperSignals = true;
+input double   MaxPositionSize = 10.0;
+input bool     UseHardStops = true;
 ```
 
 ## Usage Guide
 
 ### Initial Setup
-1. **Paper EA First**: Start with Paper EA in demo account
-2. **Observe**: Let it generate signals and build confidence
-3. **Deploy Live**: Once stable, deploy Live EA in live account
-4. **Monitor**: Watch both EAs' performance on their respective charts
+1. **Start Paper EA**: Attach in demo environment with logging enabled
+2. **Deploy Live EA**: Attach in separate MT5 instance on live account
+3. **Shared Storage**: Point both to same `/shared_kb/` directory (network-mount)
+4. **Run via CLI**: `python main.py --mode=paper --terminal=/path/to/mt5`
+5. **Monitor Logs**: Check logs, retry queues, and interval snapshots
 
-### Reading the Display
-- **Status Panel**: Shows current mode, balance, and open positions
-- **Signal Indicators**: Visual markers for buy/sell signals
-- **Performance Metrics**: Win rate, profit factor, drawdown
-- **Connection Status**: Shows link between Paper and Live EAs
+### Evaluation Logging
+- Config and environment are logged at every evaluation interval
+- Snapshots saved to `/logs/config_snapshots/`
+- Interval results in `/logs/interval_logs/`
+
+### Retry & Recovery
+- Paper EA tracks last evaluated interval
+- Retry queue reattempts signal export failures
+- Live EA replays pending signals not yet processed
 
 ## Risk Management
 
 ### Paper EA
 - Virtual balance protection
-- Maximum daily virtual drawdown: 10%
-- Position sizing based on virtual equity
+- Retry queue for missed signals
+- Fault-tolerant interval state tracking
 
 ### Live EA
-- Real-money protection
-- Maximum daily drawdown: 5%
-- Position sizing based on actual balance
-- Automatic stop-out protection
+- Confidence-based filtering and position validation
+- Real-money risk thresholds enforced
+- Signal rejection with reason logging
 
 ## Performance Monitoring
 
-### Log Files
+### Logs
 - **Location**: `MQL5/Files/Logs/EscapeEA/`
 - **Rotation**: Daily files, max 10MB each
 - **Retention**: 30 days
 
 ### Knowledge Base
-- **Location**: `MQL5/Files/Knowledge/EscapeEA/`
+- **Location**: `shared_kb/`
 - **Contents**:
-  - Trade history
-  - Learning parameters
-  - Market condition snapshots
-  - Performance metrics
+  - Signal history with metadata
+  - Execution feedback and PnL
+  - Confidence evolution logs
+  - Regime classifications
+  - Trade conflict + rejection reasons
 
 ## Support
 
@@ -225,6 +209,15 @@ input bool     UseHardStops = true;        // Enforce stop loss/take profit
 - **Email**: support@escapeea.com
 - **Discord**: [Join our community](https://discord.gg/escapeea)
 - **Documentation**: [EscapeEA Docs](https://docs.escapeea.com)
+
+## License
+Proprietary - All rights reserved 2025 EscapeEA
+
+## Version History
+- **v2.1** (2025-08-03): Time-based evaluation, ML scoring, retry system
+- **v2.0** (2025-08-01): Dual-EA architecture with shared learning
+- **v1.0** (2025-07-15): Initial release with single EA
+
 
 ## License
 Proprietary - All rights reserved 2025 EscapeEA
