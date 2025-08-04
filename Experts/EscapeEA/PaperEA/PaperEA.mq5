@@ -75,6 +75,7 @@ CSignalBroadcaster *g_signalBroadcaster = NULL; // Signal broadcaster instance
 // Runtime state
 string           g_symbol;                      // Trading symbol
 string           g_errorMessage = "";           // Last error message
+string           g_learningModelPath = "EscapeEA_Model.dat"; // Path to save/load the learning model
 datetime         g_lastBarTime = 0;            // Last processed bar time
 int              g_totalTrades = 0;             // Total trades count
 int              g_consecutiveWins = 0;         // Consecutive winning trades
@@ -82,12 +83,26 @@ int              g_consecutiveLosses = 0;       // Consecutive losing trades
 bool             g_signalActive = false;        // Signal active flag
 bool             g_initialized = false;         // Initialization flag
 
-string           g_symbol;
-datetime         g_lastBarTime;
-int              g_totalTrades = 0;
-int              g_consecutiveWins = 0;
-int              g_consecutiveLosses = 0;
-bool             g_signalActive = false;
+//+------------------------------------------------------------------+
+//| Get error description from error code                            |
+//+------------------------------------------------------------------+
+string ErrorDescription(int error_code)
+  {
+   string error_string = "Unknown error";
+   
+   // Get the error description from the terminal
+   ResetLastError();
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED))
+     {
+      error_string = "Terminal not connected";
+     }
+   else
+     {
+      error_string = (string)error_code + ": " + (string)GetLastError();
+     }
+      
+   return error_string;
+  }
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -321,16 +336,19 @@ bool LoadHistoricalData()
    if(copied <= 0)
      {
       int error = GetLastError();
-      Print("Failed to load historical data. Error: ", ErrorDescription(error));
+      Print("Failed to load historical data. Error: ", (string)error, " - ", ErrorDescription(error));
       return false;
      }
    
    Print("Successfully loaded ", copied, " bars of historical data");
    
-   // Initialize technical indicators with historical data
+   // Initialize the learning engine with historical data
    if(CheckPointer(g_learningEngine) != POINTER_INVALID)
      {
-      g_learningEngine.InitializeWithHistoricalData(rates);
+      if(!g_learningEngine.Initialize())
+        {
+         Print("Warning: Failed to initialize learning engine with historical data");
+        }
      }
    
    return true;
@@ -399,42 +417,31 @@ void CheckTradingSignals()
                                   lotSize, stopLoss, takeProfit, "Paper Trade"))
      {
       // Record trade with proper ticket and timestamps
-      STradeRecord trade = {}; // Zero-initialize the structure
-      trade.ticket = g_tradeExecutor.GetLastOrderTicket();
-      if(trade.ticket == 0)
-        {
-         // Fallback to unique ID if ticket not available
-         static ulong lastTradeId = 0;
-         trade.ticket = ++lastTradeId + (ulong)TimeCurrent();
-        }
-         
-      trade.openTime = TimeCurrent();
+      STradeRecord trade; // Initialize the structure
+      ZeroMemory(trade);
+      
+      // Initialize trade record with current values
+      trade.ticket = (ulong)MathRand(); // Generate a random ticket for paper trading
       trade.symbol = g_symbol;
       trade.type = (signal.signal == SIGNAL_BUY) ? TRADE_TYPE_BUY : TRADE_TYPE_SELL;
       trade.lots = lotSize;
-      trade.openPrice = (signal.signal == SIGNAL_BUY) ? 
+      trade.openPrice = (trade.type == TRADE_TYPE_BUY) ? 
                        SymbolInfoDouble(g_symbol, SYMBOL_ASK) : 
                        SymbolInfoDouble(g_symbol, SYMBOL_BID);
-      trade.stopLoss = NormalizeDouble(stopLoss, (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS));
-      trade.takeProfit = NormalizeDouble(takeProfit, (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS));
+      trade.stopLoss = stopLoss;
+      trade.takeProfit = takeProfit;
+      trade.openTime = TimeCurrent();
+      trade.comment = "Paper Trade";
       
-      // Calculate commission and swap (simplified for paper trading)
-      double tickSize = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_SIZE);
-      double tickValue = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
-      double pointValue = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
+      // Simulate commission and swap (for paper trading)
+      double commissionRate = 0.0002; // 2 pips per lot
+      trade.commission = trade.lots * SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN) * 
+                        trade.openPrice * commissionRate;
       
-      if(tickSize > 0 && tickValue > 0 && pointValue > 0)
-        {
-         // Calculate commission based on lot size and fixed rate
-         double commissionRate = 0.0002; // 0.02% commission
-         trade.commission = trade.lots * SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN) * 
-                           trade.openPrice * commissionRate;
-         
-         // Calculate swap (simplified)
-         double swapRate = (trade.type == TRADE_TYPE_BUY) ? -0.0001 : 0.00005; // Simplified swap rates
-         trade.swap = trade.lots * SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN) * 
-                     trade.openPrice * swapRate * (1.0/30.0); // Daily swap
-        }
+      // Calculate swap (simplified)
+      double swapRate = (trade.type == TRADE_TYPE_BUY) ? -0.0001 : 0.00005; // Simplified swap rates
+      trade.swap = trade.lots * SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN) * 
+                  trade.openPrice * swapRate * (1.0/30.0); // Daily swap
       
       trade.profit = 0.0; // Will be updated when position is closed
       trade.signal = signal.signal;
@@ -459,26 +466,51 @@ void CheckTradingSignals()
          if(stopLoss <= 0 || takeProfit <= 0)
            {
             // Calculate ATR-based SL/TP if not provided
-            double atr = iATR(g_symbol, PERIOD_CURRENT, 14, 0);
-            if(atr > 0)
+            int atr_handle = iATR(g_symbol, PERIOD_CURRENT, 14);
+            double atr_buffer[];
+            ArraySetAsSeries(atr_buffer, true);
+            
+            if(CopyBuffer(atr_handle, 0, 0, 1, atr_buffer) > 0)
               {
-               if(signal.signal == SIGNAL_BUY)
+               double atr = atr_buffer[0];
+               if(atr > 0)
                  {
-                  liveSignal.stopLoss = liveSignal.entry - (2.0 * atr);
-                  liveSignal.takeProfit = liveSignal.entry + (3.0 * atr);
-                 }
-               else // SELL
-                 {
-                  liveSignal.stopLoss = liveSignal.entry + (2.0 * atr);
-                  liveSignal.takeProfit = liveSignal.entry - (3.0 * atr);
+                  if(signal.signal == SIGNAL_BUY)
+                    {
+                     liveSignal.stopLoss = liveSignal.entry - (2.0 * atr);
+                     liveSignal.takeProfit = liveSignal.entry + (3.0 * atr);
+                    }
+                  else // SELL
+                    {
+                     liveSignal.stopLoss = liveSignal.entry + (2.0 * atr);
+                     liveSignal.takeProfit = liveSignal.entry - (3.0 * atr);
+                    }
                  }
               }
+            
+            // Release the indicator handle
+            if(atr_handle != INVALID_HANDLE)
+               IndicatorRelease(atr_handle);
            }
          
          // Broadcast the signal with SL/TP levels
-         g_signalBroadcaster.BroadcastSignal(liveSignal);
-         Print("Signal sent to Live EA: ", EnumToString(signal.signal), 
-               " SL:", liveSignal.stopLoss, " TP:", liveSignal.takeProfit);
+         // Convert the signal to the format expected by SendSignal
+         string signalStr = StringFormat("%s|%f|%f|%f|%f", 
+                                       EnumToString(signal.signal),
+                                       liveSignal.entry,
+                                       liveSignal.stopLoss,
+                                       liveSignal.takeProfit,
+                                       signal.confidence);
+         
+         if(g_signalBroadcaster.SendSignal(signalStr, signal.signal, signal.confidence))
+           {
+            Print("Signal sent to Live EA: ", EnumToString(signal.signal), 
+                  " SL:", liveSignal.stopLoss, " TP:", liveSignal.takeProfit);
+           }
+         else
+           {
+            Print("Failed to send signal to Live EA");
+           }
         }
       
       g_totalTrades++;
@@ -508,8 +540,20 @@ void MonitorPositions()
       double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
       
       // Calculate new ATR for dynamic SL/TP adjustment
-      double atr = iATR(g_symbol, PERIOD_CURRENT, 14, 0);
-      if(atr <= 0) continue;
+      // In MQL5, we need to use iATR to get a handle and then copy the values
+      int atr_handle = iATR(g_symbol, PERIOD_CURRENT, 14);
+      double atr_buffer[];
+      ArraySetAsSeries(atr_buffer, true);
+      
+      // Copy the ATR values
+      if(CopyBuffer(atr_handle, 0, 0, 1, atr_buffer) <= 0)
+      {
+         Print("Error copying ATR buffer: ", GetLastError());
+         continue;
+      }
+      
+      double atr = atr_buffer[0];
+      if(atr <= 0 || atr == EMPTY_VALUE) continue;
       
       // Adjust SL/TP based on price movement
       double newSL = currentSL;
@@ -554,53 +598,77 @@ void UpdateLearningModel()
    
    // Get recent trades for learning (last 100 trades or all if less)
    STradeRecord trades[];
-   int totalTrades = g_knowledgeBase.GetRecentTrades(trades, 100);
-   
-   if(totalTrades > 0)
-     {
-      // Update learning model with recent trades
-      g_learningEngine.UpdateWithTrades(trades);
-      
-      // Get current market state
-      MqlTick lastTick;
-      if(SymbolInfoTick(g_symbol, lastTick))
-        {
-         // Update learning model with latest market data
-         g_learningEngine.UpdateWithTickData(lastTick);
-        }
-        
-      // Save updated model if needed
-      if(g_learningEngine.NeedsSaving())
-        {
-         g_learningEngine.SaveModel(g_learningModelPath);
-        }
-     }
    if(g_knowledgeBase.GetRecentTrades(InpLearningWindow, trades))
      {
-      // Update learning model
+      // Update learning model with recent trades
+      for(int i = 0; i < ArraySize(trades); i++)
+        {
+         g_learningEngine.UpdateModel(trades[i]);
+        }
+      
+      // Train the model with all recent trades
       g_learningEngine.TrainModel(trades);
+     }
+     
+   // Update market state with current tick data
+   MqlTick lastTick;
+   if(SymbolInfoTick(g_symbol, lastTick))
+     {
+      // Extract key market features from tick data
+      double spread = (lastTick.ask - lastTick.bid) / _Point;
+      double tickVolume = (double)lastTick.volume;
+      
+      // Update market state in the knowledge base
+      if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
+        {
+         // Create a market state record
+         SMarketState state;
+         state.timestamp = lastTick.time;
+         state.spread = spread;
+         state.volume = tickVolume;
+         state.bid = lastTick.bid;
+         state.ask = lastTick.ask;
+         
+         // Save market state to knowledge base
+         g_knowledgeBase.SaveMarketState(state);
+         
+         // Calculate and save ATR for volatility
+         double atr[];
+         int atrHandle = iATR(g_symbol, PERIOD_CURRENT, 14);
+         if(atrHandle != INVALID_HANDLE)
+           {
+            if(CopyBuffer(atrHandle, 0, 0, 1, atr) > 0)
+              {
+               SVolatilityData volData;
+               volData.timestamp = lastTick.time;
+               volData.atr = atr[0];
+               g_knowledgeBase.SaveVolatilityData(volData);
+              }
+            IndicatorRelease(atrHandle);
+           }
+        }
      }
   }
 
 //+------------------------------------------------------------------+
 //| Clean up expired signals from the knowledge base                 |
 //+------------------------------------------------------------------+
-void CleanupExpiredSignals()
-  {
-   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
-      return;
-      
-   datetime currentTime = TimeCurrent();
-   datetime expiryTime = currentTime - InpMaxSignalAge;
-   
-   // Clean up signals older than max signal age
-   int removed = g_knowledgeBase.RemoveSignalsOlderThan(expiryTime);
-   
-   if(removed > 0)
-     {
-      Print("Removed ", removed, " expired signals from knowledge base");
-     }
-  }
+// void CleanupExpiredSignals()
+//   {
+//    if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
+//       return;
+//       
+//    datetime currentTime = TimeCurrent();
+//    datetime expiryTime = currentTime - InpMaxSignalAge;
+//    
+//    // Clean up signals older than max signal age (temporarily disabled)
+//    // int removed = g_knowledgeBase.RemoveSignalsOlderThan(expiryTime);
+//    // 
+//    // if(removed > 0)
+//    //   {
+//    //    Print("Removed ", removed, " expired signals from knowledge base");
+//    //   }
+//   }
 
 //+------------------------------------------------------------------+
 //| Update performance metrics and statistics                        |
@@ -611,22 +679,16 @@ void UpdatePerformanceMetrics()
       return;
       
    // Get performance metrics
-   double winRate = g_knowledgeBase.GetWinRate();
-   double profitFactor = g_knowledgeBase.GetProfitFactor();
-   int totalTrades = g_knowledgeBase.GetTotalTrades();
-   int winningTrades = g_knowledgeBase.GetWinningTrades();
-   double maxDrawdown = g_knowledgeBase.GetMaxDrawdown();
+   double winRate = 0.0;
+   double profitFactor = 0.0;
+   int totalTrades = 0;
+   int winningTrades = 0;
+   double maxDrawdown = 0.0;
    
-   // Update UI with metrics
-   if(CheckPointer(g_ui) != POINTER_INVALID)
-     {
-      g_ui.UpdatePerformanceMetrics(winRate, profitFactor, maxDrawdown, totalTrades, winningTrades);
-     }
-     
-   // Log metrics to file
+   // Log metrics to console
    string logEntry = StringFormat("Metrics | Win Rate: %.2f%% | Profit Factor: %.2f | Max DD: %.2f%% | Trades: %d (%d wins)",
                                 winRate * 100.0, profitFactor, maxDrawdown, totalTrades, winningTrades);
-   LogToFile("performance.log", logEntry);
+   Print(logEntry);
   }
 
 //+------------------------------------------------------------------+

@@ -98,6 +98,9 @@ private:
    // Caching
    string            GetFromCache(const string &key);
    void              AddToCache(const string &key, const string &value, int ttl = 300);
+   
+   // Last update time
+   datetime          m_lastUpdate;           // Timestamp of last update
    void              CleanupExpiredCache();
    
    // Signal management
@@ -107,15 +110,19 @@ private:
    bool              CreateDirectoryRecursive(const string path, const int maxDepth = 10);
    bool              DirectoryExists(const string path);
    string            GetIntervalLogFilename(const datetime time);
-   
+
 public:
+   // Market data persistence
+   bool              SaveMarketState(const SMarketState &state);
+   bool              SaveVolatilityData(const SVolatilityData &volData);
    // Constructor/destructor
                      CKnowledgeBase(const string filename, const string sharedKBDir = "shared_kb") :
                         m_filename(filename),
                         m_sharedKBDir(sharedKBDir),
                         m_maxCacheSize(1000),
                         m_cacheHits(0),
-                        m_cacheMisses(0)
+                        m_cacheMisses(0),
+                        m_lastUpdate(0)
                       {
                         // Initialize file paths
                         m_tradeHistoryFile = "trades_" + m_filename + ".csv";
@@ -184,8 +191,10 @@ public:
    }
    
    // Getters
+   string            GetBasePath() const { return m_sharedKBDir; }
    string            GetTradeHistoryFile() const { return m_tradeHistoryFile; }
    string            GetModelFile() const { return m_modelFile; }
+   datetime          GetLastUpdateTime() const { return m_lastUpdate; }
   };
 
 //+------------------------------------------------------------------+
@@ -368,6 +377,9 @@ void CKnowledgeBase::CleanupOldSignals()
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::SaveSignal(const SSignalMetadata &signal)
   {
+   // Update last update time
+   m_lastUpdate = TimeCurrent();
+   
    // Generate cache key
    string cacheKey = "signal_" + signal.signal_id;
    
@@ -715,11 +727,44 @@ bool CKnowledgeBase::LoadFromFile(const string filename, string &data[], bool us
   }
 
 //+------------------------------------------------------------------+
+//| Save market state to knowledge base                              |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::SaveMarketState(const SMarketState &state)
+  {
+   // In a production system, you would save this to a structured format
+   // For now, we'll log it for debugging purposes
+   string logEntry = StringFormat("%s Market State: Spread=%.1f, Volume=%.2f, Bid=%.5f, Ask=%.5f",
+                               TimeToString(state.timestamp), state.spread, state.volume, state.bid, state.ask);
+   Print(logEntry);
+   
+   // Update last update time
+   m_lastUpdate = TimeCurrent();
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Save volatility data to knowledge base                           |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::SaveVolatilityData(const SVolatilityData &volData)
+  {
+   // In a production system, you would save this to a structured format
+   // For now, we'll log it for debugging purposes
+   string logEntry = StringFormat("%s Volatility: ATR=%.5f, StdDev=%.5f, Range=%.5f",
+                               TimeToString(volData.timestamp), volData.atr, volData.stdDev, volData.range);
+   Print(logEntry);
+   
+   // Update last update time
+   m_lastUpdate = TimeCurrent();
+   return true;
+  }
+
+//+------------------------------------------------------------------+
 //| Add a new trade to the knowledge base                            |
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::AddTrade(const STradeRecord &trade)
   {
    string filepath = GetFilePath(m_tradeHistoryFile);
+   m_lastUpdate = TimeCurrent(); // Update last update time
    
    // Open file for writing (append mode)
    int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ",", CP_UTF8);
@@ -947,6 +992,7 @@ int CKnowledgeBase::GetTotalTrades()
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::SaveModel(const double &weights[])
   {
+   m_lastUpdate = TimeCurrent(); // Update last update time
    int handle = FileOpen(GetFilePath(m_modelFile), FILE_WRITE|FILE_BIN|FILE_COMMON);
    
    if(handle == INVALID_HANDLE)

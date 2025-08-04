@@ -8,6 +8,7 @@
 #include "..\Common\Enums.mqh"
 #include "..\Common\Structs.mqh"
 #include "..\Common\Constants.mqh"
+#include "ITradeExecutor.mqh"
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
@@ -20,6 +21,7 @@ private:
    bool              m_isLive;           // True for live trading
    string            m_symbol;           // Trading symbol
    double            m_slippage;         // Allowed slippage in points
+   ulong             m_eaMagic;          // Magic number for trade identification
    
    // Private methods
    bool              ValidateTradeRequest(const MqlTradeRequest &request);
@@ -40,13 +42,13 @@ public:
    bool              PositionExists(ulong ticket);
    
    // Getters
-   ulong             Magic() const { return CTrade::RequestMagic(); }
+   ulong             Magic() const { return m_eaMagic; }
    bool              IsLive() const { return m_isLive; }
    string            Symbol() const { return m_symbol; }
    double            Slippage() const { return m_slippage; }
    
    // Setters
-   void              SetMagic(ulong magic) { CTrade::SetExpertMagicNumber(magic); }
+   void              SetMagic(ulong magic) { m_eaMagic = magic; CTrade::SetExpertMagicNumber(magic); }
    void              SetLiveMode(bool isLive) { m_isLive = isLive; }
    void              SetSlippage(double slippage) { m_slippage = slippage; }
   };
@@ -57,7 +59,8 @@ public:
 CTradeExecutor::CTradeExecutor(ulong magic, bool isLive, string symbol, double slippage = 10.0) :
    m_isLive(isLive),
    m_symbol(symbol),
-   m_slippage(slippage)
+   m_slippage(slippage),
+   m_eaMagic(magic)
   {
    // Set trade parameters
    SetExpertMagicNumber(magic);

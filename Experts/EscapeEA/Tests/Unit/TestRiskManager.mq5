@@ -169,7 +169,7 @@ bool CTestRiskManager::Test_MaxPositionSize(string &message)
    double maxSize = 10.0;
    m_riskManager.SetMaxPositionSize(maxSize);
    
-   if(!AssertEqual(maxSize, m_riskManager.GetMaxPositionSize(), 0.0001, "Max position size getter failed"))
+   if(!AssertEqual(maxSize, m_riskManager.MaxPositionSize(), 0.0001, "Max position size getter failed"))
    {
       message = "Max position size getter failed";
       return false;

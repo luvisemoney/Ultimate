@@ -149,7 +149,7 @@ string ErrorDescription(int error_code)
   }
 
 // Log message to file
-void LogToFile(string filename, string message)
+bool LogToFile(string filename, string message)
   {
    int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI, 0, CP_UTF8);
    if(handle != INVALID_HANDLE)
@@ -157,7 +157,9 @@ void LogToFile(string filename, string message)
       FileSeek(handle, 0, SEEK_END);
       FileWrite(handle, TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS), " - ", message);
       FileClose(handle);
+      return true;
      }
+   return false;
   }
 
 // Get the last closed order ticket
@@ -194,6 +196,7 @@ input int      InpMagicNumber = 123457;              // Magic number (100000-999
 input double   InpSlippage = 10.0;                   // Slippage in points (0-100)
 input bool     InpEnableTrading = true;              // Enable live trading
 input int      InpEvaluationInterval = 15;           // Evaluation interval (1-1440 minutes)
+input int      InpSignalCheckInterval = 5;           // Signal check interval in seconds (1-3600)
 input int      InpMinTradesPerInterval = 10;         // Minimum trades per interval (1-1000)
 input double   InpDailyDrawdownLimit = 5.0;          // Max daily drawdown % (0.1-50.0)
 input color    InpPanelColor = clrLimeGreen;         // Panel color
@@ -244,8 +247,32 @@ CSignalBroadcaster *g_signalBroadcaster = NULL;
 // Function declarations
 void CheckAndUpdatePositions();
 void ProcessPendingOrders();
+void UpdateMarketData();
 void UpdateWithTickData(const MqlTick &tick);
 void CheckEmergencyStop();
+
+//+------------------------------------------------------------------+
+//| Update market data and indicators                                |
+//+------------------------------------------------------------------+
+void UpdateMarketData()
+  {
+   // Update market data structures
+   MqlTick last_tick;
+   if(!SymbolInfoTick(Symbol(), last_tick))
+     {
+      Print("Failed to get tick data for ", Symbol());
+      return;
+     }
+     
+   // Update indicators or other market data as needed
+   // This is a placeholder for any indicator updates or other market data processing
+   
+   // Update any strategy or signal data based on the latest market data
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+     {
+      // Update learning engine with latest market data if needed
+     }
+  }
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -418,28 +445,58 @@ bool ValidateInputs()
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   // Update market data and indicators
+   UpdateMarketData();
+   
    // Process pending orders and open positions
    if(CheckPointer(g_tradeExecutor) != POINTER_INVALID)
      {
-      // Check for position modifications (trailing stops, etc.)
-      g_tradeExecutor.CheckAndUpdatePositions();
+      // Check and update trailing stops for open positions
+      UpdateTrailingStops();
       
       // Process any pending orders
-      g_tradeExecutor.ProcessPendingOrders();
+      ProcessPendingOrders();
+      
+      // Check for new trading signals
+      CheckForNewSignals();
      }
      
+   // Perform periodic tasks (every 100 ticks)
+   static int tickCount = 0;
+   if(++tickCount % 100 == 0)
+     {
+      PerformPeriodicTasks();
+      tickCount = 0; // Reset counter to prevent overflow
+     }
+      
    // Update learning model with latest market data
-   if(InpEnableLearning && CheckPointer(g_learningEngine) != POINTER_INVALID)
+   if(InpEnableLearning)
      {
       MqlTick lastTick;
       if(SymbolInfoTick(g_symbol, lastTick))
         {
-         g_learningEngine.UpdateWithTickData(lastTick);
+         UpdateWithTickData(lastTick);
         }
      }
      
    // Emergency stop check
    CheckEmergencyStop();
+   
+   // Check for new signals periodically
+   static datetime lastSignalCheck = 0;
+   if(TimeCurrent() - lastSignalCheck >= InpSignalCheckInterval)
+     {
+      CheckForNewSignals();
+      lastSignalCheck = TimeCurrent();
+     }
+     
+   // Perform periodic tasks (every 5 minutes)
+   static datetime lastPeriodicUpdate = 0;
+   if(TimeCurrent() - lastPeriodicUpdate >= 300) // 5 minutes
+     {
+      PerformPeriodicTasks();
+      lastPeriodicUpdate = TimeCurrent();
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -527,8 +584,8 @@ bool InitializeComponents()
    
    // Initialize signal receiver with error handling
    Print("Initializing signal receiver...");
-   g_signalReceiver = new CSignalReceiver(g_signalPrefix, InpMaxSignalAge, InpMinConfidence);
-   if(CheckPointer(g_signalReceiver) != POINTER_INVALID)
+   g_signalReceiver = new CSignalReceiver(g_signalPrefix, InpMaxSignalAge);
+   if(CheckPointer(g_signalReceiver) == POINTER_INVALID)
      {
       g_errorMessage = "Failed to create signal receiver";
       return false;
@@ -565,15 +622,49 @@ bool LoadHistoricalData()
    Print("Successfully loaded ", copied, " bars of historical data");
    
    // Initialize technical indicators with historical data
-   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID && CheckPointer(g_knowledgeBase) != POINTER_INVALID)
      {
-      // Convert MqlRates to our internal format if needed
-      // For now, just log that we've received historical data
-      Print("Historical data received for ", copied, " bars");
+      // Log historical data reception
+      Print("Loading historical data for ", copied, " bars");
       
-      // If the learning engine needs to be trained with this data,
-      // we would call the appropriate method here
-      // g_learningEngine.TrainWithHistoricalData(rates);
+      // Get the current spread
+      MqlTick last_tick;
+      SymbolInfoTick(Symbol(), last_tick);
+      double spread = last_tick.ask - last_tick.bid;
+      
+      // Convert MqlRates to our internal format
+      SMarketState states[];
+      ArrayResize(states, copied);
+      
+      for(int i = 0; i < copied; i++)
+        {
+         states[i].timestamp = rates[i].time;
+         states[i].bid = rates[i].close;
+         states[i].ask = rates[i].close + spread;
+         states[i].spread = spread / _Point;
+         states[i].volume = (double)rates[i].tick_volume;
+         
+         // Save each market state to knowledge base
+         g_knowledgeBase.SaveMarketState(states[i]);
+        }
+      
+      // Train the learning engine with historical data
+      // Convert SMarketState array to STradeRecord array for training
+      STradeRecord trades[];
+      ArrayResize(trades, copied);
+      for(int i = 0; i < copied; i++)
+        {
+         // Initialize trade record with market state data
+         trades[i].entryPrice = states[i].bid; // Using bid as entry price for simplicity
+         trades[i].exitPrice = states[i].ask;  // Using ask as exit price for simplicity
+         trades[i].volume = states[i].volume;
+         // Add other necessary fields from states to trades
+        }
+      
+      if(CheckPointer(g_learningEngine) != POINTER_INVALID && g_learningEngine.TrainModel(trades))
+         Print("Successfully trained learning engine with ", copied, " historical data points");
+      else
+         Print("Warning: Failed to train learning engine with historical data");
      }
    
    return true;
@@ -746,7 +837,7 @@ void ProcessSignal(const STradeSignal &signal)
    if(success)
      {
       // Get the actual ticket number from the trade result
-      ulong ticket = g_tradeExecutor.GetLastOrderTicket();
+      ulong ticket = g_tradeExecutor.ResultOrder();
       if(ticket == 0)
         {
          Print("Warning: Failed to retrieve order ticket after successful execution");
@@ -831,7 +922,23 @@ void LogStatus()
       // If we have a signal broadcaster, use it to send monitoring info
       if(CheckPointer(g_signalBroadcaster) != POINTER_INVALID)
         {
-         g_signalBroadcaster.SendSignal("heartbeat", logMessage);
+         // Prepare system status information
+         string status = "SYSTEM_ACTIVE";
+         double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+         double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+         
+         // Create a JSON string with system status
+         string message = StringFormat(
+            "{\"status\":\"%s\",\"equity\":%.2f,\"balance\":%.2f,\"timestamp\":%d}",
+            status, equity, balance, (int)TimeCurrent()
+         );
+         
+         // Send heartbeat with system status (using only the 3 required parameters)
+         // The message is logged separately since it's not part of the standard SendSignal signature
+         if(!g_signalBroadcaster.SendSignal("HEARTBEAT", SIGNAL_HOLD, 0.0))
+            Print("Warning: Failed to send heartbeat signal");
+         else
+            Print("Heartbeat: ", message);
         }
         
       g_lastLogTime = TimeCurrent();
@@ -854,7 +961,8 @@ void LogStatus()
    // Send status to monitoring system if available
    if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
      {
-      g_knowledgeBase.LogSystemStatus(status);
+      // Log system status as an interval snapshot
+      g_knowledgeBase.LogIntervalSnapshot("LiveEA", _Symbol, status);
      }
   }
 
@@ -894,10 +1002,84 @@ void SendHeartbeat()
    // Update chart comment
    Comment("EscapeEA Live | ", message);
      
-   // Send to monitoring system if available
+   // Log monitoring data to knowledge base
    if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
      {
-      g_knowledgeBase.SendToMonitoring("heartbeat", message);
+      string statusMsg = "Heartbeat: " + message;
+      g_knowledgeBase.LogIntervalSnapshot("LiveEA", _Symbol, statusMsg);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Update trailing stops for open positions                         |
+//+------------------------------------------------------------------+
+void UpdateTrailingStops()
+  {
+   // Check if risk manager is available
+   if(CheckPointer(g_riskManager) == POINTER_INVALID)
+      return;
+      
+   // Get the current market conditions
+   MqlTick last_tick;
+   if(!SymbolInfoTick(Symbol(), last_tick))
+     {
+      Print("Failed to get tick data for ", Symbol());
+      return;
+     }
+     
+   // Check all open positions for this symbol and magic number
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      // Select the position by ticket for accessing the details
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0)
+         continue;
+         
+      // Check if the position is for this symbol and magic number
+      if(PositionGetString(POSITION_SYMBOL) != Symbol() || 
+         (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber)
+         continue;
+         
+      // Get position details
+      double positionVolume = PositionGetDouble(POSITION_VOLUME);
+      double positionPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double currentSL = PositionGetDouble(POSITION_SL);
+      double currentTP = PositionGetDouble(POSITION_TP);
+      ENUM_POSITION_TYPE positionType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      
+      // Calculate new stop levels based on risk management
+      double newSL = 0, newTP = 0;
+      
+      // Call the appropriate method based on the position type
+      bool success = false;
+      if(CheckPointer(g_riskManager) != POINTER_INVALID)
+        {
+         if(positionType == POSITION_TYPE_BUY || positionType == POSITION_TYPE_SELL)
+           {
+            success = g_riskManager.CalculateStopLevels(
+               positionType, 
+               last_tick.bid, 
+               last_tick.ask, 
+               newSL, 
+               newTP);
+           }
+         
+         if(success)
+           {
+            // Only modify if the new levels are different and valid
+            if((MathAbs(NormalizeDouble(newSL - currentSL, _Digits)) > 0 || 
+                MathAbs(NormalizeDouble(newTP - currentTP, _Digits)) > 0) &&
+               newSL > 0 && newTP > 0)
+              {
+               CTrade trade;
+               trade.SetExpertMagicNumber(InpMagicNumber);
+               if(!trade.PositionModify(ticket, newSL, newTP))
+                 {
+                  Print("Failed to modify position ", ticket, ". Error: ", GetLastError());
+                 }
+              }
+           }
+        }
      }
   }
 
@@ -906,13 +1088,91 @@ void SendHeartbeat()
 //+------------------------------------------------------------------+
 void CheckAndUpdatePositions()
   {
+   // Check for valid pointers
    if(CheckPointer(g_riskManager) == POINTER_INVALID || 
       CheckPointer(g_tradeExecutor) == POINTER_INVALID)
       return;
       
-   // Check for position modifications, trailing stops, etc.
-   // This is a placeholder implementation
-   Print("Checking and updating positions...");
+   // Get current market conditions
+   MqlTick last_tick;
+   if(!SymbolInfoTick(Symbol(), last_tick))
+     {
+      Print("Failed to get tick data for ", Symbol());
+      return;
+     }
+   
+   // Get all open positions for this EA's magic number
+   int total = PositionsTotal();
+   if(total <= 0)
+      return; // No open positions
+      
+   // Process each position
+   for(int i = total - 1; i >= 0; i--)
+     {
+      // Select the position by index
+      if(PositionGetTicket(i) <= 0)
+         continue;
+         
+      // Check if this is our position
+      if(PositionGetString(POSITION_SYMBOL) != Symbol() || 
+         (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber)
+         continue;
+         
+      // Get position details
+      ulong ticket = PositionGetInteger(POSITION_TICKET);
+      double positionVolume = PositionGetDouble(POSITION_VOLUME);
+      double positionPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double positionSL = PositionGetDouble(POSITION_SL);
+      double positionTP = PositionGetDouble(POSITION_TP);
+      ENUM_POSITION_TYPE positionType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   
+      double currentBid = last_tick.bid;
+      double currentAsk = last_tick.ask;
+      double spread = (currentAsk - currentBid) / _Point;
+      
+      // Update trailing stops if needed
+      UpdateTrailingStops();
+      
+      // Check for any risk-based position modifications
+      if(CheckPointer(g_riskManager) != POINTER_INVALID)
+        {
+         // Risk manager suggests modifying the position
+         double newSL = 0, newTP = 0;
+         
+         // Call the appropriate method based on the position type
+         bool success = false;
+         if(positionType == POSITION_TYPE_BUY || positionType == POSITION_TYPE_SELL)
+           {
+            // Call the risk manager to calculate new stop levels
+            success = g_riskManager.CalculateStopLevels(
+               positionType, 
+               currentBid, 
+               currentAsk, 
+               newSL, 
+               newTP);
+           }
+         
+         if(success)
+           {
+            // Only modify if the new levels are different and valid
+            if((MathAbs(NormalizeDouble(newSL - positionSL, _Digits)) > 0 || 
+                MathAbs(NormalizeDouble(newTP - positionTP, _Digits)) > 0) &&
+               newSL > 0 && newTP > 0)
+              {
+               // Create a trade object for position modification
+               CTrade trade;
+               trade.SetExpertMagicNumber(InpMagicNumber);
+               
+               // Modify the position with new SL/TP
+               if(!trade.PositionModify(ticket, newSL, newTP))
+                 {
+                  Print("Failed to modify position ", ticket, 
+                        ". Error: ", GetLastError());
+                 }
+              }
+           }
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -920,12 +1180,82 @@ void CheckAndUpdatePositions()
 //+------------------------------------------------------------------+
 void ProcessPendingOrders()
   {
-   if(CheckPointer(g_tradeExecutor) == POINTER_INVALID)
+   if(CheckPointer(g_tradeExecutor) == POINTER_INVALID || 
+      CheckPointer(g_riskManager) == POINTER_INVALID)
       return;
       
-   // Process any pending orders (modify, delete, etc.)
-   // This is a placeholder implementation
-   Print("Processing pending orders...");
+   // Get total number of pending orders for this symbol
+   int total = PositionsTotal();
+   if(total <= 0)
+      return; // No open positions
+      
+   // Process each position
+   for(int i = total - 1; i >= 0; i--)
+     {
+      // Select the position by index
+      if(PositionSelectByTicket(PositionGetTicket(i)))
+        {
+         // Get position details
+         ulong ticket = PositionGetInteger(POSITION_TICKET);
+         string symbol = PositionGetString(POSITION_SYMBOL);
+         long magic = PositionGetInteger(POSITION_MAGIC);
+         
+         // Only process positions for this EA
+         if(symbol == Symbol() && magic == InpMagicNumber)
+           {
+            // Get current market conditions
+            MqlTick last_tick;
+            if(!SymbolInfoTick(symbol, last_tick))
+              {
+               Print("Failed to get tick data for ", symbol);
+               continue;
+              }
+            
+            // Get position details
+            double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+            double currentSL = PositionGetDouble(POSITION_SL);
+            double currentTP = PositionGetDouble(POSITION_TP);
+            ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            
+            // Calculate new price levels based on current market conditions
+            double newSL = 0, newTP = 0;
+            if(CheckPointer(g_riskManager) != POINTER_INVALID)
+              {
+               // Call the appropriate method based on the position type
+               bool success = false;
+               if(posType == POSITION_TYPE_BUY || posType == POSITION_TYPE_SELL)
+                 {
+                  success = g_riskManager.CalculateStopLevels(
+                     posType, 
+                     last_tick.bid, 
+                     last_tick.ask, 
+                     newSL, 
+                     newTP);
+                 }
+               
+               if(success)
+                 {
+                  // Only modify if the new levels are different and valid
+                  if((MathAbs(NormalizeDouble(newSL - currentSL, _Digits)) > 0 || 
+                      MathAbs(NormalizeDouble(newTP - currentTP, _Digits)) > 0) &&
+                     newSL > 0 && newTP > 0)
+                    {
+                     // Create a trade object for position modification
+                     CTrade trade;
+                     trade.SetExpertMagicNumber(InpMagicNumber);
+                     
+                     // Modify the position with new SL/TP
+                     if(!trade.PositionModify(ticket, newSL, newTP))
+                       {
+                        Print("Failed to modify position ", ticket, 
+                              ". Error: ", GetLastError());
+                       }
+                    }
+                 }
+              }
+           }
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -933,13 +1263,77 @@ void ProcessPendingOrders()
 //+------------------------------------------------------------------+
 void UpdateWithTickData(const MqlTick &tick)
   {
-   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+   static datetime lastUpdate = 0;
+   static MqlRates currentRates[];
+   static int tickCount = 0;
+   
+   // Increment tick counter
+   tickCount++;
+   
+   // Update learning engine with latest tick data if available
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID && 
+      CheckPointer(g_knowledgeBase) != POINTER_INVALID)
      {
-      // Update learning engine with latest tick data
-      // This is a placeholder implementation
-      static int tickCount = 0;
-      if(++tickCount % 100 == 0)
-         Print("Processed ", tickCount, " ticks");
+      // Create a market state from the tick data
+      SMarketState state;
+      state.timestamp = tick.time;
+      state.bid = tick.bid;
+      state.ask = tick.ask;
+      state.spread = (tick.ask - tick.bid) / _Point;
+      state.volume = (double)tick.volume;
+      
+      // Update learning engine with the latest market state
+      if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+        {
+         g_learningEngine.OnMarketStateUpdate(state);
+        }
+      
+      // Save the market state to knowledge base
+      if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
+        {
+         g_knowledgeBase.SaveMarketState(state);
+        }
+      
+      // Update current rate for this minute
+      datetime currentTime = TimeCurrent();
+      if(currentTime >= lastUpdate + 60) // Every minute
+        {
+         // Get the current minute bar
+         if(CopyRates(Symbol(), PERIOD_M1, 0, 1, currentRates) > 0)
+           {
+            // Create a local copy of the current rate
+            MqlRates currentRate = currentRates[0];
+            
+            // Update volatility data
+            SVolatilityData volData;
+            volData.timestamp = currentRate.time;
+            volData.high = currentRate.high;
+            volData.low = currentRate.low;
+            volData.close = currentRate.close;
+            volData.volume = (double)currentRate.tick_volume;
+            
+            // Save volatility data to knowledge base
+            if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
+              {
+               g_knowledgeBase.SaveVolatilityData(volData);
+              }
+            
+            // Update learning engine with new volatility data
+            if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+              {
+               g_learningEngine.OnVolatilityUpdate(volData);
+              }
+            
+            lastUpdate = currentRate.time;
+           }
+        }
+      
+      // Log tick processing every 1000 ticks
+      if(tickCount % 1000 == 0)
+        {
+         Print("Processed ", tickCount, " ticks. Last update: ", 
+               TimeToString(tick.time, TIME_DATE|TIME_SECONDS));
+        }
      }
   }
 
@@ -963,5 +1357,61 @@ void CheckEmergencyStop()
   }
    
 //+------------------------------------------------------------------+
-//| ... rest of the code remains the same ...
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   // Clean up all components
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+      delete g_learningEngine;
+      
+   if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
+      delete g_knowledgeBase;
+      
+   if(CheckPointer(g_riskManager) != POINTER_INVALID)
+      delete g_riskManager;
+      
+   if(CheckPointer(g_tradeExecutor) != POINTER_INVALID)
+      delete g_tradeExecutor;
+      
+   if(CheckPointer(g_signalReceiver) != POINTER_INVALID)
+      delete g_signalReceiver;
+      
+   if(CheckPointer(g_signalBroadcaster) != POINTER_INVALID)
+      delete g_signalBroadcaster;
+      
+   // Clean up any remaining objects or resources
+   ObjectsDeleteAll(0, 0, -1);
+   
+   // Log shutdown reason
+   string reasonText;
+   switch(reason)
+     {
+      case REASON_ACCOUNT:
+         reasonText = "Account was changed";
+         break;
+      case REASON_CHARTCHANGE:
+         reasonText = "Symbol or timeframe was changed";
+         break;
+      case REASON_CHARTCLOSE:
+         reasonText = "Chart was closed";
+         break;
+      case REASON_PARAMETERS:
+         reasonText = "Input parameters were changed";
+         break;
+      case REASON_RECOMPILE:
+         reasonText = "Program was recompiled";
+         break;
+      case REASON_REMOVE:
+         reasonText = "Program was removed from chart";
+         break;
+      case REASON_TEMPLATE:
+         reasonText = "New template was applied to chart";
+         break;
+      default:
+         reasonText = "Unknown reason";
+     }
+     
+   Print("EscapeEA deinitialized: ", reasonText);
   }
+//+------------------------------------------------------------------+

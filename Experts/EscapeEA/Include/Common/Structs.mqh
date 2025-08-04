@@ -88,6 +88,35 @@ struct SMarketCondition
   };
 
 //+------------------------------------------------------------------+
+//| Market state structure                                          |
+//+------------------------------------------------------------------+
+struct SMarketState
+  {
+   datetime         timestamp;    // Timestamp of the market state
+   double           spread;       // Current spread in points
+   double           volume;       // Current tick volume
+   double           bid;          // Current bid price
+   double           ask;          // Current ask price
+   
+   // Default constructor
+   SMarketState() : timestamp(0), spread(0.0), volume(0.0), bid(0.0), ask(0.0) {}
+  };
+
+//+------------------------------------------------------------------+
+//| Volatility data structure                                       |
+//+------------------------------------------------------------------+
+struct SVolatilityData
+  {
+   datetime         timestamp;    // Timestamp of the volatility data
+   double           atr;          // Average True Range value
+   double           stdDev;       // Standard deviation
+   double           range;        // Price range (high - low)
+   
+   // Default constructor
+   SVolatilityData() : timestamp(0), atr(0.0), stdDev(0.0), range(0.0) {}
+  };
+
+//+------------------------------------------------------------------+
 //| Signal structure                                                 |
 //+------------------------------------------------------------------+
 struct STradeSignal
