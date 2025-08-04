@@ -206,7 +206,7 @@ input int      InpFontSize = 8;                      // Font size (8-20)
 input bool     InpAcceptPaperSignals = true;         // Accept signals from Paper EA
 input double   InpMaxPositionSize = 10.0;            // Maximum position size (0.01-1000.0 lots)
 input bool     InpUseHardStops = true;               // Use hard stop losses
-input string   InpSharedKBDir = "shared_kb";        // Shared knowledge base directory (max 255 chars)
+input string   InpSharedKBDir = "C:\\Users\\itoha\\Google Drive\\EscapeEA_SharedKB";        // Shared knowledge base directory (max 255 chars)
 
 input group "=== Signal Processing ==="
 input double   InpMinConfidence = 0.7;               // Minimum confidence (0.0-1.0)
@@ -264,13 +264,19 @@ void UpdateMarketData()
       return;
      }
      
-   // Update indicators or other market data as needed
-   // This is a placeholder for any indicator updates or other market data processing
-   
-   // Update any strategy or signal data based on the latest market data
-   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+   // Update market state for learning engine
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID && CheckPointer(g_knowledgeBase) != POINTER_INVALID)
      {
-      // Update learning engine with latest market data if needed
+      // Create market state from current tick
+      SMarketState state;
+      state.timestamp = last_tick.time;
+      state.bid = last_tick.bid;
+      state.ask = last_tick.ask;
+      state.spread = (last_tick.ask - last_tick.bid) / _Point;
+      state.volume = (double)last_tick.volume;
+      
+      // Save market state to knowledge base
+      g_knowledgeBase.SaveMarketState(state);
      }
   }
 
@@ -324,27 +330,6 @@ int OnInit()
    return INIT_SUCCEEDED;
   }
 
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                 |
-//+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-  {
-   Print("Shutting down LiveEA, reason: ", GetUninitializeReasonText(reason));
-   
-   // Clean up components safely in reverse order of initialization
-   SafeDelete(g_signalReceiver);
-   SafeDelete(g_knowledgeBase);
-   SafeDelete(g_learningEngine);
-   SafeDelete(g_tradeExecutor);
-   SafeDelete(g_riskManager);
-   
-   // Disable timer
-   EventKillTimer();
-   
-   // Clear initialization flag
-   g_initialized = false;
-   Print("EscapeEA Live Trader deinitialized");
-  }
 
 //+------------------------------------------------------------------+
 //| Safely delete a pointer and set to NULL                         |
@@ -561,7 +546,7 @@ bool InitializeComponents()
    // Initialize knowledge base with error handling
    Print("Initializing knowledge base...");
    string kbName = "EscapeEA_Live_" + g_symbol;
-   g_knowledgeBase = new CKnowledgeBase(kbName);
+   g_knowledgeBase = new CKnowledgeBase(kbName, InpSharedKBDir);
    if(CheckPointer(g_knowledgeBase) != POINTER_DYNAMIC)
      {
       g_errorMessage = "Failed to create knowledge base";
@@ -591,6 +576,16 @@ bool InitializeComponents()
       return false;
      }
    Print("Signal receiver initialized successfully");
+   
+   // Initialize signal broadcaster with error handling
+   Print("Initializing signal broadcaster...");
+   g_signalBroadcaster = new CSignalBroadcaster(g_signalPrefix);
+   if(CheckPointer(g_signalBroadcaster) == POINTER_INVALID)
+     {
+      g_errorMessage = "Failed to create signal broadcaster";
+      return false;
+     }
+   Print("Signal broadcaster initialized successfully");
    
    // All components initialized successfully
    Print("All components initialized successfully");
@@ -655,10 +650,22 @@ bool LoadHistoricalData()
       for(int i = 0; i < copied; i++)
         {
          // Initialize trade record with market state data
-         trades[i].entryPrice = states[i].bid; // Using bid as entry price for simplicity
-         trades[i].exitPrice = states[i].ask;  // Using ask as exit price for simplicity
-         trades[i].volume = states[i].volume;
-         // Add other necessary fields from states to trades
+         trades[i].ticket = (ulong)(i + 1);
+         trades[i].openTime = states[i].timestamp;
+         trades[i].closeTime = states[i].timestamp;
+         trades[i].symbol = g_symbol;
+         trades[i].type = (i % 2 == 0) ? TRADE_TYPE_BUY : TRADE_TYPE_SELL;
+         trades[i].lots = 0.01;
+         trades[i].openPrice = states[i].bid;
+         trades[i].closePrice = states[i].ask;
+         trades[i].stopLoss = 0.0;
+         trades[i].takeProfit = 0.0;
+         trades[i].commission = 0.0;
+         trades[i].swap = 0.0;
+         trades[i].profit = 0.0;
+         trades[i].signal = SIGNAL_HOLD;
+         trades[i].confidence = 0.5;
+         trades[i].isLive = false;
         }
       
       if(CheckPointer(g_learningEngine) != POINTER_INVALID && g_learningEngine.TrainModel(trades))
@@ -1050,33 +1057,31 @@ void UpdateTrailingStops()
       // Calculate new stop levels based on risk management
       double newSL = 0, newTP = 0;
       
-      // Call the appropriate method based on the position type
-      bool success = false;
-      if(CheckPointer(g_riskManager) != POINTER_INVALID)
+      // Calculate new stop levels using ATR-based approach
+      double atr = GetATR(Symbol(), 14);
+      if(atr > 0)
         {
-         if(positionType == POSITION_TYPE_BUY || positionType == POSITION_TYPE_SELL)
+         if(positionType == POSITION_TYPE_BUY)
            {
-            success = g_riskManager.CalculateStopLevels(
-               positionType, 
-               last_tick.bid, 
-               last_tick.ask, 
-               newSL, 
-               newTP);
+            newSL = MathMax(currentSL, last_tick.bid - (atr * 2.0));
+            newTP = (currentTP > 0) ? currentTP : last_tick.bid + (atr * 3.0);
+           }
+         else if(positionType == POSITION_TYPE_SELL)
+           {
+            newSL = (currentSL > 0) ? MathMin(currentSL, last_tick.ask + (atr * 2.0)) : last_tick.ask + (atr * 2.0);
+            newTP = (currentTP > 0) ? currentTP : last_tick.ask - (atr * 3.0);
            }
          
-         if(success)
+         // Only modify if the new levels are different and valid
+         if((MathAbs(NormalizeDouble(newSL - currentSL, _Digits)) > 0 || 
+             MathAbs(NormalizeDouble(newTP - currentTP, _Digits)) > 0) &&
+            newSL > 0 && newTP > 0)
            {
-            // Only modify if the new levels are different and valid
-            if((MathAbs(NormalizeDouble(newSL - currentSL, _Digits)) > 0 || 
-                MathAbs(NormalizeDouble(newTP - currentTP, _Digits)) > 0) &&
-               newSL > 0 && newTP > 0)
+            CTrade trade;
+            trade.SetExpertMagicNumber(InpMagicNumber);
+            if(!trade.PositionModify(ticket, newSL, newTP))
               {
-               CTrade trade;
-               trade.SetExpertMagicNumber(InpMagicNumber);
-               if(!trade.PositionModify(ticket, newSL, newTP))
-                 {
-                  Print("Failed to modify position ", ticket, ". Error: ", GetLastError());
-                 }
+               Print("Failed to modify position ", ticket, ". Error: ", GetLastError());
               }
            }
         }
@@ -1139,21 +1144,21 @@ void CheckAndUpdatePositions()
          // Risk manager suggests modifying the position
          double newSL = 0, newTP = 0;
          
-         // Call the appropriate method based on the position type
-         bool success = false;
-         if(positionType == POSITION_TYPE_BUY || positionType == POSITION_TYPE_SELL)
+         // Calculate new stop levels using ATR-based approach
+         double atr = GetATR(Symbol(), 14);
+         if(atr > 0)
            {
-            // Call the risk manager to calculate new stop levels
-            success = g_riskManager.CalculateStopLevels(
-               positionType, 
-               currentBid, 
-               currentAsk, 
-               newSL, 
-               newTP);
-           }
-         
-         if(success)
-           {
+            if(positionType == POSITION_TYPE_BUY)
+              {
+               newSL = MathMax(positionSL, currentBid - (atr * 2.0));
+               newTP = (positionTP > 0) ? positionTP : currentBid + (atr * 3.0);
+              }
+            else if(positionType == POSITION_TYPE_SELL)
+              {
+               newSL = (positionSL > 0) ? MathMin(positionSL, currentAsk + (atr * 2.0)) : currentAsk + (atr * 2.0);
+               newTP = (positionTP > 0) ? positionTP : currentAsk - (atr * 3.0);
+              }
+            
             // Only modify if the new levels are different and valid
             if((MathAbs(NormalizeDouble(newSL - positionSL, _Digits)) > 0 || 
                 MathAbs(NormalizeDouble(newTP - positionTP, _Digits)) > 0) &&
@@ -1219,37 +1224,34 @@ void ProcessPendingOrders()
             
             // Calculate new price levels based on current market conditions
             double newSL = 0, newTP = 0;
-            if(CheckPointer(g_riskManager) != POINTER_INVALID)
+            double atr = GetATR(symbol, 14);
+            if(atr > 0)
               {
-               // Call the appropriate method based on the position type
-               bool success = false;
-               if(posType == POSITION_TYPE_BUY || posType == POSITION_TYPE_SELL)
+               if(posType == POSITION_TYPE_BUY)
                  {
-                  success = g_riskManager.CalculateStopLevels(
-                     posType, 
-                     last_tick.bid, 
-                     last_tick.ask, 
-                     newSL, 
-                     newTP);
+                  newSL = MathMax(currentSL, last_tick.bid - (atr * 2.0));
+                  newTP = (currentTP > 0) ? currentTP : last_tick.bid + (atr * 3.0);
+                 }
+               else if(posType == POSITION_TYPE_SELL)
+                 {
+                  newSL = (currentSL > 0) ? MathMin(currentSL, last_tick.ask + (atr * 2.0)) : last_tick.ask + (atr * 2.0);
+                  newTP = (currentTP > 0) ? currentTP : last_tick.ask - (atr * 3.0);
                  }
                
-               if(success)
+               // Only modify if the new levels are different and valid
+               if((MathAbs(NormalizeDouble(newSL - currentSL, _Digits)) > 0 || 
+                   MathAbs(NormalizeDouble(newTP - currentTP, _Digits)) > 0) &&
+                  newSL > 0 && newTP > 0)
                  {
-                  // Only modify if the new levels are different and valid
-                  if((MathAbs(NormalizeDouble(newSL - currentSL, _Digits)) > 0 || 
-                      MathAbs(NormalizeDouble(newTP - currentTP, _Digits)) > 0) &&
-                     newSL > 0 && newTP > 0)
+                  // Create a trade object for position modification
+                  CTrade trade;
+                  trade.SetExpertMagicNumber(InpMagicNumber);
+                  
+                  // Modify the position with new SL/TP
+                  if(!trade.PositionModify(ticket, newSL, newTP))
                     {
-                     // Create a trade object for position modification
-                     CTrade trade;
-                     trade.SetExpertMagicNumber(InpMagicNumber);
-                     
-                     // Modify the position with new SL/TP
-                     if(!trade.PositionModify(ticket, newSL, newTP))
-                       {
-                        Print("Failed to modify position ", ticket, 
-                              ". Error: ", GetLastError());
-                       }
+                     Print("Failed to modify position ", ticket, 
+                           ". Error: ", GetLastError());
                     }
                  }
               }
@@ -1282,12 +1284,6 @@ void UpdateWithTickData(const MqlTick &tick)
       state.spread = (tick.ask - tick.bid) / _Point;
       state.volume = (double)tick.volume;
       
-      // Update learning engine with the latest market state
-      if(CheckPointer(g_learningEngine) != POINTER_INVALID)
-        {
-         g_learningEngine.OnMarketStateUpdate(state);
-        }
-      
       // Save the market state to knowledge base
       if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
         {
@@ -1307,21 +1303,14 @@ void UpdateWithTickData(const MqlTick &tick)
             // Update volatility data
             SVolatilityData volData;
             volData.timestamp = currentRate.time;
-            volData.high = currentRate.high;
-            volData.low = currentRate.low;
-            volData.close = currentRate.close;
-            volData.volume = (double)currentRate.tick_volume;
+            volData.atr = GetATR(Symbol(), 14);
+            volData.stdDev = 0.0; // Calculate if needed
+            volData.range = currentRate.high - currentRate.low;
             
             // Save volatility data to knowledge base
             if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
               {
                g_knowledgeBase.SaveVolatilityData(volData);
-              }
-            
-            // Update learning engine with new volatility data
-            if(CheckPointer(g_learningEngine) != POINTER_INVALID)
-              {
-               g_learningEngine.OnVolatilityUpdate(volData);
               }
             
             lastUpdate = currentRate.time;

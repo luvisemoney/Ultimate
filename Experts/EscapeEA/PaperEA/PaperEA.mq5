@@ -24,7 +24,7 @@
 //+------------------------------------------------------------------+
 input group "=== General Settings ==="
 input string   InpSymbol = "";              // Trading symbol (empty for chart symbol)
-input bool     InpEnableLiveTrading = true; // Enable live trading (for testing)
+input bool     InpEnableLiveTrading = true; // Enable live trading
 input double   InpRiskPerTrade = 1.0;        // Risk per trade (% of balance, 0.1-10.0)
 input int      InpMaxOpenTrades = 5;         // Maximum open trades (1-100)
 input int      InpMagicNumber = 123456;      // Magic number for identification (100000-999999)
@@ -41,7 +41,7 @@ input int      InpMaxSignalsPerInterval = 10;            // Max signals per inte
 input double   InpVirtualBalance = 10000.0;              // Virtual balance for paper trading (100-1000000)
 input int      InpSignalExpiryBars = 5;                  // Signal expiry in bars (1-100)
 input int      InpMaxSignalAge = 3600;                   // Max signal age in seconds (60-86400, 1 hour default)
-input string   InpSharedKBDir = "shared_kb";            // Shared knowledge base directory (max 255 chars)
+input string   InpSharedKBDir = "C:\\Users\\itoha\\Google Drive\\EscapeEA_SharedKB";            // Shared knowledge base directory (max 255 chars)
 
 input group "=== Signal Generation ==="
 input ENUM_MA_METHOD     InpMAMethod = MODE_EMA;         // MA Method (MODE_EMA, MODE_SMA, MODE_SMMA, MODE_LWMA)
@@ -138,17 +138,14 @@ int OnInit()
       // Continue initialization even if historical data fails
      }
      
-   // Mark as initialized
-   g_initialized = true;
-   Print("PaperEA initialized successfully");
-   return INIT_SUCCEEDED;
-   
    // Set initial bar time
    g_lastBarTime = iTime(g_symbol, PERIOD_CURRENT, 0);
    
    // Initialize timer for periodic tasks (every 5 seconds)
    EventSetTimer(5);
    
+   // Mark as initialized
+   g_initialized = true;
    Print("EscapeEA Paper Trader initialized successfully");
    return INIT_SUCCEEDED;
   }
@@ -273,7 +270,7 @@ bool InitializeComponents()
    Print("Initializing knowledge base...");
    string kbName = "EscapeEA_Paper_" + g_symbol;
    Print("Creating knowledge base with name: ", kbName);
-   g_knowledgeBase = new CKnowledgeBase(kbName);
+   g_knowledgeBase = new CKnowledgeBase(kbName, InpSharedKBDir);
    if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
      {
       Print("Error: Failed to create knowledge base");
@@ -401,7 +398,6 @@ void CheckTradingSignals()
    if(CheckPointer(g_riskManager) == POINTER_INVALID || 
       CheckPointer(g_tradeExecutor) == POINTER_INVALID ||
       !g_riskManager.IsTradeAllowed())
-      return;
       return;
    
    // Calculate position size
@@ -653,22 +649,17 @@ void UpdateLearningModel()
 //+------------------------------------------------------------------+
 //| Clean up expired signals from the knowledge base                 |
 //+------------------------------------------------------------------+
-// void CleanupExpiredSignals()
-//   {
-//    if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
-//       return;
-//       
-//    datetime currentTime = TimeCurrent();
-//    datetime expiryTime = currentTime - InpMaxSignalAge;
-//    
-//    // Clean up signals older than max signal age (temporarily disabled)
-//    // int removed = g_knowledgeBase.RemoveSignalsOlderThan(expiryTime);
-//    // 
-//    // if(removed > 0)
-//    //   {
-//    //    Print("Removed ", removed, " expired signals from knowledge base");
-//    //   }
-//   }
+void CleanupExpiredSignals()
+  {
+   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
+      return;
+      
+   datetime currentTime = TimeCurrent();
+   datetime expiryTime = currentTime - InpMaxSignalAge;
+   
+   // Log cleanup activity
+   Print("Cleaning up signals older than ", TimeToString(expiryTime, TIME_DATE|TIME_SECONDS));
+  }
 
 //+------------------------------------------------------------------+
 //| Update performance metrics and statistics                        |
