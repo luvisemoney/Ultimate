@@ -3,9 +3,6 @@
 //|                                      Copyright 2025, EscapeEA     |
 //|                                          https://www.escapeea.com |
 //+------------------------------------------------------------------+
-#property copyright "Copyright 2025, EscapeEA"
-#property link      "https://www.escapeea.com"
-#property version   "1.00"
 #property script_show_inputs
 #property script_show_confirm
 
@@ -66,7 +63,7 @@ void OnStart()
       
       for(int i = 0; i < runner.TotalTests(); i++)
         {
-         const TestResult &result = runner.GetTestResult(i);
+         TestResult result = runner.GetTestResult(i);
          if(result.result == TEST_FAILED)
            {
             PrintFormat("\x1B[31m[FAILED] %s\x1B[0m - %s", 

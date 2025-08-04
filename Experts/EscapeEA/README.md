@@ -226,12 +226,20 @@ Proprietary - All rights reserved 2025 EscapeEA
 - **v2.0** (2025-08-01): Dual-EA architecture with shared learning
 - **v1.0** (2025-07-15): Initial release with single EA
 
+## Self-notes
 Enhance learning 
-test on EURUSD,H1 (netting)
- tester stopped because OnInit returns non-zero code 1
- disconnected
-there are no trading operations
+
 
 ensure https://www.mql5.com/en/articles/2555 check are done and publish ready
-ensure testing checks are done and publish ready 
-compile all files, create test files for all, make sure the tests files compile, run the tests files and find issues -  1 day
+ensure testing checks are done and publish ready 08/04
+make sure the tests files compile, run the tests files and find issues -  08/03
+
+no place holders EVER
+
+add strategies and indicators to paper and live eas, ensure they seamlessly connect to the entire system and codebase. so that the system can be used as a complete trading system 08/05
+
+Implement integration tests for PaperEA and LiveEA interaction 08/03
+
+Integrate with CI/CD:
+Consider setting up automated testing in your build pipeline
+Run tests automatically on code changes to catch regressions 08/04

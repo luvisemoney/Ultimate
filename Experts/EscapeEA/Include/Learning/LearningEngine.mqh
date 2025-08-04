@@ -51,6 +51,22 @@ public:
    double            MinWinRate() const { return m_minWinRate; }
    bool              IsTrained() const { return m_isTrained; }
    
+   // Activity and update status
+   bool              IsActive() const { return m_isTrained && (CheckPointer(m_knowledgeBase) == POINTER_DYNAMIC); }
+   bool              ShouldUpdate() const 
+   { 
+      if(!m_isTrained || CheckPointer(m_knowledgeBase) != POINTER_DYNAMIC)
+         return false;
+         
+      // Check if we have enough new data to justify an update
+      STradeRecord trades[];
+      if(!m_knowledgeBase.GetRecentTrades(1, trades)) // Just check the most recent trade
+         return false;
+         
+      // Update if last update was more than 1 hour ago
+      return (TimeCurrent() - m_knowledgeBase.GetLastUpdateTime()) > 3600;
+   }
+   
    // Setters
    void              SetWindowSize(int size) { m_windowSize = size; }
    void              SetMinWinRate(double rate) { m_minWinRate = rate; }

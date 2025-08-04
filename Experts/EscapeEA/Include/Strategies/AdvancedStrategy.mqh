@@ -45,11 +45,27 @@ private:
    void              CleanupIndicators();
    double            GetIndicatorValue(int handle, int buffer, int shift = 0);
    double            CalculateConfidence(const MqlRates &rates[], int shift);
+   bool              IsValidSignal(ENUM_TRADE_SIGNAL signal, double confidence);
+   void              LogTradingDecision(ENUM_TRADE_SIGNAL signal, double entryPrice, 
+                                      double stopLoss, double takeProfit, 
+                                      double lotSize, double confidence);
    
 public:
    // Constructor/destructor
                      CAdvancedStrategy(string symbol, ENUM_TIMEFRAMES timeframe);
-                    ~CAdvancedStrategy();
+                    ~CAdvancedStrategy()
+                     {
+                      // Release all resources
+                      CleanupIndicators();
+                      
+                      // Nullify pointers (safety)
+                      m_riskManager = NULL;
+                      m_learningEngine = NULL;
+                      
+                      // Reset state
+                      m_isInitialized = false;
+                      m_lastBarTime = 0;
+                     }
    
    // Initialization
    bool              Initialize(CAdvancedRiskManager *riskManager, 
@@ -200,13 +216,39 @@ void CAdvancedStrategy::CleanupIndicators()
 //+------------------------------------------------------------------+
 double CAdvancedStrategy::GetIndicatorValue(int handle, int buffer, int shift = 0)
   {
+   // Validate handle
    if(handle == INVALID_HANDLE)
+     {
+      Print("Error: Invalid indicator handle");
       return 0.0;
-      
-   double values[1];
-   if(CopyBuffer(handle, buffer, shift, 1, values) != 1)
+     }
+     
+   // Validate buffer index
+   int buffers = 0;
+   if(!IndicatorParameters(handle, buffers) || buffer < 0 || buffer >= buffers)
+     {
+      PrintFormat("Error: Invalid buffer index %d for indicator", buffer);
       return 0.0;
-      
+     }
+     
+   // Copy indicator data
+   double values[1] = {0.0};
+   int copied = CopyBuffer(handle, buffer, shift, 1, values);
+   
+   if(copied != 1)
+     {
+      PrintFormat("Error: Failed to copy indicator buffer %d. Error: %d", 
+                 buffer, GetLastError());
+      return 0.0;
+     }
+     
+   // Validate the returned value
+   if(!MathIsValidNumber(values[0]))
+     {
+      PrintFormat("Warning: Invalid indicator value: %.8f", values[0]);
+      return 0.0;
+     }
+     
    return values[0];
   }
 
@@ -297,24 +339,85 @@ double CAdvancedStrategy::CalculateConfidence(const MqlRates &rates[], int shift
   }
 
 //+------------------------------------------------------------------+
+//| Validate trading signal                                          |
+//+------------------------------------------------------------------+
+bool CAdvancedStrategy::IsValidSignal(ENUM_TRADE_SIGNAL signal, double confidence)
+  {
+   if(signal == SIGNAL_HOLD)
+      return false;
+      
+   // Check confidence threshold
+   double minConfidence = 0.5;
+   if(confidence < minConfidence && confidence > -minConfidence)
+      return false;
+      
+   // Check if we have a valid signal
+   if((signal == SIGNAL_BUY && confidence > 0) ||
+      (signal == SIGNAL_SELL && confidence < 0))
+     {
+      return true;
+     }
+      
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Log trading decision                                            |
+//+------------------------------------------------------------------+
+void CAdvancedStrategy::LogTradingDecision(ENUM_TRADE_SIGNAL signal, double entryPrice, 
+                                         double stopLoss, double takeProfit, 
+                                         double lotSize, double confidence)
+  {
+   string logMsg = StringFormat("%s Signal - %s | ", 
+                               TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                               EnumToString(signal));
+                               
+   logMsg += StringFormat("Entry: %.5f, SL: %.5f, TP: %.5f, ", 
+                         entryPrice, stopLoss, takeProfit);
+                         
+   logMsg += StringFormat("Lots: %.2f, Confidence: %.2f", 
+                         lotSize, confidence);
+                         
+   Print(logMsg);
+  }
+
+//+------------------------------------------------------------------+
 //| Get trading signal based on strategy rules                       |
 //+------------------------------------------------------------------+
 ENUM_TRADE_SIGNAL CAdvancedStrategy::GetSignal(const MqlRates &rates[], int shift, double &confidence)
   {
-   if(!m_isInitialized || shift >= ArraySize(rates) - 1)
+   // Reset confidence
+   confidence = 0.0;
+   
+   // Validate inputs and state
+   if(!m_isInitialized)
      {
-      confidence = 0.0;
+      Print("Error: Strategy not initialized");
+      return SIGNAL_HOLD;
+     }
+     
+   if(ArraySize(rates) <= shift || shift < 0)
+     {
+      Print("Error: Invalid shift value or insufficient data");
       return SIGNAL_HOLD;
      }
    
-   // Calculate confidence score
-   confidence = CalculateConfidence(rates, shift);
-   
-   // Apply threshold for trading
-   if(confidence > 0.5)
-      return SIGNAL_BUY;
-   else if(confidence < -0.5)
-      return SIGNAL_SELL;
+   try
+     {
+      // Calculate confidence score
+      confidence = CalculateConfidence(rates, shift);
+      
+      // Apply threshold for trading
+      if(confidence > 0.5)
+         return SIGNAL_BUY;
+      else if(confidence < -0.5)
+         return SIGNAL_SELL;
+     }
+   catch(const std::exception &e)
+     {
+      PrintFormat("Exception in GetSignal(): %s", e.what());
+      confidence = 0.0;
+     }
    
    return SIGNAL_HOLD;
   }
@@ -324,22 +427,127 @@ ENUM_TRADE_SIGNAL CAdvancedStrategy::GetSignal(const MqlRates &rates[], int shif
 //+------------------------------------------------------------------+
 bool CAdvancedStrategy::Update(const MqlRates &rates[])
   {
-   if(!m_isInitialized || ArraySize(rates) < 2)
+   // Validate inputs and state
+   if(!m_isInitialized)
+     {
+      Print("Error: Strategy not initialized");
       return false;
+     }
+     
+   if(ArraySize(rates) < 2)
+     {
+      Print("Error: Insufficient rate data");
+      return false;
+     }
    
    // Check for new bar
    if(rates[0].time == m_lastBarTime)
+     {
       return true;  // No new data
+     }
    
+   // Update last processed bar time
    m_lastBarTime = rates[0].time;
    
-   // Get signal for the most recent completed bar
-   double confidence = 0.0;
-   ENUM_TRADE_SIGNAL signal = SIGNAL_HOLD;
-   signal = GetSignal(rates, 1, confidence);
-   
-   // Here you would typically pass the signal to the trade executor
-   // and use the risk manager to determine position sizing
-   
+   try
+     {
+      // Get signal for the most recent completed bar
+      double confidence = 0.0;
+      ENUM_TRADE_SIGNAL signal = GetSignal(rates, 1, confidence);
+      
+      // Only proceed if we have a valid signal
+      if(signal == SIGNAL_HOLD)
+        {
+         return true;
+        }
+      
+      // Get current market data
+      double ask = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+      double point = SymbolInfoDouble(m_symbol, SYMBOL_POINT);
+      
+      if(ask <= 0 || bid <= 0 || point <= 0)
+        {
+         Print("Error: Invalid market data");
+         return false;
+        }
+      
+      // Calculate position size and risk parameters
+      double stopLoss = 0.0;
+      double takeProfit = 0.0;
+      double entryPrice = (signal == SIGNAL_BUY) ? ask : bid;
+      
+      // Get ATR for volatility-based position sizing
+      double atr = GetIndicatorValue(m_atrHandle, 0, 0);
+      if(atr <= 0)
+        {
+         Print("Warning: Invalid ATR value, using default");
+         atr = 100 * point; // Default to 100 pips if ATR is invalid
+        }
+      
+      // Set SL/TP based on signal type
+      if(signal == SIGNAL_BUY)
+        {
+         stopLoss = entryPrice - (2.0 * atr);
+         takeProfit = entryPrice + (3.0 * atr);
+        }
+      else // SIGNAL_SELL
+        {
+         stopLoss = entryPrice + (2.0 * atr);
+         takeProfit = entryPrice - (3.0 * atr);
+        }
+      
+      // Calculate position size using risk manager
+      double riskPercent = 1.0; // Default 1% risk per trade
+      double stopDistance = MathAbs(entryPrice - stopLoss);
+      double lotSize = 0.0;
+      
+      if(CheckPointer(m_riskManager) != POINTER_INVALID)
+        {
+         lotSize = m_riskManager.CalculatePositionSize(m_symbol, stopDistance, riskPercent);
+         
+         // Validate position size
+         double minLot = SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_MIN);
+         double maxLot = SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_MAX);
+         lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
+        }
+      
+      if(lotSize <= 0)
+        {
+         Print("Error: Invalid position size calculated");
+         return false;
+        }
+      
+      // Log the trading decision
+      PrintFormat("Signal: %s, Entry: %.5f, SL: %.5f, TP: %.5f, Lots: %.2f, Confidence: %.2f",
+                 EnumToString(signal), entryPrice, stopLoss, takeProfit, lotSize, confidence);
+      
+      // Here you would typically pass the trade to the trade executor
+      // For example: m_tradeExecutor->ExecuteTrade(signal, lotSize, stopLoss, takeProfit);
+      
+      // Update learning engine with the trade decision
+      if(CheckPointer(m_learningEngine) != POINTER_INVALID)
+        {
+         STradeRecord trade;
+         trade.symbol = m_symbol;
+         trade.type = (signal == SIGNAL_BUY) ? TRADE_TYPE_BUY : TRADE_TYPE_SELL;
+         trade.entryPrice = entryPrice;
+         trade.stopLoss = stopLoss;
+         trade.takeProfit = takeProfit;
+         trade.lotSize = lotSize;
+         trade.confidence = confidence;
+         trade.timestamp = TimeCurrent();
+         
+         m_learningEngine->AddTrade(trade);
+        }
+      
+      return true;
+     }
+   catch(const std::exception &e)
+     {
+      PrintFormat("Exception in Update(): %s", e.what());
+      return false;
+     }
+     
    return true;
   }

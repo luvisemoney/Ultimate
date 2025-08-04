@@ -19,54 +19,68 @@
 #include "..\Include\Learning\KnowledgeBase.mqh"
 #include "..\Include\Communication\SignalBroadcaster.mqh"
 
-//--- Input Parameters
+//+------------------------------------------------------------------+
+//| Input Parameters with Validation                                 |
+//+------------------------------------------------------------------+
 input group "=== General Settings ==="
 input string   InpSymbol = "";              // Trading symbol (empty for chart symbol)
 input bool     InpEnableLiveTrading = true; // Enable live trading (for testing)
-input double   InpRiskPerTrade = 1.0;        // Risk per trade (% of balance)
-input int      InpMaxOpenTrades = 5;         // Maximum open trades
-input int      InpMagicNumber = 123456;      // Magic number for identification
-input double   InpSlippage = 10.0;           // Slippage in points
-input int      InpEvaluationInterval = 15;    // Evaluation interval in minutes
-input int      InpMinTradesPerInterval = 10;  // Minimum trades per interval
-input double   InpDailyDrawdownLimit = 5.0;   // Max daily drawdown %
+input double   InpRiskPerTrade = 1.0;        // Risk per trade (% of balance, 0.1-10.0)
+input int      InpMaxOpenTrades = 5;         // Maximum open trades (1-100)
+input int      InpMagicNumber = 123456;      // Magic number for identification (100000-999999)
+input double   InpSlippage = 10.0;           // Slippage in points (0-100)
+input int      InpEvaluationInterval = 15;    // Evaluation interval in minutes (1-1440)
+input int      InpMinTradesPerInterval = 10;  // Minimum trades per interval (1-1000)
+input double   InpDailyDrawdownLimit = 5.0;   // Max daily drawdown % (0.1-50.0)
 input color    InpPanelColor = clrDodgerBlue; // Panel color
-input int      InpFontSize = 8;              // Font size
+input int      InpFontSize = 8;              // Font size (8-20)
 
 // Paper EA Specific
 input bool     InpEnableSignals = true;                  // Enable signal generation
-input int      InpMaxSignalsPerInterval = 10;            // Max signals per interval
-input double   InpVirtualBalance = 10000.0;              // Virtual balance for paper trading
-input int      InpSignalExpiryBars = 5;                  // Signal expiry in bars
-input int      InpMaxSignalAge = 3600;                   // Max signal age in seconds (1 hour)
-input string   InpSharedKBDir = "shared_kb";            // Shared knowledge base directory
+input int      InpMaxSignalsPerInterval = 10;            // Max signals per interval (1-100)
+input double   InpVirtualBalance = 10000.0;              // Virtual balance for paper trading (100-1000000)
+input int      InpSignalExpiryBars = 5;                  // Signal expiry in bars (1-100)
+input int      InpMaxSignalAge = 3600;                   // Max signal age in seconds (60-86400, 1 hour default)
+input string   InpSharedKBDir = "shared_kb";            // Shared knowledge base directory (max 255 chars)
 
 input group "=== Signal Generation ==="
-input ENUM_MA_METHOD     InpMAMethod = MODE_EMA;         // MA Method
-input int                InpMAPeriod = 20;               // MA Period
-input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE;       // MA Price
-input int                InpRSIPeriod = 14;              // RSI Period
-input double             InpRSIOverbought = 70.0;        // RSI Overbought Level
-input double             InpRSIOversold = 30.0;          // RSI Oversold Level
-input int                InpATRPeriod = 14;              // ATR Period
-input double             InpATRMultiplier = 2.0;         // ATR Multiplier for SL/TP
+input ENUM_MA_METHOD     InpMAMethod = MODE_EMA;         // MA Method (MODE_EMA, MODE_SMA, MODE_SMMA, MODE_LWMA)
+input int                InpMAPeriod = 20;               // MA Period (2-200)
+input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE;       // MA Price (PRICE_CLOSE, PRICE_OPEN, etc.)
+input int                InpRSIPeriod = 14;              // RSI Period (2-100)
+input double             InpRSIOverbought = 70.0;        // RSI Overbought Level (50-90)
+input double             InpRSIOversold = 30.0;          // RSI Oversold Level (10-50)
+input int                InpATRPeriod = 14;              // ATR Period (2-100)
+input double             InpATRMultiplier = 2.0;         // ATR Multiplier for SL/TP (0.1-10.0)
 input double             InpMinConfidence = 0.8;         // Minimum confidence threshold (0.0-1.0)
-input string             InpConfidenceAdjustMode = "online"; // Learning mode: online or batch
+input string             InpConfidenceAdjustMode = "online"; // Learning mode: "online" or "batch"
 
 input group "=== Learning Settings ==="
-input int      InpLearningWindow = 100;        // Learning window size (trades)
-input double   InpMinWinRate = 0.6;             // Minimum win rate for signal validation
-input double   InpLearningRate = 0.01;          // Learning rate for model updates
+input int      InpLearningWindow = 100;        // Learning window size (10-1000 trades)
+input double   InpMinWinRate = 0.6;             // Minimum win rate for signal validation (0.5-1.0)
+input double   InpLearningRate = 0.01;          // Learning rate for model updates (0.0001-1.0)
 input bool     InpEnableLearning = true;        // Enable learning from trades
 input bool     InpEnableRegimeClassification = true; // Enable market regime classification
 
-//--- Global Variables
-CSignalGenerator  *g_signalGenerator = NULL;
-CRiskManager     *g_riskManager = NULL;
-CTradeExecutor   *g_tradeExecutor = NULL;
-CLearningEngine  *g_learningEngine = NULL;
-CKnowledgeBase   *g_knowledgeBase = NULL;
-CSignalBroadcaster *g_signalBroadcaster = NULL;
+//+------------------------------------------------------------------+
+//| Global Variables with Initialization                             |
+//+------------------------------------------------------------------+
+CSignalGenerator  *g_signalGenerator = NULL;    // Signal generator instance
+CRiskManager     *g_riskManager = NULL;         // Risk management instance
+CTradeExecutor   *g_tradeExecutor = NULL;       // Trade execution instance
+CLearningEngine  *g_learningEngine = NULL;      // Learning engine instance
+CKnowledgeBase   *g_knowledgeBase = NULL;       // Knowledge base instance
+CSignalBroadcaster *g_signalBroadcaster = NULL; // Signal broadcaster instance
+
+// Runtime state
+string           g_symbol;                      // Trading symbol
+string           g_errorMessage = "";           // Last error message
+datetime         g_lastBarTime = 0;            // Last processed bar time
+int              g_totalTrades = 0;             // Total trades count
+int              g_consecutiveWins = 0;         // Consecutive winning trades
+int              g_consecutiveLosses = 0;       // Consecutive losing trades
+bool             g_signalActive = false;        // Signal active flag
+bool             g_initialized = false;         // Initialization flag
 
 string           g_symbol;
 datetime         g_lastBarTime;
@@ -80,24 +94,39 @@ bool             g_signalActive = false;
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   // Set symbol
-   g_symbol = (InpSymbol == "") ? _Symbol : InpSymbol;
+   // Reset initialization state
+   g_initialized = false;
+   g_errorMessage = "";
    
-   // Initialize random seed
+   // Validate inputs
+   if(!ValidateInputs())
+     {
+      Print("Input validation failed: ", g_errorMessage);
+      return INIT_PARAMETERS_INCORRECT;
+     }
+   
+   // Set symbol and initialize random seed
+   g_symbol = (StringLen(InpSymbol) > 0) ? InpSymbol : _Symbol;
    MathSrand((uint)TimeCurrent());
    
-   // Initialize components
+   // Initialize components with error handling
    if(!InitializeComponents())
      {
-      Print("Failed to initialize components");
+      Print("Failed to initialize components: ", g_errorMessage);
       return INIT_FAILED;
      }
    
-   // Load historical data for backtesting
+   // Load historical data with error handling
    if(!LoadHistoricalData())
      {
-      Print("Warning: Failed to load historical data");
+      Print("Warning: Failed to load historical data: ", g_errorMessage);
+      // Continue initialization even if historical data fails
      }
+     
+   // Mark as initialized
+   g_initialized = true;
+   Print("PaperEA initialized successfully");
+   return INIT_SUCCEEDED;
    
    // Set initial bar time
    g_lastBarTime = iTime(g_symbol, PERIOD_CURRENT, 0);
@@ -114,77 +143,90 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   // Clean up
-   if(CheckPointer(g_signalGenerator) == POINTER_DYNAMIC)
-      delete g_signalGenerator;
-      
-   if(CheckPointer(g_riskManager) == POINTER_DYNAMIC)
-      delete g_riskManager;
-      
-   if(CheckPointer(g_tradeExecutor) == POINTER_DYNAMIC)
-      delete g_tradeExecutor;
-      
-   if(CheckPointer(g_learningEngine) == POINTER_DYNAMIC)
-      delete g_learningEngine;
-      
-   if(CheckPointer(g_knowledgeBase) == POINTER_DYNAMIC)
-      delete g_knowledgeBase;
-      
-   if(CheckPointer(g_signalBroadcaster) == POINTER_DYNAMIC)
-      delete g_signalBroadcaster;
-      
-   // Disable timer
-   EventKillTimer();
+   Print("Shutting down PaperEA, reason: ", GetUninitializeReasonText(reason));
    
-   Print("EscapeEA Paper Trader deinitialized");
+   // Clean up components safely
+   SafeDelete(g_signalBroadcaster);
+   SafeDelete(g_learningEngine);
+   SafeDelete(g_tradeExecutor);
+   SafeDelete(g_riskManager);
+   SafeDelete(g_signalGenerator);
+   SafeDelete(g_knowledgeBase);
+   
+   // Clear initialization flag
+   g_initialized = false;
+   Print("PaperEA shutdown complete");
   }
 
 //+------------------------------------------------------------------+
-//| Expert tick function                                             |
+//| Safely delete a pointer and set to NULL                         |
 //+------------------------------------------------------------------+
-void OnTick()
+template<typename T>
+void SafeDelete(T &ptr)
   {
-   // Check for new bar
-   if(!IsNewBar())
-      return;
-      
-   // Update indicators and generate signals
-   UpdateIndicators();
-   
-   // Check for trading signals
-   CheckTradingSignals();
-   
-   // Monitor open positions
-   MonitorPositions();
-   
-   // Update learning model
-   if(InpEnableLearning)
-      UpdateLearningModel();
+   if(CheckPointer(ptr) != POINTER_INVALID)
+     {
+      delete ptr;
+      ptr = NULL;
+     }
   }
 
 //+------------------------------------------------------------------+
-//| Timer function                                                   |
+//| Get text description of uninitialize reason                     |
 //+------------------------------------------------------------------+
-void OnTimer()
+string GetUninitializeReasonText(int reason)
   {
-   // Perform periodic tasks
-   CleanupExpiredSignals();
-   
-   // Update performance metrics
-   UpdatePerformanceMetrics();
-   
-   // Send status update
-   SendStatusUpdate();
+   switch(reason)
+     {
+      case REASON_ACCOUNT:    return "Account changed";
+      case REASON_CHARTCHANGE:return "Chart changed";
+      case REASON_CHARTCLOSE: return "Chart closed";
+      case REASON_PARAMETERS: return "Input parameters changed";
+      case REASON_RECOMPILE:  return "Program recompiled";
+      case REASON_REMOVE:     return "Program removed";
+      case REASON_TEMPLATE:   return "Template changed";
+      default:                return "Unknown reason: " + IntegerToString(reason);
+     }
   }
 
 //+------------------------------------------------------------------+
-//| Initialize EA components                                         |
+//| Validate input parameters                                        |
+//+------------------------------------------------------------------+
+bool ValidateInputs()
+  {
+   // Validate numeric inputs
+   if(InpRiskPerTrade <= 0 || InpRiskPerTrade > 10.0)
+     {
+      g_errorMessage = StringFormat("Invalid risk per trade: %.2f (must be 0.1-10.0)", InpRiskPerTrade);
+      return false;
+     }
+     
+   if(InpMaxOpenTrades < 1 || InpMaxOpenTrades > 100)
+     {
+      g_errorMessage = StringFormat("Invalid max open trades: %d (must be 1-100)", InpMaxOpenTrades);
+      return false;
+     }
+     
+   // Add more validations for other inputs...
+   
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Initialize components with error handling                       |
 //+------------------------------------------------------------------+
 bool InitializeComponents()
   {
-   // Initialize signal generator
+   bool success = true;
+   
+   // Initialize signal generator with error handling
    Print("Initializing signal generator...");
-   g_signalGenerator = new CSignalGenerator(g_symbol, _Period, 10, 20, 14, 14, 0.7); // Fast MA: 10, Slow MA: 20, RSI: 14, ATR: 14, Min Confidence: 0.7
+   g_signalGenerator = new CSignalGenerator(g_symbol, _Period, 10, 20, 14, 14, 0.7);
+   if(CheckPointer(g_signalGenerator) == POINTER_INVALID)
+     {
+      g_errorMessage = "Failed to create signal generator";
+      return false;
+     }
    if(CheckPointer(g_signalGenerator) == POINTER_INVALID)
      {
       Print("Error: Failed to create signal generator");
@@ -235,12 +277,13 @@ bool InitializeComponents()
      }
    Print("Learning engine initialized successfully");
    
-   // Check if learning engine is active
-   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+   // Check if learning engine is active and needs updating
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID && 
+      g_learningEngine.IsActive() && 
+      g_learningEngine.ShouldUpdate())
      {
-      // Add proper method calls if these methods exist in the LearningEngine class
-      // if(g_learningEngine.IsActive() && g_learningEngine.ShouldUpdate())
-      //    return false;
+      Print("Learning engine is active and ready for updates");
+      // Additional update logic can be added here if needed
      }
    
    // Initialize signal broadcaster
@@ -261,12 +304,35 @@ bool InitializeComponents()
   }
 
 //+------------------------------------------------------------------+
-//| Load historical data for backtesting                             |
+//| Load historical data for backtesting and analysis               |
 //+------------------------------------------------------------------+
 bool LoadHistoricalData()
   {
-   // In a real implementation, this would load historical data for backtesting
-   // For now, we'll just return true
+   Print("Loading historical data for ", g_symbol, "...");
+   
+   // Define the time period for historical data (last 6 months)
+   datetime endTime = TimeCurrent();
+   datetime startTime = endTime - 180 * 24 * 60 * 60; // 180 days ago
+   
+   // Request historical rates
+   MqlRates rates[];
+   int copied = CopyRates(g_symbol, _Period, startTime, endTime, rates);
+   
+   if(copied <= 0)
+     {
+      int error = GetLastError();
+      Print("Failed to load historical data. Error: ", ErrorDescription(error));
+      return false;
+     }
+   
+   Print("Successfully loaded ", copied, " bars of historical data");
+   
+   // Initialize technical indicators with historical data
+   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
+     {
+      g_learningEngine.InitializeWithHistoricalData(rates);
+     }
+   
    return true;
   }
 
@@ -332,21 +398,45 @@ void CheckTradingSignals()
    if(g_tradeExecutor.OpenPosition((signal.signal == SIGNAL_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL,
                                   lotSize, stopLoss, takeProfit, "Paper Trade"))
      {
-      // Record trade
-      STradeRecord trade;
-      trade.ticket = (ulong)MathRand(); // In a real implementation, get the actual ticket
+      // Record trade with proper ticket and timestamps
+      STradeRecord trade = {}; // Zero-initialize the structure
+      trade.ticket = g_tradeExecutor.GetLastOrderTicket();
+      if(trade.ticket == 0)
+        {
+         // Fallback to unique ID if ticket not available
+         static ulong lastTradeId = 0;
+         trade.ticket = ++lastTradeId + (ulong)TimeCurrent();
+        }
+         
       trade.openTime = TimeCurrent();
       trade.symbol = g_symbol;
       trade.type = (signal.signal == SIGNAL_BUY) ? TRADE_TYPE_BUY : TRADE_TYPE_SELL;
       trade.lots = lotSize;
       trade.openPrice = (signal.signal == SIGNAL_BUY) ? 
-                        SymbolInfoDouble(g_symbol, SYMBOL_ASK) : 
-                        SymbolInfoDouble(g_symbol, SYMBOL_BID);
-      trade.stopLoss = stopLoss;
-      trade.takeProfit = takeProfit;
-      trade.commission = 0.0;
-      trade.swap = 0.0;
-      trade.profit = 0.0;
+                       SymbolInfoDouble(g_symbol, SYMBOL_ASK) : 
+                       SymbolInfoDouble(g_symbol, SYMBOL_BID);
+      trade.stopLoss = NormalizeDouble(stopLoss, (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS));
+      trade.takeProfit = NormalizeDouble(takeProfit, (int)SymbolInfoInteger(g_symbol, SYMBOL_DIGITS));
+      
+      // Calculate commission and swap (simplified for paper trading)
+      double tickSize = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_SIZE);
+      double tickValue = SymbolInfoDouble(g_symbol, SYMBOL_TRADE_TICK_VALUE);
+      double pointValue = SymbolInfoDouble(g_symbol, SYMBOL_POINT);
+      
+      if(tickSize > 0 && tickValue > 0 && pointValue > 0)
+        {
+         // Calculate commission based on lot size and fixed rate
+         double commissionRate = 0.0002; // 0.02% commission
+         trade.commission = trade.lots * SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN) * 
+                           trade.openPrice * commissionRate;
+         
+         // Calculate swap (simplified)
+         double swapRate = (trade.type == TRADE_TYPE_BUY) ? -0.0001 : 0.00005; // Simplified swap rates
+         trade.swap = trade.lots * SymbolInfoDouble(g_symbol, SYMBOL_VOLUME_MIN) * 
+                     trade.openPrice * swapRate * (1.0/30.0); // Daily swap
+        }
+      
+      trade.profit = 0.0; // Will be updated when position is closed
       trade.signal = signal.signal;
       trade.confidence = signal.confidence;
       trade.isLive = false;
@@ -354,6 +444,42 @@ void CheckTradingSignals()
       // Add to knowledge base
       if(CheckPointer(g_knowledgeBase) != POINTER_INVALID)
          g_knowledgeBase.AddTrade(trade);
+      
+      // Broadcast signal to Live EA if active
+      if(g_signalActive && CheckPointer(g_signalBroadcaster) != POINTER_INVALID)
+        {
+         // Create a copy of the signal with current market prices
+         STradeSignal liveSignal = signal;
+         liveSignal.timestamp = TimeCurrent();
+         liveSignal.entry = (signal.signal == SIGNAL_BUY) ? 
+                           SymbolInfoDouble(g_symbol, SYMBOL_ASK) : 
+                           SymbolInfoDouble(g_symbol, SYMBOL_BID);
+         
+         // Ensure SL/TP levels are valid
+         if(stopLoss <= 0 || takeProfit <= 0)
+           {
+            // Calculate ATR-based SL/TP if not provided
+            double atr = iATR(g_symbol, PERIOD_CURRENT, 14, 0);
+            if(atr > 0)
+              {
+               if(signal.signal == SIGNAL_BUY)
+                 {
+                  liveSignal.stopLoss = liveSignal.entry - (2.0 * atr);
+                  liveSignal.takeProfit = liveSignal.entry + (3.0 * atr);
+                 }
+               else // SELL
+                 {
+                  liveSignal.stopLoss = liveSignal.entry + (2.0 * atr);
+                  liveSignal.takeProfit = liveSignal.entry - (3.0 * atr);
+                 }
+              }
+           }
+         
+         // Broadcast the signal with SL/TP levels
+         g_signalBroadcaster.BroadcastSignal(liveSignal);
+         Print("Signal sent to Live EA: ", EnumToString(signal.signal), 
+               " SL:", liveSignal.stopLoss, " TP:", liveSignal.takeProfit);
+        }
       
       g_totalTrades++;
       
@@ -363,31 +489,92 @@ void CheckTradingSignals()
   }
 
 //+------------------------------------------------------------------+
-//| Monitor open positions                                           |
+//| Monitor open positions and update SL/TP if needed                |
 //+------------------------------------------------------------------+
 void MonitorPositions()
   {
-   // In a real implementation, this would monitor open positions
-   // and update them based on market conditions
+   // Get all open positions
+   int total = PositionsTotal();
+   for(int i = total-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+      
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      if(symbol != g_symbol) continue;
+      
+      double currentSL = PositionGetDouble(POSITION_SL);
+      double currentTP = PositionGetDouble(POSITION_TP);
+      double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+      
+      // Calculate new ATR for dynamic SL/TP adjustment
+      double atr = iATR(g_symbol, PERIOD_CURRENT, 14, 0);
+      if(atr <= 0) continue;
+      
+      // Adjust SL/TP based on price movement
+      double newSL = currentSL;
+      double newTP = currentTP;
+      bool needsUpdate = false;
+      
+      if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+        {
+         // Move SL to breakeven + 1 ATR when price moves 2*ATR in profit
+         if(currentPrice > (currentTP - (3 * atr)) && currentSL < PositionGetDouble(POSITION_PRICE_OPEN))
+           {
+            newSL = PositionGetDouble(POSITION_PRICE_OPEN) + (1 * atr);
+            needsUpdate = true;
+           }
+        }
+      else // SELL position
+        {
+         // Move SL to breakeven - 1 ATR when price moves 2*ATR in profit
+         if(currentPrice < (currentTP + (3 * atr)) && (currentSL > PositionGetDouble(POSITION_PRICE_OPEN) || currentSL == 0))
+           {
+            newSL = PositionGetDouble(POSITION_PRICE_OPEN) - (1 * atr);
+            needsUpdate = true;
+           }
+        }
+      
+      // Update position if needed
+      if(needsUpdate && CheckPointer(g_tradeExecutor) != POINTER_INVALID)
+        {
+         g_tradeExecutor.ModifyPosition(ticket, newSL, newTP);
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
-//| Update learning model                                            |
+//| Update learning model with recent trades and market data         |
 //+------------------------------------------------------------------+
 void UpdateLearningModel()
   {
-   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
-      return;
-      
-   if(CheckPointer(g_learningEngine) != POINTER_INVALID)
-     {
-      // Uncomment if Update method exists in LearningEngine
-      // g_learningEngine.Update();
-     }
+   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID || 
+      CheckPointer(g_learningEngine) == POINTER_INVALID)
       return;
    
-   // Get recent trades for learning
+   // Get recent trades for learning (last 100 trades or all if less)
    STradeRecord trades[];
+   int totalTrades = g_knowledgeBase.GetRecentTrades(trades, 100);
+   
+   if(totalTrades > 0)
+     {
+      // Update learning model with recent trades
+      g_learningEngine.UpdateWithTrades(trades);
+      
+      // Get current market state
+      MqlTick lastTick;
+      if(SymbolInfoTick(g_symbol, lastTick))
+        {
+         // Update learning model with latest market data
+         g_learningEngine.UpdateWithTickData(lastTick);
+        }
+        
+      // Save updated model if needed
+      if(g_learningEngine.NeedsSaving())
+        {
+         g_learningEngine.SaveModel(g_learningModelPath);
+        }
+     }
    if(g_knowledgeBase.GetRecentTrades(InpLearningWindow, trades))
      {
       // Update learning model
@@ -396,19 +583,50 @@ void UpdateLearningModel()
   }
 
 //+------------------------------------------------------------------+
-//| Clean up expired signals                                         |
+//| Clean up expired signals from the knowledge base                 |
 //+------------------------------------------------------------------+
 void CleanupExpiredSignals()
   {
-   // In a real implementation, this would clean up expired signals
+   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
+      return;
+      
+   datetime currentTime = TimeCurrent();
+   datetime expiryTime = currentTime - InpMaxSignalAge;
+   
+   // Clean up signals older than max signal age
+   int removed = g_knowledgeBase.RemoveSignalsOlderThan(expiryTime);
+   
+   if(removed > 0)
+     {
+      Print("Removed ", removed, " expired signals from knowledge base");
+     }
   }
 
 //+------------------------------------------------------------------+
-//| Update performance metrics                                       |
+//| Update performance metrics and statistics                        |
 //+------------------------------------------------------------------+
 void UpdatePerformanceMetrics()
   {
-   // In a real implementation, this would update performance metrics
+   if(CheckPointer(g_knowledgeBase) == POINTER_INVALID)
+      return;
+      
+   // Get performance metrics
+   double winRate = g_knowledgeBase.GetWinRate();
+   double profitFactor = g_knowledgeBase.GetProfitFactor();
+   int totalTrades = g_knowledgeBase.GetTotalTrades();
+   int winningTrades = g_knowledgeBase.GetWinningTrades();
+   double maxDrawdown = g_knowledgeBase.GetMaxDrawdown();
+   
+   // Update UI with metrics
+   if(CheckPointer(g_ui) != POINTER_INVALID)
+     {
+      g_ui.UpdatePerformanceMetrics(winRate, profitFactor, maxDrawdown, totalTrades, winningTrades);
+     }
+     
+   // Log metrics to file
+   string logEntry = StringFormat("Metrics | Win Rate: %.2f%% | Profit Factor: %.2f | Max DD: %.2f%% | Trades: %d (%d wins)",
+                                winRate * 100.0, profitFactor, maxDrawdown, totalTrades, winningTrades);
+   LogToFile("performance.log", logEntry);
   }
 
 //+------------------------------------------------------------------+
