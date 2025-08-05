@@ -1,0 +1,7 @@
+[2025-08-02 20:22:23.275] === MT5 Error Logger Started ===
+[2025-08-02 20:22:23.316] Logging to: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Scripts\MT5_Error_Log_20250802_202223.log
+[2025-08-02 20:22:23.359] Could not find MT5 log file. Please ensure MetaTrader 5 is running.
+[2025-08-02 20:22:23.363] Tried to find log file at: 
+[2025-08-02 20:22:23.365] Searching for log files in common locations...
+[2025-08-02 20:22:23.378] No log files found in common locations. Please specify the path to your MT5 log file.
+[2025-08-02 20:22:23.381] === MT5 Error Logger Finished ===

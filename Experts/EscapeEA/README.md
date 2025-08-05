@@ -345,3 +345,6 @@ Compile all tests: Run Tests\compile_all_tests.bat
 Run all tests: Run Tests\run_all_tests.bat
 Interactive testing: Run Tests\run_quick_tests.bat
 Comprehensive suite: Execute TestSuiteRunner.ex5 in MetaTrader 5
+dont Skip File Verification
+
+https://github.com/josephmisiti/awesome-machine-learning?tab=readme-ov-file

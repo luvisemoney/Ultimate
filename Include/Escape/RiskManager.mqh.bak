@@ -1,0 +1,1845 @@
+//+------------------------------------------------------------------+
+//|                                                  RiskManager.mqh |
+//|                                          Copyright 2025, EscapeEA |
+//|                                             https://www.escapeea.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, EscapeEA"
+#property link      "https://www.escapeea.com"
+#property version   "2.00"
+#property strict
+
+#include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
+#include <Trade\DealInfo.mqh>
+#include <Arrays\ArrayObj.mqh>
+#include <Arrays\ArrayString.mqh>
+// Forward declarations to avoid circular dependencies
+class CSecurityEnhancements;
+class CTradeRecord;
+
+// Risk limits and constraints
+#define MAX_RISK_PER_TRADE      5.0     // Maximum allowed risk per trade (%)
+#define MAX_DAILY_RISK         10.0     // Maximum daily risk limit (%)
+#define MAX_POSITIONS           20      // Maximum open positions
+#define MAX_ORDERS_PER_DAY     100      // Maximum orders per day
+#define VOLATILITY_LOOKBACK     14      // Period for volatility calculation
+#define MIN_ACCOUNT_BALANCE   100.0     // Minimum account balance to trade
+
+//+------------------------------------------------------------------+
+//| Risk Profile Configuration                                       |
+//+------------------------------------------------------------------+
+input group "=== Risk Management Settings ==="
+input double   InpRiskPerTrade = 1.0;         // Risk per trade (% of balance, 0.1-5.0)
+input double   InpDailyLossLimit = 5.0;       // Max daily loss (% of balance, 1.0-10.0)
+input int      InpMaxOpenTrades = 5;          // Max open trades (1-20)
+input int      InpMaxOrdersPerDay = 20;       // Max orders per day (1-100)
+input bool     InpUseVolatilityAdjustment = true; // Adjust position size by volatility
+input int      InpAtrPeriod = 14;             // ATR period for volatility (5-50)
+// Max spread is now defined in SecurityEnhancements.mqh
+input bool     InpEnableCircuitBreaker = true; // Enable circuit breaker for extreme conditions
+input double   InpCircuitBreakerThreshold = 3.0; // % drawdown to trigger circuit breaker
+// Anomaly detection is now handled by SecurityEnhancements
+input int      InpMaxLeverage = 30;           // Maximum allowed leverage (1:1 to 1:500)
+
+//+------------------------------------------------------------------+
+//| Trade Risk Record                                                |
+//+------------------------------------------------------------------+
+class CTradeRiskRecord : public CObject
+{
+public:
+   ulong        ticket;         // Trade ticket
+   string       symbol;         // Symbol
+   double       volume;         // Position volume
+   double       entry;          // Entry price
+   double       sl;             // Stop loss
+   double       tp;             // Take profit
+   double       risk;           // Risk amount
+   datetime     openTime;       // Open time
+   
+   CTradeRiskRecord() {}
+   ~CTradeRiskRecord() {}
+   
+   void Set(ulong t, string s, double v, double e, double sll, double tpp, double r, datetime ot)
+   {
+      ticket = t;
+      symbol = s;
+      volume = v;
+      entry = e;
+      sl = sll;
+      tp = tpp;
+      risk = r;
+      openTime = ot;
+   }
+   
+   bool AddTrade(ulong tradeTicket, const string tradeSymbol, double tradeVolume, double tradeEntry, 
+                double tradeSL, double tradeTP, double tradeRisk, datetime tradeOpenTime) {
+      // Check if trade is valid
+      if(!IsMarketOpen(tradeSymbol) || tradeVolume <= 0 || tradeEntry <= 0 || tradeRisk < 0) {
+         return false;
+      }
+      
+      // Create a new trade record
+      CTradeRiskRecord *newRecord = new CTradeRiskRecord();
+      newRecord.Set(tradeTicket, tradeSymbol, tradeVolume, tradeEntry, tradeSL, tradeTP, tradeRisk, tradeOpenTime);
+      
+      // Add to open trades
+      if(m_openTrades == NULL) {
+         m_openTrades = new CArrayObj();
+      }
+      m_openTrades.Add(newRecord);
+      
+      return true;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| Risk Manager Class                                               |
+//+------------------------------------------------------------------+
+class CRiskManager : public CObject
+{
+private:
+   // Risk parameters
+   double            m_riskPerTrade;         // Risk per trade as percentage of balance
+   double            m_dailyLossLimit;       // Maximum daily loss percentage
+   int               m_maxOpenTrades;        // Maximum number of open trades
+   int               m_maxOrdersPerDay;      // Maximum orders per day
+   bool              m_useVolatilityAdjustment; // Use volatility-based position sizing
+   double            m_maxDailyLoss;         // Maximum daily loss amount
+   bool              m_circuitBreakerActive; // Circuit breaker state
+   int               m_atrPeriod;            // Period for ATR calculation
+   int               m_maxSpread;            // Maximum allowed spread in points
+   double            m_circuitBreakerLevel;  // Drawdown level for circuit breaker
+   bool              m_anomalyDetection;     // Enable anomaly detection
+   int               m_maxLeverage;          // Maximum allowed leverage
+   
+   // State tracking
+   double            m_dailyPnL;             // Today's PnL
+   int               m_todayOrders;          // Number of orders placed today
+   int               m_dailyOrderCount;      // Daily order counter
+   double            m_dailyPL;              // Daily profit/loss
+   datetime          m_lastTradeDay;         // Last trading day
+   string            m_lastError;            // Last error message
+   double            m_equityHigh;           // Highest equity level
+   double            m_maxDrawdown;          // Maximum drawdown percentage
+   bool              m_isTradingAllowed;     // Flag to enable/disable trading
+   bool              m_logToFile;            // Enable logging to file
+   int               m_consecutiveErrors;    // Count of consecutive errors
+   bool              m_useCircuitBreaker;    // Enable circuit breaker
+   int               m_maxConsecutiveErrors; // Max allowed consecutive errors
+   datetime          m_circuitBreakerTime;   // When circuit breaker was activated
+   int               m_circuitBreakTime;     // Duration of circuit break in seconds
+   CTrade*           m_trade;                // Trade execution object
+   
+   // News filtering
+   bool              m_useNewsFilter;        // Enable news filtering
+   datetime          m_newsStartTime;        // Start time of news event
+   datetime          m_newsEndTime;          // End time of news event
+   CArrayString*     m_affectedSymbols;      // Symbols affected by news
+   
+   // Collections
+   CArrayObj         m_openTrades;           // Currently open trades
+   CArrayObj         m_closedTrades;         // Recently closed trades
+   CArrayObj         m_tradeHistory;         // Historical record of all trades
+   
+   // Volatility data
+   int               m_atrHandle;            // ATR indicator handle
+   double            m_atrBuffer[];          // ATR buffer
+   
+   // Security - Using pointer to avoid circular dependency
+   CSecurityEnhancements *m_security;         // Security enhancements
+   
+   // Private methods
+   // Update daily trading metrics
+   void              UpdateDailyMetrics() {
+      MqlDateTime time;
+      TimeCurrent(time);
+      
+      // Check if it's a new day
+      if(m_lastTradeDay != time.day) {
+         // Reset daily counters if it's a new day
+         if(m_lastTradeDay != 0) { // Don't reset on the first run
+            m_dailyPnL = 0.0;
+            m_todayOrders = 0;
+            m_dailyOrderCount = 0;
+            
+            // Log end of day report
+            string report = "=== End of Day Report ===\n";
+            report += "Date: " + TimeToString(TimeCurrent(), TIME_DATE) + "\n";
+            report += "Daily P/L: " + DoubleToString(m_dailyPnL, 2) + " " + AccountInfoString(ACCOUNT_CURRENCY) + "\n";
+            report += "Orders Today: " + IntegerToString(m_todayOrders) + "\n";
+            report += "Open Positions: " + IntegerToString(PositionsTotal()) + "\n";
+            report += "Account Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + "\n";
+            report += "Account Equity: " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + "\n";
+            report += "======================\n";
+            
+            Print(report);
+            
+            // Save to file if needed
+            if(m_logToFile) {
+               int file_handle = FileOpen("DailyReport_" + TimeToString(TimeCurrent(), TIME_DATE) + ".txt", 
+                                       FILE_WRITE|FILE_TXT);
+               if(file_handle != INVALID_HANDLE) {
+                  FileWriteString(file_handle, report);
+                  FileClose(file_handle);
+               }
+            }
+         }
+         
+         // Update last trade day
+         m_lastTradeDay = time.day;
+      }
+      
+      // Update current day's P/L
+      double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+      m_dailyPnL = currentEquity - currentBalance;
+   }
+   
+   // Log trade metrics for analysis
+   void              LogTradeMetrics(const ulong ticket, const string symbol, const ENUM_ORDER_TYPE type, 
+                                   const double volume, const double openPrice, const double sl, 
+                                   const double tp, const string comment = "") {
+      // Create a trade record
+      CTradeRecord *record = new CTradeRecord();
+      record.Set(ticket, symbol, type, volume, openPrice, sl, tp, 0.0, comment);
+      
+      // Add to trade history
+      m_tradeHistory.Add(record);
+      
+      // Prepare log message
+      string logMsg = StringFormat("[%s] %s %s %.2f lots @ %.5f", 
+                                 TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                                 EnumToString(type),
+                                 symbol,
+                                 volume,
+                                 openPrice);
+      
+      if(sl > 0) logMsg += StringFormat(" SL:%.5f", sl);
+      if(tp > 0) logMsg += StringFormat(" TP:%.5f", tp);
+      if(comment != "") logMsg += " " + comment;
+      
+      // Print to log
+      Print(logMsg);
+      
+      // Log to file if enabled
+      if(m_logToFile) {
+         int file_handle = FileOpen("TradeLog_" + symbol + "_" + TimeToString(TimeCurrent(), TIME_DATE) + ".csv", 
+                                  FILE_WRITE|FILE_CSV|FILE_READ, ",");
+         if(file_handle != INVALID_HANDLE) {
+            // Write header if file is empty
+            if(FileSize(file_handle) == 0) {
+               FileWrite(file_handle, "DateTime","Type","Symbol","Volume","Price","SL","TP","Comment");
+            }
+            
+            // Write trade data
+            FileWrite(file_handle, 
+                     TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                     EnumToString(type),
+                     symbol,
+                     volume,
+                     openPrice,
+                     sl,
+                     tp,
+                     comment);
+            
+            FileClose(file_handle);
+         }
+      }
+      
+      // Update metrics
+      m_todayOrders++;
+      m_dailyOrderCount++;
+      UpdateDailyMetrics();
+   }
+   
+   // Check if there's sufficient margin for the trade
+   bool              CheckMargin(const string symbol, const double volume, const double price, const ENUM_ORDER_TYPE orderType) {
+      // Get order type direction
+      bool isBuy = (orderType == ORDER_TYPE_BUY || orderType == ORDER_TYPE_BUY_LIMIT || orderType == ORDER_TYPE_BUY_STOP);
+      
+      // Calculate required margin
+      double margin = 0.0;
+      if(!OrderCalcMargin((ENUM_ORDER_TYPE)orderType, symbol, volume, price, margin)) {
+         m_lastError = "Failed to calculate margin for " + symbol;
+         return false;
+      }
+      
+      // Get free margin and account balance
+      double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      
+      // Check if we have enough margin
+      if(margin > freeMargin) {
+         m_lastError = StringFormat("Insufficient margin. Required: %.2f, Available: %.2f", margin, freeMargin);
+         return false;
+      }
+      
+      // Check margin level (if position would be opened)
+      double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+      if(marginLevel > 0 && marginLevel < 100.0) { // 100% margin level is critical
+         m_lastError = StringFormat("Margin level too low: %.2f%%", marginLevel);
+         return false;
+      }
+      
+      return true;
+   }
+   
+   // Check if the current spread is acceptable for trading
+   bool              CheckSpread(const string symbol) {
+      // Get current spread
+      long spread = SymbolInfoInteger(symbol, SYMBOL_SPREAD);
+      
+      // Get average spread for the current timeframe
+      double avgSpread = GetAverageSpread(symbol, PERIOD_CURRENT, 20);
+      
+      // Check if spread is within acceptable limits (2x average or 20 points, whichever is higher)
+      double maxSpread = MathMax(avgSpread * 2.0, 20.0);
+      
+      if(spread > maxSpread) {
+         m_lastError = StringFormat("Spread too high: %d points (max: %.1f)", spread, maxSpread);
+         return false;
+      }
+      
+      return true;
+   }
+   
+   // Check if the market is open for trading
+   bool              CheckMarketHours(const string symbol) {
+      // Check if the symbol is selected and visible in Market Watch
+      if(!SymbolSelect(symbol, true)) {
+         m_lastError = "Symbol " + symbol + " is not available";
+         return false;
+      }
+      
+      // Check if the symbol is enabled for trading
+      if(!SymbolInfoInteger(symbol, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_DISABLED) {
+         m_lastError = "Trading is disabled for " + symbol;
+         return false;
+      }
+      
+      // Check if we're outside of market hours (if defined)
+      MqlDateTime time;
+      TimeCurrent(time);
+      int dayOfWeek = time.day_of_week;
+      int hour = time.hour;
+      
+      // Example: Don't trade on weekends
+      if(dayOfWeek == 0 || dayOfWeek == 6) { // Sunday or Saturday
+         m_lastError = "Market is closed on weekends";
+         return false;
+      }
+      
+      // Example: Only trade during specific hours (e.g., London + NY session)
+      // Adjust these values based on your trading strategy
+      if(hour < 8 || hour >= 22) { // 8 AM to 10 PM server time
+         m_lastError = "Outside of trading hours (8:00-22:00 server time)";
+         return false;
+      }
+      
+      // Check for market holidays (you would implement this based on your needs)
+      if(IsMarketHoliday(time)) {
+         m_lastError = "Market holiday";
+         return false;
+      }
+      
+      return true;
+   }
+   
+   // Helper function to get average spread over a period
+   double            GetAverageSpread(const string symbol, const ENUM_TIMEFRAMES timeframe, const int periods) {
+      double totalSpread = 0;
+      int count = 0;
+      
+      for(int i = 0; i < periods; i++) {
+         long spread = (long)SymbolInfoInteger(symbol, SYMBOL_SPREAD);
+         if(spread > 0) {
+            totalSpread += spread;
+            count++;
+         }
+         // Move to previous bar (this is simplified, in real code you'd use CopySpread)
+         Sleep(10); // Small delay to avoid flooding
+      }
+      
+      return (count > 0) ? (totalSpread / count) : 0;
+   }
+   
+   // Check if today is a market holiday (example implementation)
+   bool              IsMarketHoliday(const MqlDateTime &time) {
+      // This is a simplified example - you'd want to implement a proper holiday calendar
+      // based on the market you're trading
+      
+      // Example: New Year's Day
+      if(time.mon == 1 && time.day == 1) return true;
+      
+      // Example: Christmas
+      if(time.mon == 12 && time.day == 25) return true;
+      
+      // Add other major holidays as needed
+      
+      return false;
+   }
+   
+   // Execute a trading order with risk management
+   bool              ExecuteOrder(const string symbol, 
+                                const ENUM_ORDER_TYPE orderType, 
+                                const double volume, 
+                                const double price, 
+                                const double sl, 
+                                const double tp, 
+                                const string comment = "") {
+      // Validate order parameters
+      if(!ValidateOrder(symbol, orderType, volume, price, sl, tp)) {
+         return false;
+      }
+      
+      // Check if trading is allowed
+      if(!IsTradingAllowed()) {
+         m_lastError = "Trading is not allowed: " + m_lastError;
+         return false;
+      }
+      
+      // Execute the order
+      bool result = false;
+      m_trade.SetExpertMagicNumber(m_magicNumber);
+      
+      switch(orderType) {
+         case ORDER_TYPE_BUY:
+            result = m_trade.Buy(volume, symbol, price, sl, tp, comment);
+            break;
+            
+         case ORDER_TYPE_SELL:
+            result = m_trade.Sell(volume, symbol, price, sl, tp, comment);
+            break;
+            
+         case ORDER_TYPE_BUY_LIMIT:
+            result = m_trade.BuyLimit(volume, price, symbol, sl, tp, 0, 0, comment);
+            break;
+            
+         case ORDER_TYPE_SELL_LIMIT:
+            result = m_trade.SellLimit(volume, price, symbol, sl, tp, 0, 0, comment);
+            break;
+            
+         case ORDER_TYPE_BUY_STOP:
+            result = m_trade.BuyStop(volume, price, symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+            break;
+            
+         case ORDER_TYPE_SELL_STOP:
+            result = m_trade.SellStop(volume, price, symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+            break;
+            
+         default:
+            m_lastError = "Unsupported order type: " + EnumToString(orderType);
+            return false;
+      }
+      
+      // Handle the result
+      if(!result) {
+         HandleError(m_trade.ResultRetcode(), "Order execution failed");
+         return false;
+      }
+      
+      // Update metrics and reset error counter on success
+      UpdateDailyMetrics();
+      ResetErrorCounter();
+      
+      return true;
+   }
+   
+   // Handle trading errors and update error counter
+   void              HandleError(const int errorCode, const string context = "") {
+      // Log the error
+      string errorMsg = "Error " + IntegerToString(errorCode) + ": " + ErrorDescription(errorCode);
+      if(context != "") {
+         errorMsg = context + " - " + errorMsg;
+      }
+      Print(errorMsg);
+      
+      // Update error counter and check circuit breaker
+      m_consecutiveErrors++;
+      if(m_useCircuitBreaker && m_consecutiveErrors >= m_maxConsecutiveErrors) {
+         m_circuitBreakerActive = true;
+         m_circuitBreakerTime = TimeCurrent();
+         Print("Circuit breaker activated! Trading suspended until ", 
+               TimeToString(m_circuitBreakerTime + m_circuitBreakTime, TIME_MINUTES|TIME_SECONDS));
+      }
+      
+      // Update last error message
+      m_lastError = errorMsg;
+   }
+   
+   // Reset the error counter and circuit breaker if needed
+   void              ResetErrorCounter() {
+      if(m_consecutiveErrors > 0) {
+         m_consecutiveErrors = 0;
+         if(m_circuitBreakerActive) {
+            m_circuitBreakerActive = false;
+            Print("Circuit breaker reset. Trading resumed.");
+         }
+      }
+   }
+   
+   // Get current market volatility using ATR
+   double            GetCurrentVolatility(const string symbol, const ENUM_TIMEFRAMES timeframe = PERIOD_CURRENT) {
+      // If ATR handle is not valid, try to create it
+      if(m_atrHandle == INVALID_HANDLE) {
+         m_atrHandle = iATR(symbol, timeframe, m_atrPeriod);
+         if(m_atrHandle == INVALID_HANDLE) {
+            m_lastError = "Failed to create ATR indicator for " + symbol;
+            return 0.0;
+         }
+      }
+      
+      // Copy ATR values
+      double atrValues[1];
+      if(CopyBuffer(m_atrHandle, 0, 0, 1, atrValues) <= 0) {
+         m_lastError = "Failed to get ATR values for " + symbol;
+         return 0.0;
+      }
+      
+      // Get the current ATR value
+      double currentATR = atrValues[0];
+      
+      // Normalize ATR to percentage of current price for consistent comparison
+      double currentPrice = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      if(currentPrice <= 0) {
+         currentPrice = SymbolInfoDouble(symbol, SYMBOL_BID);
+      }
+      
+      if(currentPrice > 0) {
+         return (currentATR / currentPrice) * 100.0; // Return as percentage
+      }
+      
+      return currentATR; // Fallback to raw ATR value if price is 0
+   }
+   
+   // Calculate position size based on risk parameters
+   double            CalculatePositionSize(const string symbol, const double entryPrice, const double stopLoss, const double riskPercent) {
+      if(riskPercent <= 0 || entryPrice <= 0 || stopLoss <= 0) {
+         m_lastError = "Invalid parameters for position sizing";
+         return 0.0;
+      }
+      
+      // Get account currency and symbol information
+      string accountCurrency = AccountInfoString(ACCOUNT_CURRENCY);
+      double tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+      double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+      double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+      double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+      double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+      
+      // Calculate risk amount in account currency
+      double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double riskAmount = accountBalance * (riskPercent / 100.0);
+      
+      // Calculate position size based on stop loss
+      double stopLossDistance = MathAbs(entryPrice - stopLoss) / point;
+      double tickValueAdjusted = tickValue * (point / tickSize);
+      double positionSize = riskAmount / (stopLossDistance * tickValueAdjusted);
+      
+      // Adjust position size to lot step
+      positionSize = MathFloor(positionSize / lotStep) * lotStep;
+      
+      // Ensure position size is within symbol limits
+      positionSize = MathMin(MathMax(positionSize, minLot), maxLot);
+      
+      return positionSize;
+   }
+   
+   bool              CheckDailyLimits() {
+      // Update daily metrics first
+      UpdateDailyMetrics();
+      
+      // Check if we've exceeded daily order limit
+      if(m_todayOrders >= m_maxOrdersPerDay) {
+         m_lastError = StringFormat("Daily order limit reached (%d/%d)", m_todayOrders, m_maxOrdersPerDay);
+         return false;
+      }
+      
+      // Check if we've exceeded maximum open trades
+      if(GetOpenPositions() >= m_maxOpenTrades) {
+         m_lastError = "Maximum open trades limit reached";
+         return false;
+      }
+      
+      // Check daily loss limit
+      if(m_dailyPnL < -m_dailyLossLimit) {
+         m_lastError = "Daily loss limit reached";
+         return false;
+      }
+      
+      return true;
+   }
+   
+   bool              CheckPositionSize(const string symbol, const double volume, const double price) {
+      if(volume <= 0 || price <= 0) {
+         m_lastError = "Invalid position parameters";
+         return false;
+      }
+      
+      double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+      double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+      double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+      
+      // Check against symbol's lot size constraints
+      if(volume < minLot || volume > maxLot) {
+         m_lastError = "Volume out of allowed range";
+         return false;
+      }
+      
+      // Check if volume is a multiple of lot step
+      if(MathMod(volume, lotStep) != 0) {
+         m_lastError = "Volume must be a multiple of " + DoubleToString(lotStep, 2);
+         return false;
+      }
+      
+      return true;
+   }
+   
+   bool              CheckMarketSpread(const string symbol) {
+      if(!SymbolSelect(symbol, true)) {
+         m_lastError = "Symbol " + symbol + " is not selected";
+         return false;
+      }
+      
+      long spread = SymbolInfoInteger(symbol, SYMBOL_SPREAD);
+      if(spread > (long)m_maxSpread) {
+         m_lastError = "Spread too wide: " + IntegerToString((int)spread) + " points";
+         return false;
+      }
+      
+      return true;
+   }
+   
+   bool              CheckVolatility(const string symbol) {
+      if(!m_useVolatilityAdjustment) {
+         return true; // Volatility check disabled
+      }
+      
+      double volatility = GetCurrentVolatility(symbol, PERIOD_CURRENT, m_atrPeriod);
+      double maxVolatility = GetMaxVolatility(symbol);
+      
+      if(volatility > maxVolatility) {
+         m_lastError = symbol + " volatility too high: " + DoubleToString(volatility, 2) + " (max: " + DoubleToString(maxVolatility, 2) + ")";
+         return false;
+      }
+      
+      return true;
+   }
+   
+   double            CalculateVolatilityFactor(const string symbol) {
+      if(!m_useVolatilityAdjustment) {
+         return 1.0; // No adjustment
+      }
+      
+      double volatility = GetCurrentVolatility(symbol, PERIOD_CURRENT, m_atrPeriod);
+      if(volatility <= 0) {
+         return 1.0; // Fallback to no adjustment
+      }
+      
+      // Normalize ATR to a factor between 0.5 and 1.5
+      double avgAtr = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE) * 10; // Example average ATR
+      double factor = avgAtr / volatility;
+      return MathMin(1.5, MathMax(0.5, factor));
+   }
+   
+   void              UpdateTradeHistory(const CTradeRiskRecord *record) {
+      if(record == NULL) return;
+      
+      // Add to open trades
+      CTradeRiskRecord *newRecord = new CTradeRiskRecord();
+      *newRecord = *record;
+      m_openTrades.Add(newRecord);
+      
+      // Update daily stats
+      m_todayOrders++;
+      
+      // Update equity high water mark
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(equity > m_equityHigh) {
+         m_equityHigh = equity;
+      }
+      
+      // Update drawdown
+      UpdateDrawdown();
+   }
+   
+   double            GetRecentProfitFactor(const string symbol, const int periods) {
+      // Implementation depends on your trading history tracking
+      // This is a simplified version
+      double profit = 0;
+      double loss = 0;
+      
+      // In a real implementation, you would iterate through recent trades
+      // and calculate profit factor based on wins/losses
+      
+      if(loss == 0) return 10.0; // Avoid division by zero
+      return profit / loss;
+   }
+   
+   bool              CheckMarginRequirements(const string symbol, const double volume) {
+      double margin = 0;
+      double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      
+      if(!OrderCalcMargin(ORDER_TYPE_BUY, symbol, volume, 0, margin)) {
+         m_lastError = "Failed to calculate margin requirements";
+         return false;
+      }
+      
+      // Check if we have enough margin
+      if(margin > freeMargin) {
+         m_lastError = "Insufficient margin";
+         return false;
+      }
+      
+      // Check leverage
+      double leverage = AccountInfoInteger(ACCOUNT_LEVERAGE);
+      if(leverage > m_maxLeverage) {
+         m_lastError = "Account leverage too high";
+         return false;
+      }
+      
+      return true;
+   }
+   
+   bool              CheckCorrelatedPositions(const string symbol, const ENUM_ORDER_TYPE type) {
+      // In a real implementation, you would check for correlated positions
+      // This is a simplified version that just checks for opposite positions on the same symbol
+      
+      for(int i = 0; i < m_openTrades.Total(); i++) {
+         CTradeRiskRecord *record = m_openTrades.At(i);
+         if(record != NULL && record.symbol == symbol) {
+            // Check for opposite position type
+            if((type == ORDER_TYPE_BUY && record.type == ORDER_TYPE_SELL) ||
+               (type == ORDER_TYPE_SELL && record.type == ORDER_TYPE_BUY)) {
+               m_lastError = "Opposite position exists";
+               return false;
+            }
+         }
+      }
+      
+      return true;
+   }
+   
+   void              UpdateDrawdown() {
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      
+      if(balance > 0) {
+         double drawdown = (balance - equity) / balance * 100;
+         if(drawdown > m_maxDrawdown) {
+            m_maxDrawdown = drawdown;
+         }
+      }
+   }
+   
+   void              CheckCircuitBreaker() {
+      if(!InpEnableCircuitBreaker) return;
+      
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      
+      if(balance > 0) {
+         double drawdown = (balance - equity) / balance * 100;
+         if(drawdown >= m_circuitBreakerLevel) {
+            m_circuitBreakerActive = true;
+            LogAnomaly("Circuit breaker triggered: Drawdown " + DoubleToString(drawdown, 2) + "%");
+         }
+      }
+   }
+   
+   void              LogAnomaly(const string message) {
+      // In a real implementation, you would log to a file or send an alert
+      Print("[ANOMALY] ", message);
+   }
+   
+public:
+   // Constructor/Destructor
+                     CRiskManager();
+                    ~CRiskManager();
+   
+   // Initialization
+   bool              Initialize();
+   void              Deinitialize();
+   
+   // Configuration with validation
+   void              SetRiskPerTrade(double risk) { m_riskPerTrade = MathMin(MathMax(risk, 0.1), MAX_RISK_PER_TRADE); }
+   void              SetDailyLossLimit(double limit) { m_dailyLossLimit = MathMin(MathMax(limit, 0.5), MAX_DAILY_RISK); }
+   void              SetMaxOpenTrades(int maxTrades) { m_maxOpenTrades = MathMax(1, MathMin(maxTrades, MAX_POSITIONS)); }
+   void              SetMaxOrdersPerDay(int maxOrders) { m_maxOrdersPerDay = MathMax(1, MathMin(maxOrders, MAX_ORDERS_PER_DAY)); }
+   void              UseVolatilityAdjustment(bool enable) { m_useVolatilityAdjustment = enable; }
+   void              SetAtrPeriod(int period) { m_atrPeriod = MathMax(5, MathMin(period, 50)); }
+   void              SetMaxSpread(int maxSpread) { m_maxSpread = MathMax(1, MathMin(maxSpread, 100)); }
+   void              SetMaxLeverage(int leverage) { m_maxLeverage = MathMax(1, MathMin(leverage, 500)); }
+   
+   // Risk validation with enhanced security
+   bool ValidateTrade(const string symbol, const ENUM_ORDER_TYPE type, 
+                     const double volume, const double price, 
+                     const double sl, const double tp) {
+      // Reset last error
+      m_lastError = "";
+      
+      // Basic parameter validation
+      if(volume <= 0 || price <= 0) {
+         m_lastError = "Invalid trade parameters";
+         return false;
+      }
+      
+      // Check circuit breaker first
+      if(m_circuitBreakerActive) {
+         m_lastError = "Trading suspended by circuit breaker";
+         return false;
+      }
+      
+      // Check daily limits
+      if(!CheckDailyLimits()) {
+         return false;
+      }
+      
+      // Check position size
+      if(!CheckPositionSize(symbol, volume, price)) {
+         return false;
+      }
+      
+      // Check market spread
+      if(!CheckMarketSpread(symbol)) {
+         return false;
+      }
+      
+      // Check volatility
+      if(!CheckVolatility(symbol)) {
+         return false;
+      }
+      
+      // Check margin requirements
+      if(!CheckMarginRequirements(symbol, volume)) {
+         return false;
+      }
+      
+      // Check for correlated positions
+      if(!CheckCorrelatedPositions(symbol, type)) {
+         return false;
+      }
+      
+      // Additional security checks if security manager is available
+      if(m_security != NULL && !m_security.ValidateTrade(symbol, type, volume, price, sl, tp)) {
+         m_lastError = m_security.GetLastError();
+         return false;
+      }
+      
+      return true;
+   }
+   
+   // Position sizing with risk controls
+   double CalculatePositionSize(const string symbol, const double price, const int slPoints) {
+      if(price <= 0 || slPoints <= 0) {
+         m_lastError = "Invalid parameters for position sizing";
+         return 0.0;
+      }
+      
+      // Get account balance and calculate risk amount
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double riskAmount = balance * (m_riskPerTrade / 100.0);
+      
+      // Calculate tick value and tick size
+      double tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+      double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+      
+      if(tickSize <= 0 || tickValue <= 0 || point <= 0) {
+         m_lastError = "Failed to get symbol information";
+         return 0.0;
+      }
+      
+      // Calculate position size
+      double riskMoney = riskAmount;
+      double lossInQuoteCurrency = slPoints * point * tickValue / tickSize;
+      
+      if(lossInQuoteCurrency <= 0) {
+         m_lastError = "Invalid stop loss for position sizing";
+         return 0.0;
+      }
+      
+      double volume = riskMoney / lossInQuoteCurrency;
+      
+      // Apply volatility adjustment if enabled
+      if(m_useVolatilityAdjustment) {
+         double volatilityFactor = CalculateVolatilityFactor(symbol);
+         volume *= volatilityFactor;
+      }
+      
+      // Get symbol's volume constraints
+      double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+      double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+      double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+      
+      // Ensure volume is within allowed range and step
+      volume = MathMax(minLot, MathMin(volume, maxLot));
+      volume = MathFloor(volume / lotStep) * lotStep;
+      
+      return volume;
+   }
+   
+   // Check if market is open for a symbol
+   bool IsMarketOpen(const string symbol) {
+      // Check if the symbol is selected
+      if(!SymbolSelect(symbol, true)) {
+         m_lastError = "Failed to select symbol " + symbol;
+         return false;
+      }
+      
+      // Check if the market is open now
+      datetime current = TimeCurrent();
+      if(!SymbolInfoInteger(symbol, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_DISABLED) {
+         // Check trading session times
+         MqlDateTime time;
+         TimeToStruct(current, time);
+         
+         // Skip weekend check if symbol trades on weekends
+         if(!SymbolInfoInteger(symbol, SYMBOL_TRADE_CALENDAR)) {
+            if(time.day_of_week == 0 || time.day_of_week == 6) { // Sunday or Saturday
+               m_lastError = "Market is closed (weekend)";
+               return false;
+            }
+         }
+         
+         // Check if current time is within trading hours
+         // This is a simplified check - adjust according to your broker's trading hours
+         int dayOfWeek = time.day_of_week;
+         if(dayOfWeek >= 1 && dayOfWeek <= 5) { // Monday to Friday
+            int hour = time.hour;
+            // Example: Check if current time is within 0:00-23:59 (24/5 market)
+            if(hour >= 0 && hour < 24) {
+               return true;
+            }
+         }
+      }
+      
+      m_lastError = "Market is currently closed";
+      return false;
+   }
+   
+   // Market conditions with anomaly detection
+   bool CheckMarketConditions(const string symbol) {
+      // Basic symbol check
+      if(!SymbolSelect(symbol, true)) {
+         m_lastError = "Symbol " + symbol + " is not available";
+         return false;
+      }
+      
+      // Check if market is open
+      if(!IsMarketOpen(symbol)) {
+         m_lastError = symbol + " market is closed";
+         return false;
+      }
+      
+      // Check spread
+      if(!CheckMarketSpread(symbol)) {
+         return false;
+      }
+      
+      // Check volatility if enabled
+      if(m_useVolatilityAdjustment && !CheckVolatility(symbol)) {
+         return false;
+      }
+      
+      return true;
+   }
+   
+   // Getters with validation
+   string            GetLastError() const { return m_lastError; }
+   double            GetDailyPnL() const { return m_dailyPnL; }
+   int               GetTodayOrders() const { return m_todayOrders; }
+   double            GetMaxDrawdown() const { return m_maxDrawdown; }
+   bool              IsCircuitBreakerActive() const { return m_circuitBreakerActive; }
+   
+   // State management
+   void              ResetDailyStats();
+   
+   // Advanced risk metrics
+   double            CalculateDrawdown(const string symbol = NULL);
+   double            CalculateRiskRewardRatio(const double entry, const double sl, const double tp);
+   double            GetVolatility(const string symbol);
+   double            GetRiskOfRuin() const;
+   
+   // Position management
+   int GetOpenPositions(const string symbol = "") {
+      int count = 0;
+      
+      if(symbol == "") {
+         // Count all open positions
+         for(int i = 0; i < m_openTrades.Total(); i++) {
+            CTradeRiskRecord *record = m_openTrades.At(i);
+            if(record != NULL && !record.isClosed) {
+               count++;
+            }
+         }
+      } else {
+         // Count positions for specific symbol
+         for(int i = 0; i < m_openTrades.Total(); i++) {
+            CTradeRiskRecord *record = m_openTrades.At(i);
+            if(record != NULL && record.symbol == symbol && !record.isClosed) {
+               count++;
+            }
+         }
+      }
+      
+      return count;
+   }
+   
+   double GetTotalRisk() {
+      double totalRisk = 0;
+      
+      for(int i = 0; i < m_openTrades.Total(); i++) {
+         CTradeRiskRecord *record = m_openTrades.At(i);
+         if(record != NULL && !record.isClosed) {
+            totalRisk += record.risk;
+         }
+      }
+      
+      return totalRisk;
+   }
+   
+   double GetPortfolioRisk() const {
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      if(balance <= 0) return 0;
+      
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      return ((balance - equity) / balance) * 100.0;
+   }
+   
+   // Risk controls
+   bool IsTradingAllowed() {
+      // Check circuit breaker first
+      if(m_circuitBreakerActive) {
+         m_lastError = "Trading suspended by circuit breaker";
+         return false;
+      }
+      
+      // Check if market is open for trading
+      if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)) {
+         m_lastError = "Trading is not allowed by the terminal";
+         return false;
+      }
+      
+      // Check if expert is allowed to trade
+      if(!MQLInfoInteger(MQL_TRADE_ALLOWED)) {
+         m_lastError = "Trading is not allowed for this expert";
+         return false;
+      }
+      
+      // Check if account allows trading
+      if(!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)) {
+         m_lastError = "Trading is not allowed for this account";
+         return false;
+      }
+      
+      // Check if account is in profit/loss limits
+      double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+      if(profit < -m_dailyLossLimit) {
+         m_lastError = "Daily loss limit reached";
+         return false;
+      }
+      
+      return true;
+   }
+   
+   void SuspendTrading(const string reason) {
+      m_circuitBreakerActive = true;
+      LogAnomaly("Trading suspended: " + reason);
+   }
+   
+   void ResumeTrading() {
+      if(m_circuitBreakerActive) {
+         m_circuitBreakerActive = false;
+         LogAnomaly("Trading resumed");
+      }
+   }
+   
+   // Monitoring
+   void MonitorPositions() {
+      // Update all open positions
+      for(int i = m_openTrades.Total() - 1; i >= 0; i--) {
+         CTradeRiskRecord *record = m_openTrades.At(i);
+         if(record == NULL) continue;
+         
+         // Check if position is still open
+         if(!PositionSelectByTicket(record.ticket)) {
+            // Position was closed, move to closed trades
+            record.isClosed = true;
+            m_closedTrades.Add(m_openTrades.Detach(i));
+            
+            // Update daily PnL
+            double profit = record.volume * (record.price - record.sl); // Simplified PnL calculation
+            m_dailyPnL += profit;
+            
+            // Update drawdown
+            UpdateDrawdown();
+         }
+      }
+      
+      // Check circuit breaker
+      CheckCircuitBreaker();
+   }
+   
+   void CheckMarginLevels() {
+      double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+      double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+      
+      // Log warning if margin level is low
+      if(marginLevel > 0 && marginLevel < 100.0) { // 100% margin level is critical
+         LogAnomaly("Low margin level: " + DoubleToString(marginLevel, 2) + "%");
+         
+         // Trigger circuit breaker if margin level is critically low
+         if(marginLevel < 50.0) { // 50% margin level is emergency
+            SuspendTrading("Critically low margin level: " + DoubleToString(marginLevel, 2) + "%");
+         }
+      }
+   }
+   
+   void CheckNewsImpact() {
+      // This would integrate with a news feed or economic calendar
+      // For now, just a placeholder
+      if(m_security != NULL) {
+         string symbol = Symbol();
+         if(m_security.IsNewsEvent(symbol)) {
+            LogAnomaly("High impact news detected for " + symbol);
+         }
+      }
+   }
+   
+   // Recovery
+   void RecoverFromDrawdown() {
+      // Simple recovery strategy: reduce position sizes after drawdown
+      double drawdown = GetPortfolioRisk();
+      
+      if(drawdown > 5.0) { // If drawdown > 5%
+         // Reduce risk per trade by 50%
+         m_riskPerTrade *= 0.5;
+         LogAnomaly("Reducing risk per trade to " + DoubleToString(m_riskPerTrade, 2) + "% due to drawdown");
+      }
+   }
+   
+   // Logging and reporting
+   void LogRiskMetrics() {
+      string logEntry = "";
+      logEntry += "=== Risk Metrics ===\n";
+      logEntry += "Account Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + "\n";
+      logEntry += "Equity: " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + "\n";
+      logEntry += "Margin: " + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN), 2) + "\n";
+      logEntry += "Free Margin: " + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2) + "\n";
+      logEntry += "Margin Level: " + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL), 2) + "%\n";
+      logEntry += "Open Trades: " + IntegerToString(GetOpenPositions()) + "\n";
+      logEntry += "Daily PnL: " + DoubleToString(m_dailyPnL, 2) + "\n";
+      logEntry += "Max Drawdown: " + DoubleToString(m_maxDrawdown, 2) + "%\n";
+      logEntry += "Circuit Breaker: " + string(m_circuitBreakerActive ? "ACTIVE" : "Inactive") + "\n";
+      
+      Print(logEntry);
+   }
+   
+   string GenerateRiskReport() const {
+      string report = "";
+      report += "=== Risk Management Report ===\n\n";
+      report += "Account Information:\n";
+      report += "- Balance: " + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + " " + AccountInfoString(ACCOUNT_CURRENCY) + "\n";
+      report += "- Equity: " + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) + "\n";
+      report += "- Margin: " + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN), 2) + "\n";
+      report += "- Free Margin: " + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2) + "\n";
+      report += "- Margin Level: " + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL), 2) + "%\n\n";
+      
+      report += "Risk Parameters:\n";
+      report += "- Risk per Trade: " + DoubleToString(m_riskPerTrade, 2) + "%\n";
+      report += "- Daily Loss Limit: " + DoubleToString(m_dailyLossLimit, 2) + "%\n";
+      report += "- Max Open Trades: " + IntegerToString(m_maxOpenTrades) + "\n";
+      report += "- Max Orders per Day: " + IntegerToString(m_maxOrdersPerDay) + "\n";
+      report += "- Current Daily Orders: " + IntegerToString(m_todayOrders) + "\n\n";
+      
+      report += "Portfolio Metrics:\n";
+      report += "- Open Positions: " + IntegerToString(GetOpenPositions()) + "\n";
+      report += "- Daily PnL: " + DoubleToString(m_dailyPnL, 2) + "\n";
+      report += "- Max Drawdown: " + DoubleToString(m_maxDrawdown, 2) + "%\n";
+      report += "- Circuit Breaker: " + string(m_circuitBreakerActive ? "ACTIVE" : "Inactive") + "\n";
+      return report;
+   }
+   
+   // Event handlers
+   void OnTick() {
+      // Update market data
+      if(m_atrHandle != INVALID_HANDLE) {
+         if(CopyBuffer(m_atrHandle, 0, 0, 1, m_atrBuffer) <= 0) {
+            m_lastError = "Failed to update ATR data";
+            return;
+         }
+      }
+      
+      // Monitor open positions
+      MonitorPositions();
+      
+      // Check margin levels periodically
+      static datetime lastCheck = 0;
+      if(TimeCurrent() - lastCheck > 60) { // Check every minute
+         CheckMarginLevels();
+         CheckNewsImpact();
+         lastCheck = TimeCurrent();
+      }
+      
+      // Log metrics every 15 minutes
+      static datetime lastLog = 0;
+      if(TimeCurrent() - lastLog > 900) { // 15 minutes = 900 seconds
+         LogRiskMetrics();
+         lastLog = TimeCurrent();
+      }
+   }
+   
+   void OnTrade() {
+      // Update trade history and statistics
+      UpdateDrawdown();
+      
+      // Check if we need to recover from drawdown
+      if(GetPortfolioRisk() > 5.0) { // If drawdown > 5%
+         RecoverFromDrawdown();
+      }
+      
+      // Log the trade
+      LogRiskMetrics();
+   }
+   
+   void OnTradeTransaction(const MqlTradeTransaction& trans,
+                         const MqlTradeRequest& request,
+                         const MqlTradeResult& result) {
+      // Handle different transaction types
+      switch(trans.type) {
+         case TRADE_TRANSACTION_DEAL_ADD: {
+            // A new deal was added
+            if(HistoryDealSelect(trans.deal)) {
+               ulong ticket = HistoryDealGetInteger(trans.deal, DEAL_TICKET);
+               string symbol = HistoryDealGetString(trans.deal, DEAL_SYMBOL);
+               double volume = HistoryDealGetDouble(trans.deal, DEAL_VOLUME);
+               double price = HistoryDealGetDouble(trans.deal, DEAL_PRICE);
+               double profit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT);
+               
+               // Update daily PnL
+               m_dailyPnL += profit;
+               
+               // Log the deal
+               PrintFormat("Deal #%d: %s %s %.2f lots @ %s (Profit: %.2f)",
+                         ticket, symbol, EnumToString((ENUM_DEAL_TYPE)HistoryDealGetInteger(trans.deal, DEAL_TYPE)),
+                         volume, DoubleToString(price, (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS)), profit);
+               
+               // Update drawdown
+               UpdateDrawdown();
+            }
+            break;
+         }
+         case TRADE_TRANSACTION_ORDER_ADD: {
+            // A new order was added
+            if(HistoryOrderSelect(trans.order)) {
+               ulong ticket = HistoryOrderGetInteger(trans.order, ORDER_TICKET);
+               string symbol = HistoryOrderGetString(trans.order, ORDER_SYMBOL);
+               double volume = HistoryOrderGetDouble(trans.order, ORDER_VOLUME_CURRENT);
+               double price = HistoryOrderGetDouble(trans.order, ORDER_PRICE_OPEN);
+               
+               // Log the order
+               PrintFormat("Order #%d: %s %s %.2f lots @ %s",
+                         ticket, symbol, EnumToString((ENUM_ORDER_TYPE)HistoryOrderGetInteger(trans.order, ORDER_TYPE)),
+                         volume, DoubleToString(price, (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS)));
+            }
+            break;
+         }
+         case TRADE_TRANSACTION_HISTORY_ADD: {
+            // New history record added
+            break;
+         }
+         default:
+            break;
+      }
+   }
+   
+   // Stress testing
+   void RunStressTest(int iterations = 1000) {
+      Print("Starting stress test...");
+      
+      // Simulate various market conditions
+      SimulateMarketCrash();
+      SimulateSlippage();
+      SimulateNetworkLatency();
+      
+      Print("Stress test completed");
+   }
+   
+   void SimulateMarketCrash() {
+      Print("Simulating market crash...");
+      
+      // Save current state
+      bool wasActive = m_circuitBreakerActive;
+      
+      // Simulate a 10% drawdown
+      double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double newEquity = currentEquity * 0.9; // 10% drawdown
+      
+      // Force update of equity (simulation only)
+      // In a real test, you would mock the account info
+      PrintFormat("Simulating drawdown: Equity from %.2f to %.2f (%.2f%%)",
+                currentEquity, newEquity, 
+                ((currentEquity - newEquity) / currentEquity) * 100.0);
+      
+      // Check if circuit breaker would trigger
+      double drawdown = ((AccountInfoDouble(ACCOUNT_BALANCE) - newEquity) / 
+                        AccountInfoDouble(ACCOUNT_BALANCE)) * 100.0;
+      
+      if(drawdown >= m_circuitBreakerLevel) {
+         Print("Circuit breaker would trigger at ", DoubleToString(drawdown, 2), "% drawdown");
+      } else {
+         Print("Circuit breaker would NOT trigger at ", DoubleToString(drawdown, 2), "% drawdown");
+      }
+      
+      // Restore state
+      m_circuitBreakerActive = wasActive;
+   }
+   
+   void SimulateSlippage() {
+      Print("Simulating slippage...");
+      
+      // Simulate a trade with slippage
+      string symbol = Symbol();
+      double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+      double spread = SymbolInfoInteger(symbol, SYMBOL_SPREAD) * SymbolInfoDouble(symbol, SYMBOL_POINT);
+      
+      // Simulate 2x spread slippage
+      double slippage = spread * 2;
+      
+      PrintFormat("Simulated slippage: %.5f pips (%.5f %s)", 
+                slippage / SymbolInfoDouble(symbol, SYMBOL_POINT),
+                slippage, SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT));
+   }
+   
+   void SimulateNetworkLatency() {
+      Print("Simulating network latency...");
+      
+      // Simulate network latency by measuring order execution time
+      ulong startTime = GetTickCount64();
+      
+      // In a real test, you would measure actual order execution time
+      // This is just a simulation
+      Sleep(100); // Simulate 100ms network latency
+      
+      ulong endTime = GetTickCount64();
+      ulong latency = endTime - startTime;
+      
+      Print("Simulated network latency: ", latency, "ms");
+      
+      if(latency > 500) { // 500ms threshold
+         LogAnomaly("High network latency detected: " + IntegerToString(latency) + "ms");
+      }
+   }
+   
+   // Serialization
+   virtual bool Save(const int handle) {
+      // Serialize risk manager state
+      if(!FileWrite(handle, m_riskPerTrade)) return false;
+      if(!FileWrite(handle, m_dailyLossLimit)) return false;
+      if(!FileWrite(handle, m_maxOpenTrades)) return false;
+      if(!FileWrite(handle, m_maxOrdersPerDay)) return false;
+      if(!FileWrite(handle, m_useVolatilityAdjustment)) return false;
+      if(!FileWrite(handle, m_atrPeriod)) return false;
+      if(!FileWrite(handle, m_maxSpread)) return false;
+      if(!FileWrite(handle, m_circuitBreakerActive)) return false;
+      if(!FileWrite(handle, m_circuitBreakerLevel)) return false;
+      if(!FileWrite(handle, m_anomalyDetection)) return false;
+      if(!FileWrite(handle, m_maxLeverage)) return false;
+      if(!FileWrite(handle, m_dailyPnL)) return false;
+      if(!FileWrite(handle, m_todayOrders)) return false;
+      if(!FileWrite(handle, m_lastTradeDay)) return false;
+      if(!FileWrite(handle, m_equityHigh)) return false;
+      if(!FileWrite(handle, m_maxDrawdown)) return false;
+      
+      return true;
+   }
+   
+   virtual bool Load(const int handle) {
+      // Deserialize risk manager state
+      if(!FileRead(handle, m_riskPerTrade)) return false;
+      if(!FileRead(handle, m_dailyLossLimit)) return false;
+      if(!FileRead(handle, m_maxOpenTrades)) return false;
+      if(!FileRead(handle, m_maxOrdersPerDay)) return false;
+      if(!FileRead(handle, m_useVolatilityAdjustment)) return false;
+      if(!FileRead(handle, m_atrPeriod)) return false;
+      if(!FileRead(handle, m_maxSpread)) return false;
+      if(!FileRead(handle, m_circuitBreakerActive)) return false;
+      if(!FileRead(handle, m_circuitBreakerLevel)) return false;
+      if(!FileRead(handle, m_anomalyDetection)) return false;
+      if(!FileRead(handle, m_maxLeverage)) return false;
+      if(!FileRead(handle, m_dailyPnL)) return false;
+      if(!FileRead(handle, m_todayOrders)) return false;
+      if(!FileRead(handle, m_lastTradeDay)) return false;
+      if(!FileRead(handle, m_equityHigh)) return false;
+      if(!FileRead(handle, m_maxDrawdown)) return false;
+      
+      return true;
+   }
+   
+   // Adversarial testing hooks
+   #ifdef ADVERSARIAL_TESTING
+   void InjectFault(const string component, const string type) {
+      // Inject faults into the risk manager for adversarial testing
+   }
+   #endif
+};
+
+//+------------------------------------------------------------------+
+//| Constructor                                                      |
+//+------------------------------------------------------------------+
+CRiskManager::CRiskManager(void) : m_riskPerTrade(1.0),
+                                   m_dailyLossLimit(5.0),
+                                   m_maxOpenTrades(5),
+                                   m_useVolatilityAdjustment(true),
+                                   m_maxDailyLoss(0.0),
+                                   m_circuitBreakerActive(false),
+                                   m_atrPeriod(14),
+                                   m_maxSpread(20),
+                                   m_circuitBreakerLevel(10.0),
+                                   m_anomalyDetection(true),
+                                   m_maxLeverage(30.0),
+                                   m_dailyPnL(0.0),
+                                   m_todayOrders(0),
+                                   m_dailyOrderCount(0),
+                                   m_dailyPL(0.0),
+                                   m_lastTradeDay(0),
+                                   m_lastError(""),
+                                   m_equityHigh(0.0),
+                                   m_maxDrawdown(0.0),
+                                   m_isTradingAllowed(true),
+                                   m_logToFile(false),
+                                   m_consecutiveErrors(0),
+                                   m_useCircuitBreaker(true),
+                                   m_maxConsecutiveErrors(5),
+                                   m_circuitBreakerTime(0),
+                                   m_circuitBreakTime(300),
+                                   m_trade(NULL),
+                                   m_useNewsFilter(false),
+                                   m_newsStartTime(0),
+                                   m_newsEndTime(0),
+                                   m_affectedSymbols(NULL),
+                                   m_atrHandle(INVALID_HANDLE),
+                                   m_security(NULL)
+{
+   ArraySetAsSeries(m_atrBuffer, true);
+   m_security = new CSecurityEnhancements();
+   m_security->Initialize();
+   m_trade = new CTrade();
+   m_trade->SetExpertMagicNumber(12345);
+   m_trade->SetDeviationInPoints(10);
+   m_trade->SetTypeFilling(ORDER_FILLING_FOK);
+}
+
+//+------------------------------------------------------------------+
+//| Destructor                                                       |
+//+------------------------------------------------------------------+
+CRiskManager::~CRiskManager(void)
+{
+   // Clean up indicator handles
+   if(m_atrHandle != INVALID_HANDLE) {
+      IndicatorRelease(m_atrHandle);
+   }
+   
+   // Clean up collections
+   m_openTrades.Clear();
+   m_closedTrades.Clear();
+   
+   // Clean up security manager
+   if(CheckPointer(m_security) == POINTER_DYNAMIC) {
+      delete m_security;
+      m_security = NULL;
+   }
+   
+   // Clean up trade object
+   if(CheckPointer(m_trade) == POINTER_DYNAMIC) {
+      delete m_trade;
+      m_trade = NULL;
+   }
+   
+   // Clean up affected symbols array
+   if(CheckPointer(m_affectedSymbols) == POINTER_DYNAMIC) {
+      delete m_affectedSymbols;
+      m_affectedSymbols = NULL;
+   }
+   
+   Deinitialize();
+}
+
+//+------------------------------------------------------------------+
+//| Initialize the risk manager                                      |
+//+------------------------------------------------------------------+
+bool CRiskManager::Initialize()
+{
+   // Initialize ATR indicator for volatility measurement
+   m_atrHandle = iATR(Symbol(), PERIOD_CURRENT, m_atrPeriod);
+   if(m_atrHandle == INVALID_HANDLE) {
+      m_lastError = "Failed to create ATR indicator";
+      Print("Failed to create ATR handle");
+      return false;
+   }
+   
+   // Initialize ATR buffer
+   ArraySetAsSeries(m_atrBuffer, true);
+   
+   // Load historical data if needed
+   if(CopyBuffer(m_atrHandle, 0, 0, 1, m_atrBuffer) <= 0) {
+      m_lastError = "Failed to copy ATR buffer";
+      Print("Failed to copy ATR buffer: ", GetLastError());
+      return false;
+   }
+   
+   // Update daily metrics
+   UpdateDailyMetrics();
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Deinitialize risk manager                                        |
+//+------------------------------------------------------------------+
+void CRiskManager::Deinitialize(void)
+{
+   if(m_atrHandle != INVALID_HANDLE)
+   {
+      IndicatorRelease(m_atrHandle);
+      m_atrHandle = INVALID_HANDLE;
+   }
+   ArrayFree(m_atrBuffer);
+}
+
+//+------------------------------------------------------------------+
+//| Validate order parameters                                        |
+//+------------------------------------------------------------------+
+bool CRiskManager::ValidateOrder(string symbol, ENUM_ORDER_TYPE type, double volume, double price, double sl, double tp)
+{
+   // Basic parameter validation
+   if(volume <= 0 || price <= 0)
+   {
+      m_lastError = "Invalid order parameters";
+      return false;
+   }
+   
+   // Check if trading is allowed
+   if(!m_isTradingAllowed)
+   {
+      m_lastError = "Trading is currently suspended";
+      return false;
+   }
+   
+   // Check daily limits
+   if(!CheckDailyLimits())
+   {
+      return false;
+   }
+   
+   // Check market conditions
+   if(!CheckMarketConditions(symbol))
+   {
+      return false;
+   }
+   
+   // Check margin requirements
+   if(!CheckMargin(symbol, volume, price))
+   {
+      return false;
+   }
+   
+   // Check spread
+   if(!CheckSpread(symbol))
+   {
+      return false;
+   }
+   
+   // Check market hours
+   if(!CheckMarketHours())
+   {
+      return false;
+   }
+   
+   // Check news impact
+   if(!CheckNewsImpact(symbol))
+   {
+      return false;
+   }
+   
+   // Check position size limits
+   double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   
+   if(volume < minLot || volume > maxLot)
+   {
+      m_lastError = StringFormat("Volume %.2f is outside allowed range [%.2f, %.2f]", volume, minLot, maxLot);
+      return false;
+   }
+   
+   // Round volume to nearest lot step
+   volume = MathFloor(volume / lotStep) * lotStep;
+   
+   // Check stop loss and take profit levels
+   if(sl > 0 && tp > 0)
+   {
+      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+      double minStopLevel = SymbolInfoInteger(symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
+      
+      if(type == ORDER_TYPE_BUY)
+      {
+         if((price - sl) < minStopLevel || (tp - price) < minStopLevel)
+         {
+            m_lastError = StringFormat("Stop levels too close to price. Min distance: %.1f pips", minStopLevel/point);
+            return false;
+         }
+      }
+      else if(type == ORDER_TYPE_SELL)
+      {
+         if((sl - price) < minStopLevel || (price - tp) < minStopLevel)
+         {
+            m_lastError = StringFormat("Stop levels too close to price. Min distance: %.1f pips", minStopLevel/point);
+            return false;
+         }
+      }
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check daily trading limits (consolidated implementation)          |
+//+------------------------------------------------------------------+
+bool CRiskManager::CheckDailyLimits()
+{
+      m_lastError = StringFormat("Daily loss limit reached (%.2f%%)", m_dailyPL);
+      return false;
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Calculate position size based on risk                            |
+//+------------------------------------------------------------------+
+double CRiskManager::CalculatePositionSize(string symbol, double stopLoss, double riskPercent)
+{
+   if(stopLoss <= 0 || riskPercent <= 0)
+      return 0.0;
+      
+   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   
+   // Calculate position size based on risk
+   double riskAmount = accountBalance * (riskPercent / 100.0);
+   double stopLossPoints = stopLoss / tickSize;
+   double lotSize = riskAmount / (stopLossPoints * tickValue);
+   
+   // Round to nearest lot step
+   lotSize = MathFloor(lotSize / lotStep) * lotStep;
+   
+   // Apply position size limits
+   lotSize = MathMin(MathMax(lotSize, minLot), maxLot);
+   
+   return lotSize;
+}
+
+//+------------------------------------------------------------------+
+//| Get current market volatility                                    |
+//+------------------------------------------------------------------+
+double CRiskManager::GetCurrentVolatility(string symbol, ENUM_TIMEFRAMES timeframe, int period)
+{
+   if(m_atrHandle == INVALID_HANDLE)
+      return 0.0;
+      
+   if(CopyBuffer(m_atrHandle, 0, 0, 1, m_atrBuffer) <= 0)
+      return 0.0;
+      
+   return m_atrBuffer[0];
+}
+
+//+------------------------------------------------------------------+
+//| Handle trading errors                                            |
+//+------------------------------------------------------------------+
+void CRiskManager::HandleError(int error, string context)
+{
+   string errorDesc = "";
+   bool isCritical = false;
+   
+   switch(error)
+   {
+      case 4756: errorDesc = "Invalid stops"; break;
+      case 130:  errorDesc = "Invalid stops"; isCritical = true; break;
+      case 131:  errorDesc = "Invalid volume"; isCritical = true; break;
+      case 134:  errorDesc = "Not enough money"; isCritical = true; break;
+      case 10013: errorDesc = "Invalid request"; isCritical = true; break;
+      default:   errorDesc = "Error " + IntegerToString(error);
+   }
+   
+   m_lastError = context + ": " + errorDesc;
+   Print(m_lastError);
+   
+   // Update error tracking
+   m_consecutiveErrors++;
+   m_lastErrorTime = TimeCurrent();
+   
+   // If too many errors, temporarily disable trading
+   if(m_consecutiveErrors >= 5)
+   {
+      m_isTradingAllowed = false;
+      Print("Trading temporarily disabled due to multiple errors");
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Reset error counter                                              |
+//+------------------------------------------------------------------+
+void CRiskManager::ResetErrorCounter(void)
+{
+   m_consecutiveErrors = 0;
+   m_lastError = "";
+   m_isTradingAllowed = true;
+}
+
+//+------------------------------------------------------------------+
+//| Execute order with risk management                               |
+//+------------------------------------------------------------------+
+bool CRiskManager::ExecuteOrder(string symbol, ENUM_ORDER_TYPE type, double volume, double price, double sl, double tp, string comment)
+{
+   // Validate order parameters
+   if(!ValidateOrder(symbol, type, volume, price, sl, tp))
+   {
+      Print("Order validation failed: ", m_lastError);
+      return false;
+   }
+   
+   // Execute the order
+   bool result = false;
+   
+   if(type == ORDER_TYPE_BUY)
+      result = m_trade.Buy(volume, symbol, price, sl, tp, comment);
+   else if(type == ORDER_TYPE_SELL)
+      result = m_trade.Sell(volume, symbol, price, sl, tp, comment);
+   
+   // Check result
+   if(!result)
+   {
+      HandleError(GetLastError(), "Order execution failed");
+      return false;
+   }
+   
+   // Update metrics
+   m_dailyOrderCount++;
+   LogTradeMetrics(symbol, type, volume, price, sl, tp);
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check margin requirements                                        |
+//+------------------------------------------------------------------+
+bool CRiskManager::CheckMargin(string symbol, double volume, double price)
+{
+   double margin = 0.0;
+   
+   if(!OrderCalcMargin(ORDER_TYPE_BUY, symbol, volume, price, margin))
+   {
+      m_lastError = "Failed to calculate margin";
+      return false;
+   }
+   
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   
+   if(margin > freeMargin)
+   {
+      m_lastError = StringFormat("Insufficient margin. Required: %.2f, Available: %.2f", margin, freeMargin);
+      return false;
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check current spread                                             |
+//+------------------------------------------------------------------+
+bool CRiskManager::CheckSpread(string symbol)
+{
+   double spread = SymbolInfoInteger(symbol, SYMBOL_SPREAD) * SymbolInfoDouble(symbol, SYMBOL_POINT);
+   double maxSpread = SymbolInfoDouble(symbol, SYMBOL_ASK) * 0.001; // 0.1% of ask price
+   
+   if(spread > maxSpread)
+   {
+      m_lastError = StringFormat("Spread too high: %.1f pips (max: %.1f)", spread, maxSpread);
+      return false;
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check if current time is within trading hours                    |
+//+------------------------------------------------------------------+
+bool CRiskManager::CheckMarketHours(void)
+{
+   // Implement market hours check based on your trading strategy
+   // This is a placeholder - adjust according to your needs
+   MqlDateTime time;
+   TimeToStruct(TimeCurrent(), time);
+   
+   // Example: Don't trade during major news events (first Friday of the month)
+   if(time.day_of_week == 5 && time.day <= 7)
+   {
+      m_lastError = "Avoiding trading during major news events";
+      return false;
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check for high-impact news events                                |
+//+------------------------------------------------------------------+
+bool CRiskManager::CheckNewsImpact(string symbol)
+{
+   // Implement news impact check based on your strategy
+   // This is a placeholder - integrate with your news API or calendar
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Update daily metrics                                             |
+//+------------------------------------------------------------------+
+void CRiskManager::UpdateDailyMetrics(void)
+{
+   MqlDateTime time;
+   TimeToStruct(TimeCurrent(), time);
+   
+   // Reset daily metrics if it's a new day
+   if(time.day != m_lastTradeDay)
+   {
+      m_dailyPL = 0.0;
+      m_dailyOrderCount = 0;
+      m_lastTradeDay = time.day;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Log trade metrics                                                |
+//+------------------------------------------------------------------+
+void CRiskManager::LogTradeMetrics(string symbol, ENUM_ORDER_TYPE type, double volume, double price, double sl, double tp)
+{
+   // Log trade details for analysis
+   string logEntry = StringFormat("%s %s %.2f lots @ %.5f, SL: %.5f, TP: %.5f",
+                                 type == ORDER_TYPE_BUY ? "BUY" : "SELL",
+                                 symbol, volume, price, sl, tp);
+   
+   Print(logEntry);
+   
+   // Here you could also write to a file or database for long-term analysis
+}
+
+//+------------------------------------------------------------------+
