@@ -12,52 +12,8 @@
 #include <Arrays\ArrayObj.mqh>
 #include "..\Common\HashMap.mqh"
 
-// Signal metadata structure for shared knowledge base
-struct SSignalMetadata
-  {
-   string            signal_id;           // Unique signal identifier
-   datetime          timestamp;           // Signal generation time
-   string            symbol;              // Trading symbol
-   ENUM_ORDER_TYPE   order_type;          // Order type (BUY/SELL)
-   double            price;               // Entry price
-   double            stop_loss;           // Stop loss level
-   double            take_profit;         // Take profit level
-   double            confidence;          // Signal confidence (0.0-1.0)
-   string            source;              // Signal source (e.g., "PaperEA")
-   string            regime;              // Market regime classification
-   string            metadata;            // Additional JSON metadata
-   
-   // Constructor
-   SSignalMetadata() :
-      timestamp(0),
-      order_type(WRONG_VALUE),
-      price(0.0),
-      stop_loss(0.0),
-      take_profit(0.0),
-      confidence(0.0)
-     {
-     }
-  };
-
-// Trade outcome structure for learning
-struct STradeOutcome
-  {
-   string         signal_id;      // Reference to original signal
-   datetime       close_time;     // Trade close time
-   double         pips;           // PnL in pips
-   double         profit;         // Monetary profit/loss
-   string         close_reason;   // Reason for closing
-   double         max_drawdown;   // Maximum drawdown during trade
-   
-   // Constructor
-   STradeOutcome() :
-      close_time(0),
-      pips(0.0),
-      profit(0.0),
-      max_drawdown(0.0)
-     {
-     }
-  };
+// Note: SSignalMetadata and STradeOutcome structures are now defined in Structs.mqh
+// This eliminates duplicate definitions and compilation errors
 
 //+------------------------------------------------------------------+
 //| Knowledge Base Class                                             |

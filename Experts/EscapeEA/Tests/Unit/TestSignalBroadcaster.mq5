@@ -7,7 +7,7 @@
 #property script_show_inputs
 
 #include "TestBase.mqh"
-#include "..\..\Include\Communication\SignalBroadcaster.mqh"
+#include "..\..\Include\Communication\SecureSignalBroadcaster.mqh"
 
 //+------------------------------------------------------------------+
 //| Test class for CSignalBroadcaster                                |
@@ -15,7 +15,7 @@
 class CTestSignalBroadcaster : public CTestBase
   {
 private:
-   CSignalBroadcaster *m_broadcaster;
+   CSecureSignalBroadcaster *m_broadcaster;
    string            m_testPrefix;
    
 public:
@@ -50,7 +50,7 @@ public:
 void CTestSignalBroadcaster::SetUp()
   {
    CleanupTestVariables();
-   m_broadcaster = new CSignalBroadcaster(m_testPrefix, 300);
+   m_broadcaster = new CSecureSignalBroadcaster(m_testPrefix, 300, 1000);
   }
 
 //+------------------------------------------------------------------+
@@ -118,7 +118,7 @@ bool CTestSignalBroadcaster::TestConstructor()
       return false;
    
    // Test default constructor
-   CSignalBroadcaster *defaultBroadcaster = new CSignalBroadcaster();
+   CSecureSignalBroadcaster *defaultBroadcaster = new CSecureSignalBroadcaster();
    if(!AssertTrue(defaultBroadcaster != NULL, "Default constructor should work"))
      {
       delete defaultBroadcaster;

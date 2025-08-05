@@ -8,26 +8,26 @@
 #property version   "1.00"
 
 #include "TestBase.mqh"
-#include "..\\Mocks\\MockLearningEngine.mqh"
+#include "..\\Mocks\\MockMLLearningEngine.mqh"
 #include "..\\..\\Include\\Common\\Structs.mqh"
 
 //+------------------------------------------------------------------+
-//| Test class for CLearningEngine                                   |
+//| Test class for CMLLearningEngine                                 |
 //+------------------------------------------------------------------+
-class CTestLearningEngine : public CTestBase
+class CTestMLLearningEngine : public CTestBase
   {
 private:
-   CMockLearningEngine *m_learningEngine;
+   CMockMLLearningEngine *m_learningEngine;
    
 public:
    // Constructor/destructor
-                     CTestLearningEngine() : CTestBase("CLearningEngine Tests") {}
-                    ~CTestLearningEngine() {}
+                     CTestMLLearningEngine() : CTestBase("CMLLearningEngine Tests") {}
+                    ~CTestMLLearningEngine() {}
    
    // Override methods
    virtual void      SetUp()
      {
-        m_learningEngine = new CMockLearningEngine();
+        m_learningEngine = new CMockMLLearningEngine();
      }
      
    virtual void      TearDown()

@@ -10,7 +10,7 @@
 #include "..\..\Include\Core\SignalGenerator.mqh"
 #include "..\..\Include\Core\TradeExecutor.mqh"
 #include "..\..\Include\Core\RiskManager.mqh"
-#include "..\..\Include\Communication\SignalBroadcaster.mqh"
+#include "..\..\Include\Communication\SecureSignalBroadcaster.mqh"
 #include "..\..\Include\Utils\Logger.mqh"
 
 //+------------------------------------------------------------------+
@@ -22,7 +22,7 @@ private:
    CSignalGenerator    *m_signalGen;
    CTradeExecutor      *m_tradeExec;
    CRiskManager        *m_riskMgr;
-   CSignalBroadcaster  *m_broadcaster;
+   CSecureSignalBroadcaster  *m_broadcaster;
    CLogger             *m_logger;
    
    string              m_testSymbol;
@@ -64,7 +64,7 @@ void CTestSignalToTradeFlow::SetUp()
    m_signalGen = new CSignalGenerator(m_testSymbol, PERIOD_H1, 10, 20, 14, 14, 0.6);
    m_tradeExec = new CTradeExecutor(12345, false, m_testSymbol, 10.0); // Paper trading mode
    m_riskMgr = new CRiskManager(m_testSymbol, 2.0, 20.0, 5.0, 1.0, 5); // symbol, risk%, maxDD%, dailyLoss%, maxLots, maxTrades
-   m_broadcaster = new CSignalBroadcaster("INTEGRATION_TEST_", 300);
+   m_broadcaster = new CSecureSignalBroadcaster("INTEGRATION_TEST_", 300, 1000);
    
    m_logger.Info("Integration test environment setup complete", "TestSetup");
   }

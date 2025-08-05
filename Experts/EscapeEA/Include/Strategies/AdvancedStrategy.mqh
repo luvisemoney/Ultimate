@@ -8,7 +8,7 @@
 
 #include "..\Common\Enums.mqh"
 #include "..\Common\Structs.mqh"
-#include "..\Learning\LearningEngine.mqh"
+#include "..\Learning\MLLearningEngine.mqh"
 #include "..\Core\AdvancedRiskManager.mqh"
 #include "..\Core\TradeExecutor.mqh"
 
@@ -30,7 +30,7 @@ private:
    
    // Components
    CAdvancedRiskManager *m_riskManager;     // Risk manager instance
-   CLearningEngine   *m_learningEngine;     // Machine learning engine
+   CMLLearningEngine *m_learningEngine;     // Machine learning engine
    CTradeExecutor    *m_tradeExecutor;      // Trade execution component
    
    // Indicators
@@ -83,7 +83,7 @@ public:
    
    // Initialization
    bool              Initialize(CAdvancedRiskManager *riskManager = NULL, 
-                              CLearningEngine *learningEngine = NULL, 
+                              CMLLearningEngine *learningEngine = NULL, 
                               CTradeExecutor *tradeExecutor = NULL,
                               ulong magicNumber = 0,
                               bool isLive = false);
@@ -123,7 +123,7 @@ CAdvancedStrategy::CAdvancedStrategy(string symbol, ENUM_TIMEFRAMES timeframe) :
 //| Initialize strategy with required components                     |
 //+------------------------------------------------------------------+
 bool CAdvancedStrategy::Initialize(CAdvancedRiskManager *riskManager, 
-                                 CLearningEngine *learningEngine,
+                                 CMLLearningEngine *learningEngine,
                                  CTradeExecutor *tradeExecutor,
                                  ulong magicNumber,
                                  bool isLive)

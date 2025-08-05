@@ -1,0 +1,6 @@
+🔍 INCLUDE VALIDATION STRATEGY: 
+   - Check file existence and readability 
+   - Validate basic MQL5 syntax structure 
+   - Verify #property and #include statements 
+   - NO COMPILATION ATTEMPTS (includes are not executables) 
+ 

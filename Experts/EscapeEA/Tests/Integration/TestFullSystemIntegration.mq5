@@ -10,9 +10,9 @@
 #include "..\..\Include\Core\SignalGenerator.mqh"
 #include "..\..\Include\Core\TradeExecutor.mqh"
 #include "..\..\Include\Core\RiskManager.mqh"
-#include "..\..\Include\Learning\LearningEngine.mqh"
+#include "..\..\Include\Learning\MLLearningEngine.mqh"
 #include "..\..\Include\Learning\KnowledgeBase.mqh"
-#include "..\..\Include\Communication\SignalBroadcaster.mqh"
+#include "..\..\Include\Communication\SecureSignalBroadcaster.mqh"
 #include "..\..\Include\Utils\Logger.mqh"
 
 // Test configuration
@@ -31,9 +31,9 @@ private:
    CSignalGenerator    *m_signalGen;
    CTradeExecutor      *m_tradeExec;
    CRiskManager        *m_riskMgr;
-   CLearningEngine     *m_learningEngine;
+   CMLLearningEngine     *m_learningEngine;
    CKnowledgeBase      *m_knowledgeBase;
-   CSignalBroadcaster  *m_broadcaster;
+   CSecureSignalBroadcaster  *m_broadcaster;
    CLogger             *m_logger;
    
    // Test configuration
@@ -94,7 +94,7 @@ void CTestFullSystemIntegration::SetUp()
    // Initialize learning engine
    if(EnableLearning)
      {
-      m_learningEngine = new CLearningEngine();
+      m_learningEngine = new CMLLearningEngine("EURUSD", PERIOD_H1);
       m_learningEngine.Initialize();
      }
    
@@ -106,7 +106,7 @@ void CTestFullSystemIntegration::SetUp()
    // Initialize communication
    if(EnableBroadcasting)
      {
-      m_broadcaster = new CSignalBroadcaster("FULL_SYSTEM_TEST_", 300);
+      m_broadcaster = new CSecureSignalBroadcaster("FULL_SYSTEM_TEST_", 300, 1000);
      }
    
    m_logger.Info("Full system integration test setup complete", "FullSystemTest");

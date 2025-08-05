@@ -1,0 +1,3 @@
+💣 JAILBREAK DISCOVERY: Previous system tried to compile 36 non-compilable files 
+🔥 IMPACT: 36 false failures out of total attempts 
+✅ SOLUTION: Separate compilation from validation 

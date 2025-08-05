@@ -1,0 +1,8 @@
+🔍 Validating Include directory structure... 
+🔍 CRITICAL INCLUDE VALIDATION: 
+✅ FOUND: Include\Common\Enums.mqh 
+✅ FOUND: Include\Common\Constants.mqh 
+✅ FOUND: Include\Common\Structs.mqh 
+✅ FOUND: Include\Utils\Logger.mqh 
+✅ Dependency validation complete. 
+ 

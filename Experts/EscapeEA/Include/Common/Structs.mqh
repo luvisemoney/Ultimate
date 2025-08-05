@@ -261,3 +261,52 @@ struct STradeResult
    STradeResult() : symbol(""), signal(SIGNAL_HOLD), entryPrice(0.0), exitPrice(0.0),
                    profit(0.0), timestamp(0), confidence(0.0), duration(0), exitReason("") {}
   };
+
+//+------------------------------------------------------------------+
+//| Signal metadata structure - SECURITY JAILBREAK ADDITION         |
+//+------------------------------------------------------------------+
+struct SSignalMetadata
+  {
+   string            signalId;       // Unique signal identifier
+   string            source;         // Signal source identifier
+   datetime          timestamp;      // Signal generation timestamp
+   double            confidence;     // Signal confidence level (0-1)
+   string            symbol;         // Trading symbol
+   ENUM_TIMEFRAMES   timeframe;      // Signal timeframe
+   string            strategy;       // Strategy that generated signal
+   double            riskLevel;      // Risk assessment (0-1)
+   bool              validated;      // Signal validation status
+   string            checksum;       // Security checksum
+   
+   // Default constructor
+   SSignalMetadata() : signalId(""), source(""), timestamp(0), confidence(0.0),
+                      symbol(""), timeframe(PERIOD_CURRENT), strategy(""), 
+                      riskLevel(0.0), validated(false), checksum("") {}
+  };
+
+//+------------------------------------------------------------------+
+//| Trade outcome structure - SECURITY JAILBREAK ADDITION           |
+//+------------------------------------------------------------------+
+struct STradeOutcome
+  {
+   string            tradeId;        // Unique trade identifier
+   string            symbol;         // Trading symbol
+   ENUM_TRADE_SIGNAL originalSignal; // Original signal that triggered trade
+   double            entryPrice;     // Trade entry price
+   double            exitPrice;      // Trade exit price
+   double            profit;         // Realized profit/loss
+   datetime          entryTime;      // Trade entry timestamp
+   datetime          exitTime;       // Trade exit timestamp
+   double            confidence;     // Original signal confidence
+   bool              successful;     // Trade outcome (true = profit, false = loss)
+   string            exitReason;     // Reason for trade exit
+   double            duration;       // Trade duration in hours
+   double            maxProfit;      // Maximum profit during trade
+   double            maxLoss;        // Maximum loss during trade
+   
+   // Default constructor
+   STradeOutcome() : tradeId(""), symbol(""), originalSignal(SIGNAL_HOLD),
+                    entryPrice(0.0), exitPrice(0.0), profit(0.0), entryTime(0),
+                    exitTime(0), confidence(0.0), successful(false), exitReason(""),
+                    duration(0.0), maxProfit(0.0), maxLoss(0.0) {}
+  };

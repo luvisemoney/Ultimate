@@ -1,0 +1,56 @@
+JAILBREAK HARDENED COMPILATION STARTED: 2025-08-05 13:22:51.89 
+============================================================================ 
+ 
+MetaEditor verified: "C:\Program Files\MetaTrader 5\MetaEditor64.exe" 
+FILE CLASSIFICATION: 
+  Compilable Files (.mq5): 23 
+  Include Files (.mqh): 36 
+  Production EAs: 2 
+  Test Files: 21 
+ 
+COMPILATION STARTED: 2025-08-05 13:22:52.28 
+Cycle 1: Production EA Compilation 
+Compiling PRODUCTION EA: LiveEA\LiveEA_MLEnhanced.mq5 
+SUCCESS: LiveEA\LiveEA_MLEnhanced.mq5 
+Compiling PRODUCTION EA: PaperEA\PaperEA_MLEnhanced.mq5 
+SUCCESS: PaperEA\PaperEA_MLEnhanced.mq5 
+Cycle 2: Test Suite Compilation 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\TestSuiteRunner.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\SystemTestRunner.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestFullSystemIntegration.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestFullSystemIntegration.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestLearningSystemIntegration.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestLearningSystemIntegration.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestLearningSystemIntegration_MINIMAL.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestLearningSystemIntegration_MINIMAL.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestPaperToLiveIntegration.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestPaperToLiveIntegration.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestPerformanceBenchmark.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestPerformanceBenchmark.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestSecureArchitecture.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestSecureArchitecture.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestSignalToTradeFlow.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestSignalToTradeFlow.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestStressTest.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Integration\TestStressTest.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Performance\StressTestSuite.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Performance\StressTestSuite.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Security\SecurityTestSuite.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Security\SecurityTestSuite.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestAdvancedStrategy.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestAdvancedStrategy.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestHashMap.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestKnowledgeBase.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestKnowledgeBase.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestLearningEngine.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestLearningEngine.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestLogger.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestRiskManager.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestRiskManager.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestSignalBroadcaster.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestSignalBroadcaster.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestSignalGenerator.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestSignalGenerator.mq5 
+Compiling TEST: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestTradeExecutor.mq5 
+SUCCESS: C:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\EscapeEA\Tests\Unit\TestTradeExecutor.mq5 
+Cycle 3: Include File Validation 
