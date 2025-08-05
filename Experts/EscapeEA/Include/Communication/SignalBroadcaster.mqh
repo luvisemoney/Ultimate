@@ -77,28 +77,19 @@ bool CSignalBroadcaster::SendSignal(const string symbol, ENUM_TRADE_SIGNAL signa
                                    confidence,
                                    m_signalLifetime);
    
-   // Store signal in global variable
-   if(!GlobalVariableTemp(signalName))
-     {
-      if(!GlobalVariableTemp(signalName))
-        {
-         Print("Failed to create global variable for signal: ", signalName);
-         return false;
-        }
-     }
+   // Store signal in global variable - use GlobalVariableSet directly
+   // This will create the variable if it doesn't exist
+   GlobalVariableSet(signalName, confidence);
    
    // Set signal data and expiration
    string dataVar = signalName + "_DATA";
    string expiresVar = signalName + "_EXPIRES";
-   string commentVar = signalName + "_COMMENT";
    
-   GlobalVariableSet(signalName, 1.0);
-   GlobalVariableSet(dataVar, 0.0);
+   // Store timestamp as data (we can't store strings in global variables)
+   GlobalVariableSet(dataVar, (double)TimeCurrent());
+   
+   // Set expiration time
    GlobalVariableSet(expiresVar, (double)(TimeCurrent() + m_signalLifetime));
-   
-   // Store signal data in the comment field
-   // Using StringToDouble to ensure proper type conversion
-   GlobalVariableSet(commentVar, StringToDouble(signalData) == 0 ? 0.0 : 1.0);
    
    Print("Signal sent: ", signalName, " (", signalData, ")");
    return true;
@@ -111,23 +102,16 @@ bool CSignalBroadcaster::BroadcastStatus(const string status)
   {
    string statusVar = m_signalPrefix + "STATUS";
    
-   if(!GlobalVariableTemp(statusVar))
-     {
-      if(!GlobalVariableTemp(statusVar))
-        {
-         Print("Failed to create status variable");
-         return false;
-        }
-     }
+   // Set status values - GlobalVariableSet will create the variable if it doesn't exist
+   GlobalVariableSet(statusVar, 1.0);
    
    string statusDataVar = statusVar + "_DATA";
-   string statusCommentVar = statusVar + "_COMMENT";
    string statusExpiresVar = statusVar + "_EXPIRES";
    
-   GlobalVariableSet(statusVar, 1.0);
-   GlobalVariableSet(statusDataVar, 0.0);
-   // Using StringToDouble to ensure proper type conversion
-   GlobalVariableSet(statusCommentVar, StringToDouble(status) == 0 ? 0.0 : 1.0);
+   // Store status timestamp
+   GlobalVariableSet(statusDataVar, (double)TimeCurrent());
+   
+   // Set expiration time
    GlobalVariableSet(statusExpiresVar, (double)(TimeCurrent() + m_signalLifetime));
    
    return true;

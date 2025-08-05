@@ -139,32 +139,27 @@ public:
                       }
    
    // Trade history management
-   bool              AddTrade(const STradeRecord &trade);
-   bool              GetRecentTrades(int count, STradeRecord &trades[]);
+   virtual bool      AddTrade(const STradeRecord &trade);
+   virtual bool      GetRecentTrades(int count, STradeRecord &trades[]);
    bool              LoadTradeHistory(STradeRecord &trades[]);
    bool              SaveTradeHistory(const STradeRecord &trades[]);
    int               GetTotalTrades();
-   
    // Signal management (shared knowledge base)
-   bool              SaveSignal(const SSignalMetadata &signal);
-   bool              GetRecentSignals(int count, SSignalMetadata &signals[]);
+   virtual bool      SaveSignal(const SSignalMetadata &signal);
+   virtual bool      GetRecentSignals(int count, SSignalMetadata &signals[]);
    bool              UpdateSignalOutcome(const STradeOutcome &outcome);
-   
    // Market regime classification
    bool              SaveRegimeClassification(const string symbol, const string regime, const datetime time);
    string            GetCurrentRegime(const string symbol);
-   
    // Interval logging
    bool              LogIntervalSnapshot(const string ea_name, const string symbol, const string &snapshot);
    string            GetIntervalLog(const string ea_name, const string symbol, const datetime time);
-   
    // Model persistence
    bool              SaveModel(const double &weights[]);
    bool              LoadModel(double &weights[]);
    bool              ModelExists();
-   
    // Knowledge base management
-   bool              Clear();
+   virtual bool      Clear();
    bool              Backup(const string backupPath = "");
    
    // Signal rejection logging
@@ -235,7 +230,7 @@ bool CKnowledgeBase::SaveToJSON(const string filename, const string &json, bool 
         }
      }
    
-   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
    
    if(handle == INVALID_HANDLE)
      {
@@ -261,7 +256,7 @@ string CKnowledgeBase::LoadFromJSON(const string filename, bool useSharedDir = t
       return "";
      }
      
-   int handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   int handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_WRITE, ",", CP_UTF8);
    
    if(handle == INVALID_HANDLE)
      {
@@ -363,13 +358,70 @@ void CKnowledgeBase::CleanupOldSignals()
    if(!FileIsExist(filepath, 0))
       return;
       
-   // In a production system, you would:
-   // 1. Load the signals file
-   // 2. Remove signals older than a certain threshold
-   // 3. Save the updated signals back to the file
+   // Load existing signals
+   string jsonContent = LoadFromJSON(m_signalsFile, true);
+   if(jsonContent == "")
+      return;
+      
+   // Parse JSON array and filter out old signals
+   string cleanedSignals = "";
+   datetime cutoffTime = TimeCurrent() - (7 * 24 * 3600); // Keep signals from last 7 days
+   bool firstSignal = true;
    
-   // For now, we'll just log that cleanup was attempted
-   Print("CleanupOldSignals: Signal cleanup executed at ", TimeToString(TimeCurrent()));
+   // Simple JSON parsing - look for signal objects
+   int pos = 0;
+   while(pos < StringLen(jsonContent))
+     {
+      int startPos = StringFind(jsonContent, "{\"signal_id\":", pos);
+      if(startPos < 0) break;
+      
+      int endPos = StringFind(jsonContent, "}", startPos);
+      if(endPos < 0) break;
+      
+      string signalJson = StringSubstr(jsonContent, startPos, endPos - startPos + 1);
+      
+      // Extract timestamp from signal
+      int timestampPos = StringFind(signalJson, "\"timestamp\":");
+      if(timestampPos >= 0)
+        {
+         int timestampStart = timestampPos + 12;
+         int timestampEnd = StringFind(signalJson, ",", timestampStart);
+         if(timestampEnd < 0) timestampEnd = StringFind(signalJson, "}", timestampStart);
+         
+         if(timestampEnd > timestampStart)
+           {
+            string timestampStr = StringSubstr(signalJson, timestampStart, timestampEnd - timestampStart);
+            datetime signalTime = (datetime)StringToInteger(timestampStr);
+            
+            // Keep signal if it's newer than cutoff time
+            if(signalTime >= cutoffTime)
+              {
+               if(!firstSignal)
+                  cleanedSignals += ",\n";
+               else
+                  firstSignal = false;
+                  
+               cleanedSignals += signalJson;
+              }
+           }
+        }
+      
+      pos = endPos + 1;
+     }
+   
+   // Save cleaned signals back to file
+   if(cleanedSignals != "")
+     {
+      cleanedSignals = "[\n" + cleanedSignals + "\n]";
+      SaveToJSON(m_signalsFile, cleanedSignals, true);
+      Print("CleanupOldSignals: Cleaned up old signals, kept signals from last 7 days");
+     }
+   else
+     {
+      // No signals to keep, create empty array
+      SaveToJSON(m_signalsFile, "[]", true);
+      Print("CleanupOldSignals: All signals were old, created empty signals file");
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -410,7 +462,7 @@ bool CKnowledgeBase::SaveSignal(const SSignalMetadata &signal)
    
    // Append to signals file
    string filepath = GetFilePath(m_signalsFile, true);
-   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
    
    if(handle == INVALID_HANDLE)
      {
@@ -444,33 +496,155 @@ bool CKnowledgeBase::GetRecentSignals(int count, SSignalMetadata &signals[])
       return false;
      }
      
-   // For simplicity, we'll just read the last 'count' lines
-   // In a production system, you'd want to parse the JSON properly
-   string lines[];
-   if(!LoadFromFile(m_signalsFile, lines, true) || ArraySize(lines) == 0)
+   // Load JSON content
+   string jsonContent = LoadFromJSON(m_signalsFile, true);
+   if(jsonContent == "")
      {
       Print("No signals found in file: ", filepath);
       return false;
      }
      
-   // Simple implementation - in reality, you'd want to parse the JSON
-   // and create SSignalMetadata objects from it
-   int numSignals = MathMin(count, ArraySize(lines));
-   ArrayResize(signals, numSignals);
+   // Parse JSON array and extract signals
+   SSignalMetadata tempSignals[];
+   int signalCount = 0;
    
-   // This is a simplified example - in a real implementation,
-   // you'd want to parse the JSON properly
-   for(int i = 0; i < numSignals; i++)
+   // Simple JSON parsing - look for signal objects
+   int pos = 0;
+   while(pos < StringLen(jsonContent) && signalCount < 1000) // Limit to prevent infinite loops
      {
-      // Parse JSON and populate signal structure
-      // This is a placeholder - use a proper JSON parser in production
-      signals[i].signal_id = "signal_" + IntegerToString(i);
-      signals[i].timestamp = TimeCurrent();
-      signals[i].symbol = _Symbol;
-      signals[i].confidence = 0.8;
+      int startPos = StringFind(jsonContent, "{\"signal_id\":", pos);
+      if(startPos < 0) break;
+      
+      int endPos = StringFind(jsonContent, "}", startPos);
+      if(endPos < 0) break;
+      
+      string signalJson = StringSubstr(jsonContent, startPos, endPos - startPos + 1);
+      
+      // Parse signal data from JSON
+      SSignalMetadata signal;
+      
+      // Extract signal_id
+      int idPos = StringFind(signalJson, "\"signal_id\":\"");
+      if(idPos >= 0)
+        {
+         int idStart = idPos + 14;
+         int idEnd = StringFind(signalJson, "\"", idStart);
+         if(idEnd > idStart)
+            signal.signal_id = StringSubstr(signalJson, idStart, idEnd - idStart);
+        }
+      
+      // Extract timestamp
+      int timestampPos = StringFind(signalJson, "\"timestamp\":");
+      if(timestampPos >= 0)
+        {
+         int timestampStart = timestampPos + 12;
+         int timestampEnd = StringFind(signalJson, ",", timestampStart);
+         if(timestampEnd < 0) timestampEnd = StringFind(signalJson, "}", timestampStart);
+         if(timestampEnd > timestampStart)
+           {
+            string timestampStr = StringSubstr(signalJson, timestampStart, timestampEnd - timestampStart);
+            signal.timestamp = (datetime)StringToInteger(timestampStr);
+           }
+        }
+      
+      // Extract symbol
+      int symbolPos = StringFind(signalJson, "\"symbol\":\"");
+      if(symbolPos >= 0)
+        {
+         int symbolStart = symbolPos + 10;
+         int symbolEnd = StringFind(signalJson, "\"", symbolStart);
+         if(symbolEnd > symbolStart)
+            signal.symbol = StringSubstr(signalJson, symbolStart, symbolEnd - symbolStart);
+        }
+      
+      // Extract order_type
+      int orderTypePos = StringFind(signalJson, "\"order_type\":");
+      if(orderTypePos >= 0)
+        {
+         int orderTypeStart = orderTypePos + 13;
+         int orderTypeEnd = StringFind(signalJson, ",", orderTypeStart);
+         if(orderTypeEnd < 0) orderTypeEnd = StringFind(signalJson, "}", orderTypeStart);
+         if(orderTypeEnd > orderTypeStart)
+           {
+            string orderTypeStr = StringSubstr(signalJson, orderTypeStart, orderTypeEnd - orderTypeStart);
+            signal.order_type = (ENUM_ORDER_TYPE)StringToInteger(orderTypeStr);
+           }
+        }
+      
+      // Extract price
+      int pricePos = StringFind(signalJson, "\"price\":");
+      if(pricePos >= 0)
+        {
+         int priceStart = pricePos + 8;
+         int priceEnd = StringFind(signalJson, ",", priceStart);
+         if(priceEnd < 0) priceEnd = StringFind(signalJson, "}", priceStart);
+         if(priceEnd > priceStart)
+           {
+            string priceStr = StringSubstr(signalJson, priceStart, priceEnd - priceStart);
+            signal.price = StringToDouble(priceStr);
+           }
+        }
+      
+      // Extract confidence
+      int confidencePos = StringFind(signalJson, "\"confidence\":");
+      if(confidencePos >= 0)
+        {
+         int confidenceStart = confidencePos + 13;
+         int confidenceEnd = StringFind(signalJson, ",", confidenceStart);
+         if(confidenceEnd < 0) confidenceEnd = StringFind(signalJson, "}", confidenceStart);
+         if(confidenceEnd > confidenceStart)
+           {
+            string confidenceStr = StringSubstr(signalJson, confidenceStart, confidenceEnd - confidenceStart);
+            signal.confidence = StringToDouble(confidenceStr);
+           }
+        }
+      
+      // Extract source
+      int sourcePos = StringFind(signalJson, "\"source\":\"");
+      if(sourcePos >= 0)
+        {
+         int sourceStart = sourcePos + 10;
+         int sourceEnd = StringFind(signalJson, "\"", sourceStart);
+         if(sourceEnd > sourceStart)
+            signal.source = StringSubstr(signalJson, sourceStart, sourceEnd - sourceStart);
+        }
+      
+      // Extract regime
+      int regimePos = StringFind(signalJson, "\"regime\":\"");
+      if(regimePos >= 0)
+        {
+         int regimeStart = regimePos + 10;
+         int regimeEnd = StringFind(signalJson, "\"", regimeStart);
+         if(regimeEnd > regimeStart)
+            signal.regime = StringSubstr(signalJson, regimeStart, regimeEnd - regimeStart);
+        }
+      
+      // Add signal to temporary array
+      ArrayResize(tempSignals, signalCount + 1);
+      tempSignals[signalCount] = signal;
+      signalCount++;
+      
+      pos = endPos + 1;
+     }
+   
+   // Return the most recent signals (up to count)
+   if(signalCount == 0)
+     {
+      Print("No valid signals found in file");
+      return false;
      }
      
-   return numSignals > 0;
+   int returnCount = MathMin(count, signalCount);
+   ArrayResize(signals, returnCount);
+   
+   // Copy the most recent signals (from the end of the array)
+   int startIdx = MathMax(0, signalCount - returnCount);
+   for(int i = 0; i < returnCount; i++)
+     {
+      signals[i] = tempSignals[startIdx + i];
+     }
+     
+   return returnCount > 0;
   }
 
 //+------------------------------------------------------------------+
@@ -478,16 +652,103 @@ bool CKnowledgeBase::GetRecentSignals(int count, SSignalMetadata &signals[])
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::UpdateSignalOutcome(const STradeOutcome &outcome)
   {
-   // In a real implementation, you would:
-   // 1. Find the signal by outcome.signal_id
-   // 2. Update it with the trade outcome
-   // 3. Save it back to the knowledge base
+   string filepath = GetFilePath(m_signalsFile, true);
+   if(!FileIsExist(filepath, 0))
+     {
+      Print("Signals file does not exist: ", filepath);
+      return false;
+     }
+     
+   // Load existing signals
+   string jsonContent = LoadFromJSON(m_signalsFile, true);
+   if(jsonContent == "")
+     {
+      Print("No signals found in file: ", filepath);
+      return false;
+     }
+     
+   // Find and update the specific signal
+   string updatedContent = "";
+   bool signalFound = false;
+   bool firstSignal = true;
    
-   // This is a simplified example
-   Print("Updating signal outcome for ", outcome.signal_id, 
-         ", PnL: ", outcome.profit, ", Pips: ", outcome.pips);
+   // Simple JSON parsing - look for signal objects
+   int pos = 0;
+   while(pos < StringLen(jsonContent))
+     {
+      int startPos = StringFind(jsonContent, "{\"signal_id\":", pos);
+      if(startPos < 0) break;
+      
+      int endPos = StringFind(jsonContent, "}", startPos);
+      if(endPos < 0) break;
+      
+      string signalJson = StringSubstr(jsonContent, startPos, endPos - startPos + 1);
+      
+      // Extract signal_id to check if this is the signal we want to update
+      int idPos = StringFind(signalJson, "\"signal_id\":\"");
+      string currentSignalId = "";
+      if(idPos >= 0)
+        {
+         int idStart = idPos + 14;
+         int idEnd = StringFind(signalJson, "\"", idStart);
+         if(idEnd > idStart)
+            currentSignalId = StringSubstr(signalJson, idStart, idEnd - idStart);
+        }
+      
+      // If this is the signal we want to update, add outcome data
+      if(currentSignalId == outcome.signal_id)
+        {
+         signalFound = true;
          
-   return true;
+         // Remove the closing brace and add outcome data
+         string baseSignal = StringSubstr(signalJson, 0, StringLen(signalJson) - 1);
+         
+         // Add outcome data
+         string outcomeData = StringFormat(",\"outcome\":{\"close_time\":%d,\"pips\":%.2f,\"profit\":%.2f,\"close_reason\":\"%s\",\"max_drawdown\":%.2f}}",
+                                         outcome.close_time,
+                                         outcome.pips,
+                                         outcome.profit,
+                                         outcome.close_reason,
+                                         outcome.max_drawdown);
+         
+         signalJson = baseSignal + outcomeData;
+        }
+      
+      // Add signal to updated content
+      if(!firstSignal)
+         updatedContent += ",\n";
+      else
+         firstSignal = false;
+         
+      updatedContent += signalJson;
+      
+      pos = endPos + 1;
+     }
+   
+   if(!signalFound)
+     {
+      Print("Signal with ID ", outcome.signal_id, " not found in knowledge base");
+      return false;
+     }
+     
+   // Save updated signals back to file
+   updatedContent = "[\n" + updatedContent + "\n]";
+   if(SaveToJSON(m_signalsFile, updatedContent, true))
+     {
+      Print("Successfully updated signal outcome for ", outcome.signal_id, 
+            ", PnL: ", outcome.profit, ", Pips: ", outcome.pips);
+      
+      // Update cache
+      string cacheKey = "signal_" + outcome.signal_id;
+      AddToCache(cacheKey, "updated", 300);
+      
+      return true;
+     }
+   else
+     {
+      Print("Failed to save updated signals to file");
+      return false;
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -495,36 +756,86 @@ bool CKnowledgeBase::UpdateSignalOutcome(const STradeOutcome &outcome)
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::SaveRegimeClassification(const string symbol, const string regime, const datetime time)
   {
-   // In a real implementation, you would:
-   // 1. Load existing regimes
-   // 2. Update with the new classification
-   // 3. Save back to file
+   // Load existing regimes to check if we need to update or append
+   string jsonContent = LoadFromJSON(m_regimesFile, true);
+   string updatedContent = "";
+   bool symbolFound = false;
+   bool firstRegime = true;
    
-   string json = "{\"symbol\":\"" + symbol + 
-                "\",\"regime\":\"" + regime + 
-                "\",\"timestamp\":" + IntegerToString(time) + "}";
-                
-   // Append to regimes file
-   string filepath = GetFilePath(m_regimesFile, true);
-   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   // Create new regime entry
+   string newRegimeJson = "{\"symbol\":\"" + symbol + 
+                         "\",\"regime\":\"" + regime + 
+                         "\",\"timestamp\":" + IntegerToString(time) + "}";
    
-   if(handle == INVALID_HANDLE)
+   if(jsonContent != "")
      {
-      Print("Failed to open regimes file: ", filepath, ", error: ", GetLastError());
-      return false;
+      // Parse existing regimes and update if symbol exists, otherwise append
+      int pos = 0;
+      while(pos < StringLen(jsonContent))
+        {
+         int startPos = StringFind(jsonContent, "{\"symbol\":", pos);
+         if(startPos < 0) break;
+         
+         int endPos = StringFind(jsonContent, "}", startPos);
+         if(endPos < 0) break;
+         
+         string regimeJson = StringSubstr(jsonContent, startPos, endPos - startPos + 1);
+         
+         // Extract symbol from regime entry
+         int symbolPos = StringFind(regimeJson, "\"symbol\":\"");
+         string currentSymbol = "";
+         if(symbolPos >= 0)
+           {
+            int symbolStart = symbolPos + 10;
+            int symbolEnd = StringFind(regimeJson, "\"", symbolStart);
+            if(symbolEnd > symbolStart)
+               currentSymbol = StringSubstr(regimeJson, symbolStart, symbolEnd - symbolStart);
+           }
+         
+         // If this is the symbol we want to update, use new data
+         if(currentSymbol == symbol)
+           {
+            symbolFound = true;
+            regimeJson = newRegimeJson;
+           }
+         
+         // Add regime to updated content
+         if(!firstRegime)
+            updatedContent += ",\n";
+         else
+            firstRegime = false;
+            
+         updatedContent += regimeJson;
+         
+         pos = endPos + 1;
+        }
      }
    
-   // Go to end of file
-   FileSeek(handle, 0, SEEK_END);
+   // If symbol not found, append new regime
+   if(!symbolFound)
+     {
+      if(!firstRegime)
+         updatedContent += ",\n";
+      updatedContent += newRegimeJson;
+     }
    
-   // If file is empty, start JSON array, otherwise add comma
-   if(FileTell(handle) == 0)
-      FileWriteString(handle, "[\n" + json);
+   // Save updated regimes back to file
+   updatedContent = "[\n" + updatedContent + "\n]";
+   if(SaveToJSON(m_regimesFile, updatedContent, true))
+     {
+      Print("Successfully saved regime classification: ", symbol, " -> ", regime);
+      
+      // Update cache
+      string cacheKey = "regime_" + symbol;
+      AddToCache(cacheKey, regime, 600); // Cache for 10 minutes
+      
+      return true;
+     }
    else
-      FileWriteString(handle, ",\n" + json);
-   
-   FileClose(handle);
-   return true;
+     {
+      Print("Failed to save regime classification to file");
+      return false;
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -532,12 +843,90 @@ bool CKnowledgeBase::SaveRegimeClassification(const string symbol, const string 
 //+------------------------------------------------------------------+
 string CKnowledgeBase::GetCurrentRegime(const string symbol)
   {
-   // In a real implementation, you would:
-   // 1. Load the latest regime classification for the symbol
-   // 2. Return it
+   // Check cache first
+   string cacheKey = "regime_" + symbol;
+   string cachedRegime = GetFromCache(cacheKey);
+   if(cachedRegime != "")
+     {
+      return cachedRegime;
+     }
+     
+   // Load regimes from file
+   string jsonContent = LoadFromJSON(m_regimesFile, true);
+   if(jsonContent == "")
+     {
+      Print("No regimes file found, returning default regime");
+      return "normal"; // Default regime
+     }
+     
+   string latestRegime = "normal"; // Default
+   datetime latestTimestamp = 0;
    
-   // This is a simplified example that always returns a default regime
-   return "trending";
+   // Parse regimes and find the latest one for the symbol
+   int pos = 0;
+   while(pos < StringLen(jsonContent))
+     {
+      int startPos = StringFind(jsonContent, "{\"symbol\":", pos);
+      if(startPos < 0) break;
+      
+      int endPos = StringFind(jsonContent, "}", startPos);
+      if(endPos < 0) break;
+      
+      string regimeJson = StringSubstr(jsonContent, startPos, endPos - startPos + 1);
+      
+      // Extract symbol
+      int symbolPos = StringFind(regimeJson, "\"symbol\":\"");
+      string currentSymbol = "";
+      if(symbolPos >= 0)
+        {
+         int symbolStart = symbolPos + 10;
+         int symbolEnd = StringFind(regimeJson, "\"", symbolStart);
+         if(symbolEnd > symbolStart)
+            currentSymbol = StringSubstr(regimeJson, symbolStart, symbolEnd - symbolStart);
+        }
+      
+      // If this is the symbol we're looking for
+      if(currentSymbol == symbol)
+        {
+         // Extract timestamp
+         int timestampPos = StringFind(regimeJson, "\"timestamp\":");
+         if(timestampPos >= 0)
+           {
+            int timestampStart = timestampPos + 12;
+            int timestampEnd = StringFind(regimeJson, ",", timestampStart);
+            if(timestampEnd < 0) timestampEnd = StringFind(regimeJson, "}", timestampStart);
+            
+            if(timestampEnd > timestampStart)
+              {
+               string timestampStr = StringSubstr(regimeJson, timestampStart, timestampEnd - timestampStart);
+               datetime regimeTime = (datetime)StringToInteger(timestampStr);
+               
+               // If this is the latest regime for this symbol
+               if(regimeTime > latestTimestamp)
+                 {
+                  latestTimestamp = regimeTime;
+                  
+                  // Extract regime
+                  int regimePos = StringFind(regimeJson, "\"regime\":\"");
+                  if(regimePos >= 0)
+                    {
+                     int regimeStart = regimePos + 10;
+                     int regimeEnd = StringFind(regimeJson, "\"", regimeStart);
+                     if(regimeEnd > regimeStart)
+                        latestRegime = StringSubstr(regimeJson, regimeStart, regimeEnd - regimeStart);
+                    }
+                 }
+              }
+           }
+        }
+      
+      pos = endPos + 1;
+     }
+   
+   // Cache the result
+   AddToCache(cacheKey, latestRegime, 600); // Cache for 10 minutes
+   
+   return latestRegime;
   }
 
 //+------------------------------------------------------------------+
@@ -574,7 +963,7 @@ bool CKnowledgeBase::LogIntervalSnapshot(const string ea_name, const string symb
    string filepath = dir + "\\" + filename;
    
    // Append snapshot to file
-   int handle = FileOpen(filepath, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
    
    if(handle == INVALID_HANDLE)
      {
@@ -654,7 +1043,7 @@ bool CKnowledgeBase::SaveToFile(const string filename, const string &data[], boo
         }
      }
    
-   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
    
    if(handle == INVALID_HANDLE)
      {
@@ -684,7 +1073,7 @@ bool CKnowledgeBase::LoadFromFile(const string filename, string &data[], bool us
      }
    
    // Open file
-   int file_handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI, ",", CP_UTF8);
+   int file_handle = FileOpen(filepath, FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_WRITE, ",", CP_UTF8);
    if(file_handle == INVALID_HANDLE)
      {
       Print("Failed to open file: ", filepath, ", error: ", GetLastError());
@@ -731,14 +1120,46 @@ bool CKnowledgeBase::LoadFromFile(const string filename, string &data[], bool us
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::SaveMarketState(const SMarketState &state)
   {
-   // In a production system, you would save this to a structured format
-   // For now, we'll log it for debugging purposes
-   string logEntry = StringFormat("%s Market State: Spread=%.1f, Volume=%.2f, Bid=%.5f, Ask=%.5f",
-                               TimeToString(state.timestamp), state.spread, state.volume, state.bid, state.ask);
-   Print(logEntry);
+   // Create JSON representation of market state
+   string json = "{\"timestamp\":" + IntegerToString(state.timestamp) + "," +
+                "\"spread\":" + DoubleToString(state.spread, 2) + "," +
+                "\"volume\":" + DoubleToString(state.volume, 2) + "," +
+                "\"bid\":" + DoubleToString(state.bid, _Digits) + "," +
+                "\"ask\":" + DoubleToString(state.ask, _Digits) + "}";
+   
+   // Save to market states file
+   string marketStatesFile = "market_states_" + m_filename + ".json";
+   string filepath = GetFilePath(marketStatesFile, true);
+   
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open market states file: ", filepath, ", error: ", GetLastError());
+      return false;
+     }
+   
+   // Go to end of file
+   FileSeek(handle, 0, SEEK_END);
+   
+   // If file is empty, start JSON array, otherwise add comma
+   if(FileTell(handle) == 0)
+      FileWriteString(handle, "[\n" + json);
+   else
+      FileWriteString(handle, ",\n" + json);
+   
+   FileClose(handle);
    
    // Update last update time
    m_lastUpdate = TimeCurrent();
+   
+   // Cache the latest market state
+   string cacheKey = "market_state_latest";
+   AddToCache(cacheKey, json, 60); // Cache for 1 minute
+   
+   Print("Market state saved: Spread=", state.spread, ", Volume=", state.volume, 
+         ", Bid=", state.bid, ", Ask=", state.ask);
+   
    return true;
   }
 
@@ -747,14 +1168,45 @@ bool CKnowledgeBase::SaveMarketState(const SMarketState &state)
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::SaveVolatilityData(const SVolatilityData &volData)
   {
-   // In a production system, you would save this to a structured format
-   // For now, we'll log it for debugging purposes
-   string logEntry = StringFormat("%s Volatility: ATR=%.5f, StdDev=%.5f, Range=%.5f",
-                               TimeToString(volData.timestamp), volData.atr, volData.stdDev, volData.range);
-   Print(logEntry);
+   // Create JSON representation of volatility data
+   string json = "{\"timestamp\":" + IntegerToString(volData.timestamp) + "," +
+                "\"atr\":" + DoubleToString(volData.atr, _Digits) + "," +
+                "\"stdDev\":" + DoubleToString(volData.stdDev, _Digits) + "," +
+                "\"range\":" + DoubleToString(volData.range, _Digits) + "}";
+   
+   // Save to volatility data file
+   string volatilityFile = "volatility_" + m_filename + ".json";
+   string filepath = GetFilePath(volatilityFile, true);
+   
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
+   
+   if(handle == INVALID_HANDLE)
+     {
+      Print("Failed to open volatility file: ", filepath, ", error: ", GetLastError());
+      return false;
+     }
+   
+   // Go to end of file
+   FileSeek(handle, 0, SEEK_END);
+   
+   // If file is empty, start JSON array, otherwise add comma
+   if(FileTell(handle) == 0)
+      FileWriteString(handle, "[\n" + json);
+   else
+      FileWriteString(handle, ",\n" + json);
+   
+   FileClose(handle);
    
    // Update last update time
    m_lastUpdate = TimeCurrent();
+   
+   // Cache the latest volatility data
+   string cacheKey = "volatility_latest";
+   AddToCache(cacheKey, json, 300); // Cache for 5 minutes
+   
+   Print("Volatility data saved: ATR=", volData.atr, ", StdDev=", volData.stdDev, 
+         ", Range=", volData.range);
+   
    return true;
   }
 
@@ -767,7 +1219,7 @@ bool CKnowledgeBase::AddTrade(const STradeRecord &trade)
    m_lastUpdate = TimeCurrent(); // Update last update time
    
    // Open file for writing (append mode)
-   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ",", CP_UTF8);
+   int handle = FileOpen(filepath, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE, ",", CP_UTF8);
    if(handle == INVALID_HANDLE)
      {
       Print("Failed to open trade history file: ", filepath, ", error: ", GetLastError());
@@ -993,7 +1445,7 @@ int CKnowledgeBase::GetTotalTrades()
 bool CKnowledgeBase::SaveModel(const double &weights[])
   {
    m_lastUpdate = TimeCurrent(); // Update last update time
-   int handle = FileOpen(GetFilePath(m_modelFile), FILE_WRITE|FILE_BIN|FILE_COMMON);
+   int handle = FileOpen(GetFilePath(m_modelFile), FILE_WRITE|FILE_BIN|FILE_COMMON|FILE_SHARE_READ);
    
    if(handle == INVALID_HANDLE)
      {
@@ -1032,7 +1484,7 @@ bool CKnowledgeBase::LoadModel(double &weights[])
       return false;
      }
    
-   int handle = FileOpen(filepath, FILE_READ|FILE_BIN|FILE_COMMON);
+   int handle = FileOpen(filepath, FILE_READ|FILE_BIN|FILE_COMMON|FILE_SHARE_WRITE);
    
    if(handle == INVALID_HANDLE)
      {

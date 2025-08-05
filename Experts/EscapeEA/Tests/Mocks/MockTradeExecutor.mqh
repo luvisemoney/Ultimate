@@ -1,35 +1,17 @@
 //+------------------------------------------------------------------+
-//| MockTradeExecutor.mqh - Mock implementation of ITradeExecutor for testing |
+//| MockTradeExecutor.mqh - Mock implementation for testing          |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2025, EscapeEA"
 #property link      "https://www.escapeea.com"
 #property version   "1.00"
 
 #include <Object.mqh>
-#include "..\..\Include\Core\ITradeExecutor.mqh"
-
-// Trade position structure
-struct STradePosition
-  {
-   ulong            ticket;       // Position ticket
-   string           symbol;       // Symbol name
-   double           volume;       // Position volume
-   ENUM_POSITION_TYPE type;       // Position type (buy/sell)
-   double           price_open;   // Open price
-   double           sl;           // Stop loss level
-   double           tp;           // Take profit level
-   
-   // Default constructor
-   STradePosition() : ticket(0), symbol(""), volume(0), type(POSITION_TYPE_BUY), 
-                     price_open(0), sl(0), tp(0) {}
-  };
-
-// STradeRecord is now defined in ITradeExecutor.mqh
+#include "..\..\Include\Common\Structs.mqh"
 
 //+------------------------------------------------------------------+
 //| Mock Trade Executor for Testing                                  |
 //+------------------------------------------------------------------+
-class CMockTradeExecutor : public ITradeExecutor
+class CMockTradeExecutor
   {
 private:
    string            m_symbol;         // Symbol
@@ -48,10 +30,11 @@ private:
       double           sl;           // Stop Loss
       double           tp;           // Take Profit
       datetime         openTime;     // Open time
+      string           comment;      // Trade comment
       
       // Constructor
       InternalTradeRecord() : ticket(0), symbol(""), volume(0), type(WRONG_VALUE), 
-                            price_open(0), sl(0), tp(0), openTime(0) {}
+                            price_open(0), sl(0), tp(0), openTime(0), comment("") {}
       
       // Copy constructor
       InternalTradeRecord(const InternalTradeRecord &other) :
@@ -62,7 +45,8 @@ private:
          price_open(other.price_open),
          sl(other.sl),
          tp(other.tp),
-         openTime(other.openTime) {}
+         openTime(other.openTime),
+         comment(other.comment) {}
       
       // Assignment operator
       void operator=(const InternalTradeRecord &other)
@@ -75,6 +59,7 @@ private:
          sl = other.sl;
          tp = other.tp;
          openTime = other.openTime;
+         comment = other.comment;
         }
      };
    
@@ -97,6 +82,7 @@ private:
         newTrade.openTime = TimeCurrent();
         newTrade.ticket = (ulong)(MathRand() % 1000000 + 100000);
         newTrade.symbol = m_symbol;
+        newTrade.comment = comment;  // Store the comment
         
         // Add to history - use direct assignment to avoid reference issues
         int count = ArraySize(m_tradeHistory);
@@ -113,102 +99,35 @@ public:
                      }
                     ~CMockTradeExecutor() { ArrayFree(m_tradeHistory); }
    
-   // ITradeExecutor interface implementation
-   virtual bool OpenPosition(ENUM_ORDER_TYPE type, double volume, double price, 
-                           double sl, double tp, string comment = "")
+   // Trade execution methods
+   bool              OpenPosition(ENUM_ORDER_TYPE type, double volume, double sl, 
+                                double tp, string comment = "")
      {
-        if(m_forceError) return false;
+        if(m_forceError) 
+          {
+           m_errorMessage = "Forced error in OpenPosition";
+           return false;
+          }
+        
+        // Get current price based on order type
+        double price = 0;
+        if(type == ORDER_TYPE_BUY)
+           price = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
+        else if(type == ORDER_TYPE_SELL)
+           price = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+           
+        if(price == 0) price = 1.2000; // Default for testing
         
         AddToHistory(type, volume, price, sl, tp, comment);
         
-        return true;
-     }
-     
-   //--- Trade information methods
-   bool              GetLastTrade(STradeRecord &trade) const override
-     {
-        int size = ArraySize(m_tradeHistory);
-        if(size == 0)
-           return false;
-           
-        // Create a local copy to avoid reference issues
-        InternalTradeRecord lastTrade = m_tradeHistory[size - 1];
-        
-        // Map internal record to STradeRecord
-        trade.type = lastTrade.type;
-        trade.volume = lastTrade.volume;
-        trade.price = lastTrade.price_open;
-        trade.sl = lastTrade.sl;
-        trade.tp = lastTrade.tp;
-        trade.comment = ""; // No comment in internal record
-        trade.timestamp = lastTrade.openTime;
+        // Set trade result
+        m_tradeResult.retcode = TRADE_RETCODE_DONE;
+        m_tradeResult.order = (ulong)(MathRand() % 1000000 + 100000);
         
         return true;
      }
      
-   int               GetTradeHistory(STradeRecord &trades[]) const override
-     {
-        int size = ArraySize(m_tradeHistory);
-        ArrayResize(trades, size);
-        
-        for(int i = 0; i < size; i++)
-          {
-           trades[i].type = m_tradeHistory[i].type;
-           trades[i].volume = m_tradeHistory[i].volume;
-           trades[i].price = m_tradeHistory[i].price_open;
-           trades[i].sl = m_tradeHistory[i].sl;
-           trades[i].tp = m_tradeHistory[i].tp;
-           trades[i].comment = ""; // No comment in internal record
-           trades[i].timestamp = m_tradeHistory[i].openTime;
-          }
-        return size;
-     }
-     
-   virtual int GetOpenPositionsCount() const
-     {
-        // Return count of open positions (simplified for testing)
-        int count = 0;
-        for(int i = 0; i < ArraySize(m_tradeHistory); i++)
-           if(m_tradeHistory[i].type != WRONG_VALUE)
-              count++;
-        return count;
-     }
-     
-   virtual bool GetPositionInfo(ulong ticket, STradePosition &position)
-     {
-        // Find the trade by ticket
-        for(int i = 0; i < ArraySize(m_tradeHistory); i++)
-          {
-           if(m_tradeHistory[i].ticket == ticket)
-             {
-              // Create a local copy to avoid reference issues
-              InternalTradeRecord trade = m_tradeHistory[i];
-              
-              // Map internal record to STradePosition
-              position.ticket = trade.ticket;
-              position.symbol = trade.symbol;
-              position.volume = trade.volume;
-              position.type = (trade.type == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
-              position.price_open = trade.price_open;
-              position.sl = trade.sl;
-              position.tp = trade.tp;
-              return true;
-             }
-          }
-        return false;
-     }
-     
-   virtual bool GetLastTradeResult(MqlTradeResult &result) const
-     {
-        result = m_tradeResult;
-        return true;
-     }
-   
-   //--- Error handling
-   string            GetLastError() const { return m_errorMessage; }
-   
-   //--- Position management methods
-   virtual bool ClosePosition(ulong ticket, double volume = 0) override
+   bool              ClosePosition(ulong ticket, double volume = 0)
      {
         if(m_forceError) return false;
         
@@ -230,7 +149,7 @@ public:
         return false;
      }
      
-   virtual bool ModifyPosition(ulong ticket, double newStopLoss, double newTakeProfit)
+   bool              ModifyPosition(ulong ticket, double newStopLoss, double newTakeProfit)
      {
         if(m_forceError)
           {
@@ -253,12 +172,129 @@ public:
         m_errorMessage = "Position not found";
         return false;
      }
+     
+   bool              CloseAllPositions()
+     {
+        if(m_forceError) return false;
+        
+        ArrayResize(m_tradeHistory, 0);
+        return true;
+     }
+     
+   //--- Trade information methods
+   bool              GetLastTrade(STradeRecord &trade) const
+     {
+        int size = ArraySize(m_tradeHistory);
+        if(size == 0)
+           return false;
+           
+        // Create a local copy to avoid reference issues
+        InternalTradeRecord lastTrade = m_tradeHistory[size - 1];
+        
+        // Map internal record to STradeRecord
+        trade.ticket = lastTrade.ticket;
+        trade.openTime = lastTrade.openTime;
+        trade.closeTime = 0; // Still open
+        trade.symbol = lastTrade.symbol;
+        trade.openPrice = lastTrade.price_open;
+        trade.closePrice = 0;
+        trade.stopLoss = lastTrade.sl;
+        trade.takeProfit = lastTrade.tp;
+        trade.lots = lastTrade.volume;
+        trade.profit = 0;
+        trade.swap = 0;
+        trade.commission = 0;
+        trade.signal = (lastTrade.type == ORDER_TYPE_BUY) ? SIGNAL_BUY : SIGNAL_SELL;
+        trade.type = (lastTrade.type == ORDER_TYPE_BUY) ? TRADE_TYPE_BUY : TRADE_TYPE_SELL;
+        trade.isLive = false; // Mock trades are not live
+        trade.confidence = 0.8; // Default confidence for testing
+        trade.comment = lastTrade.comment;
+        
+        return true;
+     }
+     
+   int               GetTradeHistory(STradeRecord &trades[]) const
+     {
+        int size = ArraySize(m_tradeHistory);
+        ArrayResize(trades, size);
+        
+        for(int i = 0; i < size; i++)
+          {
+           trades[i].ticket = m_tradeHistory[i].ticket;
+           trades[i].openTime = m_tradeHistory[i].openTime;
+           trades[i].closeTime = 0; // Still open
+           trades[i].symbol = m_tradeHistory[i].symbol;
+           trades[i].openPrice = m_tradeHistory[i].price_open;
+           trades[i].closePrice = 0;
+           trades[i].stopLoss = m_tradeHistory[i].sl;
+           trades[i].takeProfit = m_tradeHistory[i].tp;
+           trades[i].lots = m_tradeHistory[i].volume;
+           trades[i].profit = 0;
+           trades[i].swap = 0;
+           trades[i].commission = 0;
+           trades[i].signal = (m_tradeHistory[i].type == ORDER_TYPE_BUY) ? SIGNAL_BUY : SIGNAL_SELL;
+           trades[i].type = (m_tradeHistory[i].type == ORDER_TYPE_BUY) ? TRADE_TYPE_BUY : TRADE_TYPE_SELL;
+           trades[i].isLive = false;
+           trades[i].confidence = 0.8;
+           trades[i].comment = m_tradeHistory[i].comment;
+          }
+        return size;
+     }
+     
+   int               GetOpenPositionsCount() const
+     {
+        // Return count of open positions (simplified for testing)
+        int count = 0;
+        for(int i = 0; i < ArraySize(m_tradeHistory); i++)
+           if(m_tradeHistory[i].type != WRONG_VALUE)
+              count++;
+        return count;
+     }
+     
+   bool              GetPositionInfo(ulong ticket, SPositionInfo &position)
+     {
+        // Find the trade by ticket
+        for(int i = 0; i < ArraySize(m_tradeHistory); i++)
+          {
+           if(m_tradeHistory[i].ticket == ticket)
+             {
+              // Create a local copy to avoid reference issues
+              InternalTradeRecord trade = m_tradeHistory[i];
+              
+              // Map internal record to SPositionInfo
+              position.ticket = trade.ticket;
+              position.symbol = trade.symbol;
+              position.volume = trade.volume;
+              position.type = (trade.type == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+              position.priceOpen = trade.price_open;
+              position.stopLoss = trade.sl;
+              position.takeProfit = trade.tp;
+              position.time = trade.openTime;
+              position.profit = 0;
+              position.comment = "Test Position";
+              return true;
+             }
+          }
+        return false;
+     }
+     
+   bool              GetLastTradeResult(MqlTradeResult &result) const
+     {
+        result = m_tradeResult;
+        return true;
+     }
    
-   //--- Utility methods
-   void              SetSymbol(string symbol) override { m_symbol = symbol; }
-   string            GetSymbol() const override { return m_symbol; }
-   void              SetSlippage(double points) override { m_slippage = points; }
-   double            GetSlippage() const override { return m_slippage; }
+   //--- Configuration
+   void              SetSymbol(string symbol) { m_symbol = symbol; }
+   string            GetSymbol() const { return m_symbol; }
+   void              SetSlippage(double points) { m_slippage = points; }
+   double            GetSlippage() const { return m_slippage; }
+   
+   //--- Error handling
+   string            GetLastError() const { return m_errorMessage; }
+   
+   //--- Get result order
+   ulong             ResultOrder() const { return m_tradeResult.order; }
    
    //--- For testing purposes
    void              ForceError(bool enable, string errorMsg = "") 
@@ -273,8 +309,6 @@ public:
                      { 
                         return ArraySize(m_tradeHistory); 
                      }
-   
-   // GetLastTrade is already implemented above
    
    void              ClearTradeHistory() 
                      { 

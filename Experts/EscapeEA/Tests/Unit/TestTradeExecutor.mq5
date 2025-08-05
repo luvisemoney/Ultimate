@@ -25,26 +25,45 @@ public:
                      {
                         m_symbol = _Symbol;
                      }
-                    ~CTestTradeExecutor() {}
+                    ~CTestTradeExecutor() 
+                     {
+                        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+                           delete m_tradeExecutor;
+                     }
    
    // Test fixture setup/teardown
-   void SetUp()
+   void SetUp() override
      {
         // Initialize test objects
-        this.m_tradeExecutor = new CMockTradeExecutor();
-        this.m_tradeExecutor.SetSymbol("EURUSD");
-        this.m_tradeExecutor.SetSlippage(10.0);
+        m_tradeExecutor = new CMockTradeExecutor();
+        if(CheckPointer(m_tradeExecutor) != POINTER_INVALID)
+          {
+           m_tradeExecutor.SetSymbol("EURUSD");
+           m_tradeExecutor.SetSlippage(10.0);
+          }
      }
      
-   void TearDown()
+   void TearDown() override
      {
         // Clean up
-        delete this.m_tradeExecutor;
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+          {
+           delete m_tradeExecutor;
+           m_tradeExecutor = NULL;
+          }
      }
    
    // Test methods
    ENUM_TEST_RESULT Test_OpenPosition_Buy()
      {
+        Print("Test_OpenPosition_Buy: Starting test");
+        
+        if(CheckPointer(m_tradeExecutor) == POINTER_INVALID)
+          {
+           Print("Test_OpenPosition_Buy: m_tradeExecutor is invalid");
+           return TEST_FAILED;
+          }
+           
         double volume = 0.1;
         double price = 1.2500;
         double sl = 1.2000;
@@ -52,39 +71,60 @@ public:
         string cmt = "Test Buy";
         
         // Test successful buy
-        if(!this.m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, volume, price, sl, tp, cmt))
+        Print("Test_OpenPosition_Buy: Opening position");
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, volume, sl, tp, cmt))
+          {
+           Print("Test_OpenPosition_Buy: Failed to open position");
            return TEST_FAILED;
+          }
            
         // Verify trade history
-        if(!this.AssertEqual(1, this.m_tradeExecutor.GetTradeHistoryCount(), 0, "Trade history count should be 1"))
+        int historyCount = m_tradeExecutor.GetTradeHistoryCount();
+        Print("Test_OpenPosition_Buy: Trade history count = ", historyCount);
+        if(!AssertEqual(1, historyCount, 0, "Trade history count should be 1"))
            return TEST_FAILED;
            
         // Get the trade details
         STradeRecord trade;
-        if(!this.m_tradeExecutor.GetLastTrade(trade))
+        if(!m_tradeExecutor.GetLastTrade(trade))
+          {
+           Print("Test_OpenPosition_Buy: Failed to get last trade");
+           return TEST_FAILED;
+          }
+           
+        // Debug print trade details
+        Print("Test_OpenPosition_Buy: Trade details:");
+        Print("Type: ", EnumToString((ENUM_TRADE_TYPE)trade.type));
+        Print("Lots: ", trade.lots);
+        Print("StopLoss: ", trade.stopLoss);
+        Print("TakeProfit: ", trade.takeProfit);
+        Print("Comment: '", trade.comment, "'");
+        
+        // Verify trade details using direct member access
+        if(!AssertEqual((int)TRADE_TYPE_BUY, (int)trade.type, 0, "Trade type should be BUY"))
            return TEST_FAILED;
            
-        // Verify trade details using getter methods
-        if(!this.AssertEqual((int)ORDER_TYPE_BUY, (int)trade.GetType(), 0, "Trade type should be BUY"))
+        if(!AssertEqual(volume, trade.lots, 0.0001, "Volume mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertEqual(volume, trade.GetVolume(), 0.0001, "Volume mismatch"))
+        if(!AssertEqual(sl, trade.stopLoss, 0.0001, "Stop loss mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertEqual(sl, trade.GetStopLoss(), 0.0001, "Stop loss mismatch"))
+        if(!AssertEqual(tp, trade.takeProfit, 0.0001, "Take profit mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertEqual(tp, trade.GetTakeProfit(), 0.0001, "Take profit mismatch"))
+        if(!AssertStringEqual(cmt, trade.comment, true, "Comment mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertStringEqual(cmt, trade.GetComment(), true, "Comment mismatch"))
-           return TEST_FAILED;
-           
+        Print("Test_OpenPosition_Buy: Test passed");
         return TEST_PASSED;
      }
      
    ENUM_TEST_RESULT Test_OpenPosition_Sell()
      {
+        if(CheckPointer(m_tradeExecutor) == POINTER_INVALID)
+           return TEST_FAILED;
+           
         double volume = 0.1;
         double price = 1.2500;
         double sl = 1.3000;
@@ -92,28 +132,28 @@ public:
         string cmt = "Test Sell";
         
         // Test successful sell
-        if(!this.m_tradeExecutor.OpenPosition(ORDER_TYPE_SELL, volume, price, sl, tp, cmt))
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_SELL, volume, sl, tp, cmt))
            return TEST_FAILED;
            
         // Get the trade details
         STradeRecord trade;
-        if(!this.m_tradeExecutor.GetLastTrade(trade))
+        if(!m_tradeExecutor.GetLastTrade(trade))
            return TEST_FAILED;
            
-        // Verify trade details using getter methods
-        if(!this.AssertEqual((int)ORDER_TYPE_SELL, (int)trade.GetType(), 0, "Trade type should be SELL"))
+        // Verify trade details using direct member access
+        if(!AssertEqual((int)TRADE_TYPE_SELL, (int)trade.type, 0, "Trade type should be SELL"))
            return TEST_FAILED;
            
-        if(!this.AssertEqual(volume, trade.GetVolume(), 0.0001, "Volume mismatch"))
+        if(!AssertEqual(volume, trade.lots, 0.0001, "Volume mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertEqual(sl, trade.GetStopLoss(), 0.0001, "Stop loss mismatch"))
+        if(!AssertEqual(sl, trade.stopLoss, 0.0001, "Stop loss mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertEqual(tp, trade.GetTakeProfit(), 0.0001, "Take profit mismatch"))
+        if(!AssertEqual(tp, trade.takeProfit, 0.0001, "Take profit mismatch"))
            return TEST_FAILED;
            
-        if(!this.AssertStringEqual(cmt, trade.GetComment(), true, "Comment mismatch"))
+        if(!AssertStringEqual(cmt, trade.comment, true, "Comment mismatch"))
            return TEST_FAILED;
            
         return TEST_PASSED;
@@ -121,16 +161,19 @@ public:
      
    ENUM_TEST_RESULT Test_OpenPosition()
      {
+        if(CheckPointer(m_tradeExecutor) == POINTER_INVALID)
+           return TEST_FAILED;
+           
         // Test opening a buy position
-        if(!this.m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.2000, 1.1900, 1.3000, "Test Buy"))
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.1900, 1.3000, "Test Buy"))
            return TEST_FAILED;
            
         // Test opening a sell position
-        if(!this.m_tradeExecutor.OpenPosition(ORDER_TYPE_SELL, 0.1, 1.2000, 1.2100, 1.1000, "Test Sell"))
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_SELL, 0.1, 1.2100, 1.1000, "Test Sell"))
            return TEST_FAILED;
            
         // Verify trade history count
-        if(this.m_tradeExecutor.GetTradeHistoryCount() != 2)
+        if(m_tradeExecutor.GetTradeHistoryCount() != 2)
            return TEST_FAILED;
            
         return TEST_PASSED;
@@ -138,74 +181,161 @@ public:
      
    ENUM_TEST_RESULT Test_OpenPosition_ErrorHandling()
      {
+        if(CheckPointer(m_tradeExecutor) == POINTER_INVALID)
+           return TEST_FAILED;
+           
         // Force an error
-        this.m_tradeExecutor.ForceError(true, "Test error message");
+        m_tradeExecutor.ForceError(true, "Test error message");
         
         // Test that opening a position fails when error is forced
-        if(this.m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.2000, 1.1900, 1.3000, "Test Error"))
+        if(m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.1900, 1.3000, "Test Error"))
            return TEST_FAILED;
            
         // Verify error message
-        if(StringLen(this.m_tradeExecutor.GetLastError()) == 0)
+        if(StringLen(m_tradeExecutor.GetLastError()) == 0)
            return TEST_FAILED;
+           
+        // Reset error state
+        m_tradeExecutor.ForceError(false);
            
         return TEST_PASSED;
      }
      
    ENUM_TEST_RESULT Test_ClosePosition()
      {
+        if(CheckPointer(m_tradeExecutor) == POINTER_INVALID)
+           return TEST_FAILED;
+           
         // First open a position to close
-        if(!this.m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.2000, 1.1900, 1.3000, "Test Close"))
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.1900, 1.3000, "Test Close"))
            return TEST_FAILED;
            
+        // Get the ticket number of the opened position
+        STradeRecord trade;
+        if(!m_tradeExecutor.GetLastTrade(trade))
+           return TEST_FAILED;
+           
+        ulong ticket = trade.ticket;
+        Print("Test_ClosePosition: Closing position with ticket ", ticket);
+        
         // Test closing the position
-        if(!this.m_tradeExecutor.ClosePosition(123, 0.1))
+        if(!m_tradeExecutor.ClosePosition(ticket, 0.1))
            return TEST_FAILED;
            
-        // Test error handling
-        this.m_tradeExecutor.ForceError(true);
-        if(this.m_tradeExecutor.ClosePosition(123, 0.1))
+        // Verify position was closed (history count should be 0)
+        if(m_tradeExecutor.GetTradeHistoryCount() != 0)
            return TEST_FAILED;
+           
+        // Test error handling - open another position first
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.1900, 1.3000, "Test Close Error"))
+           return TEST_FAILED;
+           
+        if(!m_tradeExecutor.GetLastTrade(trade))
+           return TEST_FAILED;
+           
+        ticket = trade.ticket;
+        m_tradeExecutor.ForceError(true);
+        if(m_tradeExecutor.ClosePosition(ticket, 0.1))
+           return TEST_FAILED;
+           
+        // Reset error state
+        m_tradeExecutor.ForceError(false);
            
         return TEST_PASSED;
      }
      
    ENUM_TEST_RESULT Test_ModifyPosition()
      {
-        // First open a position to modify
-        if(!this.m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.2000, 1.3000, "Test Modify"))
+        if(CheckPointer(m_tradeExecutor) == POINTER_INVALID)
            return TEST_FAILED;
            
+        // First open a position to modify
+        if(!m_tradeExecutor.OpenPosition(ORDER_TYPE_BUY, 0.1, 1.1900, 1.3000, "Test Modify"))
+           return TEST_FAILED;
+           
+        // Get the ticket number of the opened position
+        STradeRecord trade;
+        if(!m_tradeExecutor.GetLastTrade(trade))
+           return TEST_FAILED;
+           
+        ulong ticket = trade.ticket;
+        Print("Test_ModifyPosition: Modifying position with ticket ", ticket);
+        
         // Test modifying the position
-        if(!this.m_tradeExecutor.ModifyPosition(123, 1.2500, 1.3500))
+        if(!m_tradeExecutor.ModifyPosition(ticket, 1.1950, 1.3050))
            return TEST_FAILED;
            
         // Test error handling
-        this.m_tradeExecutor.ForceError(true);
-        if(this.m_tradeExecutor.ModifyPosition(123, 1.2500, 1.3500))
+        m_tradeExecutor.ForceError(true);
+        if(m_tradeExecutor.ModifyPosition(ticket, 1.2500, 1.3500))
            return TEST_FAILED;
+           
+        // Reset error state
+        m_tradeExecutor.ForceError(false);
            
         return TEST_PASSED;
      }
      
-   // Main test runner
-   virtual ENUM_TEST_RESULT Run()
+   // Main test runner - ALL TESTS WITH PROPER ISOLATION
+   virtual ENUM_TEST_RESULT Run() override
      {
-        ENUM_TEST_RESULT result = TEST_PASSED;
+        ENUM_TEST_RESULT overallResult = TEST_PASSED;
+        ENUM_TEST_RESULT testResult;
         
-        // Run all test methods
-        result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_OpenPosition_Buy());
-        result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_OpenPosition_Sell());
-        result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_OpenPosition());
-        result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_OpenPosition_ErrorHandling());
-        result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_ClosePosition());
-        result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_ModifyPosition());
+        Print("=== RUNNING ALL TESTS WITH PROPER ISOLATION ===");
         
-        return result;
+        // Test 1: OpenPosition_Buy
+        Print("Running Test_OpenPosition_Buy...");
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+           m_tradeExecutor.ClearTradeHistory();
+        testResult = Test_OpenPosition_Buy();
+        Print("Test_OpenPosition_Buy result: ", (testResult == TEST_PASSED ? "PASSED" : "FAILED"));
+        if(testResult != TEST_PASSED) overallResult = TEST_FAILED;
+        
+        // Test 2: OpenPosition_Sell
+        Print("Running Test_OpenPosition_Sell...");
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+           m_tradeExecutor.ClearTradeHistory();
+        testResult = Test_OpenPosition_Sell();
+        Print("Test_OpenPosition_Sell result: ", (testResult == TEST_PASSED ? "PASSED" : "FAILED"));
+        if(testResult != TEST_PASSED) overallResult = TEST_FAILED;
+        
+        // Test 3: OpenPosition (multiple positions)
+        Print("Running Test_OpenPosition...");
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+           m_tradeExecutor.ClearTradeHistory();
+        testResult = Test_OpenPosition();
+        Print("Test_OpenPosition result: ", (testResult == TEST_PASSED ? "PASSED" : "FAILED"));
+        if(testResult != TEST_PASSED) overallResult = TEST_FAILED;
+        
+        // Test 4: OpenPosition_ErrorHandling
+        Print("Running Test_OpenPosition_ErrorHandling...");
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+           m_tradeExecutor.ClearTradeHistory();
+        testResult = Test_OpenPosition_ErrorHandling();
+        Print("Test_OpenPosition_ErrorHandling result: ", (testResult == TEST_PASSED ? "PASSED" : "FAILED"));
+        if(testResult != TEST_PASSED) overallResult = TEST_FAILED;
+        
+        // Test 5: ClosePosition
+        Print("Running Test_ClosePosition...");
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+           m_tradeExecutor.ClearTradeHistory();
+        testResult = Test_ClosePosition();
+        Print("Test_ClosePosition result: ", (testResult == TEST_PASSED ? "PASSED" : "FAILED"));
+        if(testResult != TEST_PASSED) overallResult = TEST_FAILED;
+        
+        // Test 6: ModifyPosition
+        Print("Running Test_ModifyPosition...");
+        if(CheckPointer(m_tradeExecutor) == POINTER_DYNAMIC)
+           m_tradeExecutor.ClearTradeHistory();
+        testResult = Test_ModifyPosition();
+        Print("Test_ModifyPosition result: ", (testResult == TEST_PASSED ? "PASSED" : "FAILED"));
+        if(testResult != TEST_PASSED) overallResult = TEST_FAILED;
+        
+        Print("=== OVERALL TEST RESULT: ", (overallResult == TEST_PASSED ? "PASSED" : "FAILED"), " ===");
+        return overallResult;
      }
   };
-
-// CTestBase is already defined in TestBase.mqh, so we don't need to redefine it here
 
 //+------------------------------------------------------------------+
 //| Test Runner Class                                                |
@@ -214,11 +344,23 @@ class CTestRunner
   {
 private:
    CTestBase        *m_tests[];    // Array of test cases
+   ENUM_TEST_RESULT  m_results[];  // Array to store test results
    
 public:
    // Constructor/destructor
-                     CTestRunner() { ArrayResize(m_tests, 0); }
-                    ~CTestRunner() { for(int i=0; i<ArraySize(m_tests); i++) delete m_tests[i]; }
+                     CTestRunner() 
+                     { 
+                        ArrayResize(m_tests, 0); 
+                        ArrayResize(m_results, 0);
+                     }
+                    ~CTestRunner() 
+                     { 
+                        for(int i = 0; i < ArraySize(m_tests); i++) 
+                          {
+                           if(CheckPointer(m_tests[i]) == POINTER_DYNAMIC)
+                              delete m_tests[i];
+                          }
+                     }
    
    // Add a test to the runner
    void              AddTest(CTestBase *test) 
@@ -226,7 +368,9 @@ public:
                         if(test == NULL) return;
                         int size = ArraySize(m_tests);
                         if(ArrayResize(m_tests, size + 1) == -1) return;
+                        if(ArrayResize(m_results, size + 1) == -1) return;
                         m_tests[size] = test;
+                        m_results[size] = TEST_SKIPPED; // Initialize as skipped
                      }
    
    // Run all tests
@@ -244,9 +388,12 @@ public:
                            ENUM_TEST_RESULT result = m_tests[i].Run();
                            m_tests[i].TearDown();
                            
+                           // Store the result
+                           m_results[i] = result;
+                           
                            string status = (result == TEST_PASSED) ? "PASSED" : 
                                          ((result == TEST_FAILED) ? "FAILED" : "SKIPPED");
-                           Print("  => ", status, "\n");
+                           Print("=> ", status, "\n");
                         }
                      }
    
@@ -256,16 +403,11 @@ public:
                         int passed = 0, failed = 0, skipped = 0;
                         int total = ArraySize(m_tests);
                         
+                        // Use stored results instead of re-running tests
                         for(int i = 0; i < total; i++)
                         {
-                           if(CheckPointer(m_tests[i]) == POINTER_INVALID) continue;
-                           
-                           m_tests[i].SetUp();
-                           ENUM_TEST_RESULT result = m_tests[i].Run();
-                           m_tests[i].TearDown();
-                           
-                           if(result == TEST_PASSED) passed++;
-                           else if(result == TEST_FAILED) failed++;
+                           if(m_results[i] == TEST_PASSED) passed++;
+                           else if(m_results[i] == TEST_FAILED) failed++;
                            else skipped++;
                         }
                         
@@ -274,7 +416,6 @@ public:
                         Print("Passed: ", passed);
                         Print("Failed: ", failed);
                         Print("Skipped: ", skipped);
-                        Print("===================\n");
                      }
   };
 
@@ -298,23 +439,10 @@ void OnStart()
       runner.AddTest(tradeExecutorTest);
      }
    
-   // Run tests if we have any
-   bool hasTests = false;
-   
-   // Check if we have any tests by running a test
-   CTestBase *test = new CTestTradeExecutor();
-   if(test != NULL)
-     {
-      hasTests = true;
-      Print("Running tests...");
-      runner.RunTests();
-      runner.PrintSummary();
-      delete test;
-     }
-   else
-     {
-      Print("No tests to run!");
-     }
+   // Run tests
+   Print("Starting TradeExecutor unit tests...");
+   runner.RunTests();
+   runner.PrintSummary();
    
    // Cleanup
    if(CheckPointer(runner) == POINTER_DYNAMIC)

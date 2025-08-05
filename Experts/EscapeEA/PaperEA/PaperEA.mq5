@@ -41,7 +41,7 @@ input int      InpMaxSignalsPerInterval = 10;            // Max signals per inte
 input double   InpVirtualBalance = 10000.0;              // Virtual balance for paper trading (100-1000000)
 input int      InpSignalExpiryBars = 5;                  // Signal expiry in bars (1-100)
 input int      InpMaxSignalAge = 3600;                   // Max signal age in seconds (60-86400, 1 hour default)
-input string   InpSharedKBDir = "C:\\Users\\itoha\\Google Drive\\EscapeEA_SharedKB";            // Shared knowledge base directory (max 255 chars)
+input string   InpSharedKBDir = "C:\\Users\\echuk\\Mon Drive\\Shared Knowledge Base";            // Shared knowledge base directory (max 255 chars)
 
 input group "=== Signal Generation ==="
 input ENUM_MA_METHOD     InpMAMethod = MODE_EMA;         // MA Method (MODE_EMA, MODE_SMA, MODE_SMMA, MODE_LWMA)

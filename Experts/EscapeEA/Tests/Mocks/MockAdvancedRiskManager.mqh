@@ -88,6 +88,16 @@ public:
                      }
    
    string            GetLastError() const { return m_forceError ? m_lastError : ""; }
+   
+   // Reset method for testing
+   void              Reset() 
+                     {
+                        m_forceError = false;
+                        m_lastError = "";
+                        m_positionSize = 0.1;
+                        m_stopLoss = 1.1900;
+                        m_takeProfit = 1.2100;
+                     }
   };
 
 //+------------------------------------------------------------------+

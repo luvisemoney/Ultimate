@@ -10,7 +10,6 @@
 #include "TestBase.mqh"
 #include "..\\Mocks\\MockLearningEngine.mqh"
 #include "..\\..\\Include\\Common\\Structs.mqh"
-#include "..\\TestRunner.mqh"
 
 //+------------------------------------------------------------------+
 //| Test class for CLearningEngine                                   |
@@ -40,6 +39,9 @@ public:
    // Test methods
    bool Test_Initialization(string &message)
      {
+        // Reset state for clean test
+        m_learningEngine.Reset();
+        
         // Test default initialization
         if(!m_learningEngine.Initialize())
         {
@@ -61,6 +63,9 @@ public:
      
    bool Test_UpdateModel(string &message)
      {
+        // Reset state for clean test
+        m_learningEngine.Reset();
+        
         // Create a test trade
         STradeRecord trade;
         trade.ticket = 12345;
@@ -94,6 +99,9 @@ public:
      
    bool Test_ShouldEnterTrade(string &message)
      {
+        // Reset state for clean test
+        m_learningEngine.Reset();
+        
         double features[5] = {1.0, 2.0, 3.0, 4.0, 5.0};
         double confidence = 0.0;
         
@@ -132,6 +140,9 @@ public:
      
    bool Test_PerformanceMetrics(string &message)
      {
+        // Reset state for clean test
+        m_learningEngine.Reset();
+        
         // Test win rate
         double expectedWinRate = 0.75;
         m_learningEngine.SetWinRate(expectedWinRate);
@@ -200,7 +211,8 @@ public:
         ENUM_TEST_RESULT result = TEST_PASSED;
         string message = "";
         
-        // Run all test methods with proper result handling
+        // Run all test methods with proper setup/teardown for isolation
+        SetUp();
         if(!Test_Initialization(message))
         {
            PrintTestResult(TEST_FAILED, message);
@@ -210,7 +222,9 @@ public:
         {
            PrintTestResult(TEST_PASSED, message);
         }
+        TearDown();
         
+        SetUp();
         if(!Test_UpdateModel(message))
         {
            PrintTestResult(TEST_FAILED, message);
@@ -220,7 +234,9 @@ public:
         {
            PrintTestResult(TEST_PASSED, message);
         }
+        TearDown();
         
+        SetUp();
         if(!Test_ShouldEnterTrade(message))
         {
            PrintTestResult(TEST_FAILED, message);
@@ -230,7 +246,9 @@ public:
         {
            PrintTestResult(TEST_PASSED, message);
         }
+        TearDown();
         
+        SetUp();
         if(!Test_PerformanceMetrics(message))
         {
            PrintTestResult(TEST_FAILED, message);
@@ -240,35 +258,35 @@ public:
         {
            PrintTestResult(TEST_PASSED, message);
         }
+        TearDown();
         
         return result;
      }
   };
 
 //+------------------------------------------------------------------+
-//| Test registration and execution                                  |
+//| Main function to run the test                                    |
 //+------------------------------------------------------------------+
 void OnStart()
   {
-   // Create test instance
    CTestLearningEngine *test = new CTestLearningEngine();
-   if(test == NULL)
-   {
-      Print("Error: Failed to create test instance");
-      return;
-   }
    
-   // Create test runner and add test
-   CTestRunner runner;
-   runner.AddTest(test);
-   
-   // Run tests
-   runner.RunAllTests();
-   
-   // Print summary
-   runner.PrintSummary();
-   
-   // Clean up (runner will delete the test object)
-   delete test;
+   if(CheckPointer(test) == POINTER_DYNAMIC)
+     {
+      ENUM_TEST_RESULT result = test.Run();
+      
+      string resultStr = (result == TEST_PASSED) ? "PASSED" : 
+                        (result == TEST_FAILED) ? "FAILED" : "SKIPPED";
+      
+      Print("=== Test Results ===");
+      Print("Test Suite: ", test.Name());
+      Print("Result: ", resultStr);
+      Print("====================");
+      
+      delete test;
+     }
+   else
+     {
+      Print("Failed to create test instance");
+     }
   }
-//+------------------------------------------------------------------+

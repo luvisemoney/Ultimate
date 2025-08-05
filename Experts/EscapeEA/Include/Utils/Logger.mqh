@@ -8,7 +8,6 @@
 #property version   "1.00"
 #property strict
 
-#include <Files\FileTxt.mqh>
 #include <Arrays\ArrayObj.mqh>
 
 // Log levels
@@ -90,6 +89,7 @@ public:
    
    // Singleton access
    static CLogger   *Instance();
+   static void       Cleanup();
    
    // Initialization
    bool              Initialize(const string logDir = "Logs\\", 
@@ -126,7 +126,7 @@ CLogger::CLogger() :
    m_minLogLevel(LOG_LEVEL_INFO),
    m_enableConsole(true)
   {
-   m_logQueue.FreeMode(false);
+   m_logQueue.FreeMode(true); // Auto-delete objects to prevent memory leaks
   }
 
 //+------------------------------------------------------------------+
@@ -141,8 +141,6 @@ CLogger::~CLogger()
    m_logQueue.Clear();
    
    // Reset singleton instance
-   if(CheckPointer(m_instance) == POINTER_DYNAMIC)
-      delete m_instance;
    m_instance = NULL;
   }
 
@@ -154,6 +152,18 @@ CLogger *CLogger::Instance()
    if(m_instance == NULL)
       m_instance = new CLogger();
    return m_instance;
+  }
+
+//+------------------------------------------------------------------+
+//| Cleanup singleton instance                                       |
+//+------------------------------------------------------------------+
+void CLogger::Cleanup()
+  {
+   if(m_instance != NULL)
+     {
+      delete m_instance;
+      m_instance = NULL;
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -177,8 +187,12 @@ bool CLogger::Initialize(const string logDir, const string prefix,
    // Ensure log directory exists
    if(!FolderCreate(m_logDir, FILE_COMMON))
      {
-      Print("Failed to create log directory: ", m_logDir);
-      return false;
+      int error = GetLastError();
+      if(error != 5019) // 5019 = directory already exists
+        {
+         Print("Failed to create log directory: ", m_logDir, ", error: ", error);
+         return false;
+        }
      }
    
    // Rotate logs if needed
@@ -220,7 +234,7 @@ void CLogger::Log(ENUM_LOG_LEVEL level, string message, string context)
    // Output to console if enabled
    if(m_enableConsole)
      {
-      string logLine = FormatLogMessage(entry);
+      string logLine = FormatLogMessage(*entry);
       Print(logLine);
      }
   }
@@ -234,17 +248,17 @@ void CLogger::Flush()
       return;
    
    string logFile = GetLogFileName();
-   CFileTxt file;
    
-   // Open file in append mode
-   if(!file.Open(logFile, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON))
+   // Open file in append mode using standard MQL5 functions
+   int fileHandle = FileOpen(logFile, FILE_WRITE|FILE_READ|FILE_TXT|FILE_COMMON);
+   if(fileHandle == INVALID_HANDLE)
      {
       Print("Failed to open log file: ", logFile, ", error: ", GetLastError());
       return;
      }
    
-   // Move to end of file - no need to check return value as Seek is void
-   file.Seek(0, SEEK_END);
+   // Move to end of file for append
+   FileSeek(fileHandle, 0, SEEK_END);
    
    // Write queued entries
    for(int i = 0; i < m_logQueue.Total(); i++)
@@ -253,19 +267,18 @@ void CLogger::Flush()
       if(CheckPointer(entry) == POINTER_DYNAMIC)
         {
          string logLine = FormatLogMessage(*entry) + "\r\n";
-         file.WriteString(logLine);
-         delete entry;
+         FileWriteString(fileHandle, logLine);
         }
      }
    
-   // Clear the queue
+   // Clear the queue (objects will be auto-deleted due to FreeMode(true))
    m_logQueue.Clear();
    
    // Close the file
-   file.Close();
+   FileClose(fileHandle);
    
    // Check if we need to rotate logs
-   int fileHandle = FileOpen(logFile, FILE_READ|FILE_BIN|FILE_COMMON);
+   fileHandle = FileOpen(logFile, FILE_READ|FILE_BIN|FILE_COMMON);
    ulong fileSize = 0;
    if(fileHandle != INVALID_HANDLE)
      {

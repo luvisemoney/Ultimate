@@ -6,12 +6,12 @@
 #property version   "1.00"
 
 #include <Object.mqh>
-#include "..\..\Include\Learning\LearningEngine.mqh"
+#include "..\..\Include\Common\Structs.mqh"
 
 //+------------------------------------------------------------------+
 //| Mock implementation of CLearningEngine for testing               |
 //+------------------------------------------------------------------+
-class CMockLearningEngine : public CLearningEngine
+class CMockLearningEngine : public CObject
   {
 private:
    bool              m_initialized;     // Whether the engine is initialized
@@ -27,7 +27,6 @@ private:
 public:
    // Constructor/destructor
                      CMockLearningEngine() : 
-                        CLearningEngine(100, 0.6, 0.01),
                         m_initialized(true),
                         m_forceError(false),
                         m_winRate(0.7),
@@ -93,6 +92,17 @@ public:
                      }
    
    string            GetLastError() const { return m_forceError ? m_lastError : ""; }
+   
+   // Reset method for testing
+   void              Reset() 
+                     {
+                        m_forceError = false;
+                        m_lastError = "";
+                        m_winRate = 0.7;
+                        m_profitFactor = 1.5;
+                        m_maxDrawdown = 10.0;
+                        m_shouldEnter = true;
+                     }
   };
 
 //+------------------------------------------------------------------+

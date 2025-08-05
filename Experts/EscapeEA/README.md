@@ -334,7 +334,14 @@ Run tests automatically on code changes to catch regressions 08/04
 add backtesting and forward testing to paper ea and live ea, robust mindset, 
 
 358-543 731-760 shared kb 
-questions 831-870
+
 paper 654
 
 compile, test, debug, fix, repeat
+after all unit tests have been done we move to integration tests with the actual class
+
+Usage:
+Compile all tests: Run Tests\compile_all_tests.bat
+Run all tests: Run Tests\run_all_tests.bat
+Interactive testing: Run Tests\run_quick_tests.bat
+Comprehensive suite: Execute TestSuiteRunner.ex5 in MetaTrader 5

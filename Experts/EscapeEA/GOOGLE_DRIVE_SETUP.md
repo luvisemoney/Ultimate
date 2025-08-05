@@ -41,13 +41,15 @@ This guide explains how to configure LiveEA and PaperEA running on two different
 1. Open MetaTrader 5
 2. Attach LiveEA to a chart
 3. In the EA inputs, set:
-   - `InpSharedKBDir`: `C:\Users\[YourUsername]\Google Drive\EscapeEA_SharedKB`
+   - `InpSharedKBDir`: `C:\Users\[YourUsername]\[Your Drive Path]\Shared Knowledge Base`
+   - Example: `C:\Users\itoha\My Drive (emmanch13@gmail.com)\Shared Knowledge Base`
 
 ### PaperEA Configuration:
 1. On the second laptop, open MetaTrader 5
 2. Attach PaperEA to a chart
 3. In the EA inputs, set:
-   - `InpSharedKBDir`: `C:\Users\[YourUsername]\Google Drive\EscapeEA_SharedKB`
+   - `InpSharedKBDir`: `C:\Users\[YourUsername]\[Your Drive Path]\Shared Knowledge Base`
+   - Example: `C:\Users\echuk\Mon Drive\Shared Knowledge Base`
 
 ## Step 5: Verify Sync Status
 

@@ -8,7 +8,6 @@
 #include "..\Common\Enums.mqh"
 #include "..\Common\Structs.mqh"
 #include "..\Common\Constants.mqh"
-#include "ITradeExecutor.mqh"
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 

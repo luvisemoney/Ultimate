@@ -206,7 +206,7 @@ input int      InpFontSize = 8;                      // Font size (8-20)
 input bool     InpAcceptPaperSignals = true;         // Accept signals from Paper EA
 input double   InpMaxPositionSize = 10.0;            // Maximum position size (0.01-1000.0 lots)
 input bool     InpUseHardStops = true;               // Use hard stop losses
-input string   InpSharedKBDir = "C:\\Users\\itoha\\Google Drive\\EscapeEA_SharedKB";        // Shared knowledge base directory (max 255 chars)
+input string   InpSharedKBDir = "C:\\Users\\itoha\\My Drive (emmanch13@gmail.com)\\Shared Knowledge Base";        // Shared knowledge base directory (max 255 chars)
 
 input group "=== Signal Processing ==="
 input double   InpMinConfidence = 0.7;               // Minimum confidence (0.0-1.0)

@@ -11,7 +11,7 @@
 #property link      "https://www.escapeea.com"
 #property version   "1.00"
 
-#include "..\\TestBase.mqh"
+#include "TestBase.mqh"
 #include "..\\Mocks\\MockAdvancedStrategy.mqh"
 #include "..\\..\\Include\\Common\\Structs.mqh"
 #include <Arrays\ArrayObj.mqh>
@@ -23,13 +23,12 @@ class CTestAdvancedStrategy : public CTestBase
   {
 private:
    CMockAdvancedStrategy *m_strategy;     // Strategy instance under test
-   MqlRates            m_rates[100];      // Test market data (100 bars)
+   MqlRates            m_rates[];         // Test market data (dynamic array)
    CMockLearningEngine *m_learningEngine; // Mock learning engine
    CMockAdvancedRiskManager *m_riskManager; // Mock risk manager
    
    // Test configuration
-   static const int    TEST_BARS = 100;    // Number of test bars
-   static const double TEST_SYMBOL_POINT = 0.0001; // Point value for test symbol
+   enum { TEST_BARS = 100 };    // Number of test bars
    
    // Helper methods
    bool               InitializeTestData();
@@ -37,6 +36,8 @@ private:
    void               TearDownMarketData();
    void               ValidateTradeSignal(ENUM_TRADE_SIGNAL expectedSignal, 
                                         double expectedConfidence);
+   ENUM_TEST_RESULT   AssertFailed(string message);
+   ENUM_TEST_RESULT   AssertPassed(string message);
    
 public:
    // Constructor/destructor
@@ -80,14 +81,23 @@ public:
                      {
                         // Clean up resources in reverse order of creation
                         if(CheckPointer(m_strategy) == POINTER_DYNAMIC)
+                        {
                            delete m_strategy;
+                           m_strategy = NULL;
+                        }
                            
                         if(CheckPointer(m_learningEngine) == POINTER_DYNAMIC)
+                        {
                            delete m_learningEngine;
+                           m_learningEngine = NULL;
+                        }
                            
                         if(CheckPointer(m_riskManager) == POINTER_DYNAMIC)
+                        {
                            delete m_riskManager;
-                           
+                           m_riskManager = NULL;
+                        }
+                        
                         TearDownMarketData();
                      }
    
@@ -103,11 +113,16 @@ public:
            
         if(CheckPointer(m_riskManager) == POINTER_DYNAMIC)
            m_riskManager.Reset();
+           
+        // Reset mock strategy
+        if(CheckPointer(m_strategy) == POINTER_DYNAMIC)
+           m_strategy.Reset();
      }
      
    virtual void      TearDown()
      {
         // Clean up any resources specific to test cases
+        // Note: Don't delete objects here as they are managed by destructor
         TearDownMarketData();
      }
    
@@ -132,7 +147,7 @@ public:
            m_strategy.GetLearningEngine() != m_learningEngine)
            return AssertFailed("Components not properly injected");
            
-        return TEST_PASSED;
+        return AssertPassed("Strategy initialization works correctly");
      }
      
    ENUM_TEST_RESULT Test_SignalGeneration()
@@ -168,7 +183,7 @@ public:
         if(signal != SIGNAL_HOLD)
            return AssertFailed("Failed to generate HOLD signal");
            
-        return TEST_PASSED;
+        return AssertPassed("Signal generation works correctly");
      }
      
    ENUM_TEST_RESULT Test_PositionManagement()
@@ -486,15 +501,9 @@ public:
         
         if(result)
            return AssertFailed("Should not accept invalid Bollinger Bands order");
-        
-        if(result)
-           return AssertFailed("Should fail when error is forced");
            
         // Reset error state
         m_strategy.ForceError(false);
-        
-        // Test 3: Verify boundary conditions
-        // (Add more boundary tests as needed based on indicator valid ranges)
         
         return AssertPassed("Indicator values functionality verified");
      }
@@ -504,15 +513,38 @@ public:
      {
         ENUM_TEST_RESULT result = TEST_PASSED;
         
-        // Run all test methods
+        // Run all test methods with proper setup/teardown
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_Initialization());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_SignalGeneration());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_PositionManagement());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_ShouldEnterLong());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_ShouldEnterShort());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_ShouldExitLong());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_ShouldExitShort());
+        TearDown();
+        
+        SetUp();
         result = (ENUM_TEST_RESULT)MathMax((int)result, (int)Test_IndicatorValues());
+        TearDown();
         
         return result;
      }
@@ -526,28 +558,15 @@ bool CTestAdvancedStrategy::InitializeTestData()
    // Set up test market data structure
    ArrayResize(m_rates, TEST_BARS);
    
-   // Initialize with default values
-   for(int i = 0; i < TEST_BARS; i++)
-     {
-      m_rates[i].time = TimeCurrent() - (TEST_BARS - i) * PeriodSeconds(PERIOD_M1);
-      m_rates[i].open = 1.2000 + i * 0.0001;
-      m_rates[i].high = m_rates[i].open + 0.0005;
-      m_rates[i].low = m_rates[i].open - 0.0005;
-      m_rates[i].close = m_rates[i].open + (i % 2 == 0 ? 0.0002 : -0.0002);
-      m_rates[i].tick_volume = 1000;
-      m_rates[i].spread = 10;
-      m_rates[i].real_volume = 10000;
-     }
-   
    // Fill with realistic sample data
    datetime currentTime = TimeCurrent();
    double basePrice = 1.2000;
    double priceStep = 0.0005;
    
-   for(int i = 0; i < size; i++)
+   for(int i = 0; i < TEST_BARS; i++)
      {
         // Set timestamp (most recent first)
-        m_rates[i].time = currentTime - (size - 1 - i) * PeriodSeconds(PERIOD_H1);
+        m_rates[i].time = currentTime - (TEST_BARS - 1 - i) * PeriodSeconds(PERIOD_H1);
         
         // Generate realistic price action
         m_rates[i].open = basePrice + i * priceStep;
@@ -574,5 +593,78 @@ bool CTestAdvancedStrategy::InitializeTestData()
      
    return true;
   }
+
+//+------------------------------------------------------------------+
+//| Set up market data for testing                                   |
+//+------------------------------------------------------------------+
+void CTestAdvancedStrategy::SetUpMarketData()
+  {
+   // Reset market data to default state
+   InitializeTestData();
+  }
+
+//+------------------------------------------------------------------+
+//| Clean up market data after testing                               |
+//+------------------------------------------------------------------+
+void CTestAdvancedStrategy::TearDownMarketData()
+  {
+   // No specific cleanup needed for static array
+  }
+
+//+------------------------------------------------------------------+
+//| Validate trade signal against expected values                    |
+//+------------------------------------------------------------------+
+void CTestAdvancedStrategy::ValidateTradeSignal(ENUM_TRADE_SIGNAL expectedSignal, 
+                                               double expectedConfidence)
+  {
+   // This method can be used for additional signal validation
+   // Implementation depends on specific requirements
+  }
+
+//+------------------------------------------------------------------+
+//| Helper method to return failed test result with message          |
+//+------------------------------------------------------------------+
+ENUM_TEST_RESULT CTestAdvancedStrategy::AssertFailed(string message)
+  {
+   if(m_verbose)
+      Print("Test Failed: ", message);
+   return TEST_FAILED;
+  }
+
+//+------------------------------------------------------------------+
+//| Helper method to return passed test result with message          |
+//+------------------------------------------------------------------+
+ENUM_TEST_RESULT CTestAdvancedStrategy::AssertPassed(string message)
+  {
+   if(m_verbose)
+      Print("Test Passed: ", message);
+   return TEST_PASSED;
+  }
+
+//+------------------------------------------------------------------+
+//| Main function to run the test                                    |
+//+------------------------------------------------------------------+
+void OnStart()
+  {
+   CTestAdvancedStrategy *test = new CTestAdvancedStrategy();
+   
+   if(CheckPointer(test) == POINTER_DYNAMIC)
+     {
+      ENUM_TEST_RESULT result = test.Run();
+      
+      string resultStr = (result == TEST_PASSED) ? "PASSED" : 
+                        (result == TEST_FAILED) ? "FAILED" : "SKIPPED";
+      
+      Print("=== Test Results ===");
+      Print("Test Suite: ", test.Name());
+      Print("Result: ", resultStr);
+      Print("===================");
+      
+      delete test;
+     }
+   else
+     {
+      Print("Error: Failed to create test instance");
+     }
   }
 //+------------------------------------------------------------------+
