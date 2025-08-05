@@ -55,7 +55,7 @@ public:
 //+------------------------------------------------------------------+
 //| Constructor                                                      |
 //+------------------------------------------------------------------+
-CTradeExecutor::CTradeExecutor(ulong magic, bool isLive, string symbol, double slippage = 10.0) :
+CTradeExecutor::CTradeExecutor(ulong magic, bool isLive, string symbol, double slippage) :
    m_isLive(isLive),
    m_symbol(symbol),
    m_slippage(slippage),

@@ -198,3 +198,66 @@ struct SPositionInfo
                     stopLoss(0.0), takeProfit(0.0), time(0), 
                     type(POSITION_TYPE_BUY), profit(0.0) {}
   };
+
+//+------------------------------------------------------------------+
+//| Market pattern structure - JAILBREAK ADDITION                   |
+//+------------------------------------------------------------------+
+struct SMarketPattern
+  {
+   string            symbol;         // Trading symbol
+   ENUM_TIMEFRAMES   timeframe;      // Timeframe
+   string            patternType;    // Pattern type identifier
+   double            confidence;     // Pattern confidence (0-1)
+   datetime          timestamp;      // Pattern detection time
+   double            outcome;        // Pattern outcome (1.0 = success, 0.0 = failure)
+   double            entryPrice;     // Entry price when pattern detected
+   double            exitPrice;      // Exit price (if completed)
+   int               duration;       // Pattern duration in bars
+   
+   // Default constructor
+   SMarketPattern() : symbol(""), timeframe(PERIOD_CURRENT), patternType(""), 
+                     confidence(0.0), timestamp(0), outcome(0.0), 
+                     entryPrice(0.0), exitPrice(0.0), duration(0) {}
+  };
+
+//+------------------------------------------------------------------+
+//| Performance metrics structure - JAILBREAK ADDITION              |
+//+------------------------------------------------------------------+
+struct SPerformanceMetrics
+  {
+   string            symbol;         // Trading symbol
+   string            strategy;       // Strategy name
+   int               totalTrades;    // Total number of trades
+   double            winRate;        // Win rate (0-1)
+   double            avgProfit;      // Average profit per trade
+   double            maxDrawdown;    // Maximum drawdown
+   double            profitFactor;   // Profit factor
+   double            sharpeRatio;    // Sharpe ratio
+   datetime          timestamp;      // Metrics calculation time
+   int               timeframe;      // Analysis timeframe in hours
+   
+   // Default constructor
+   SPerformanceMetrics() : symbol(""), strategy(""), totalTrades(0), winRate(0.0),
+                          avgProfit(0.0), maxDrawdown(0.0), profitFactor(0.0),
+                          sharpeRatio(0.0), timestamp(0), timeframe(24) {}
+  };
+
+//+------------------------------------------------------------------+
+//| Trade result structure - JAILBREAK ADDITION                     |
+//+------------------------------------------------------------------+
+struct STradeResult
+  {
+   string            symbol;         // Trading symbol
+   ENUM_TRADE_SIGNAL signal;         // Original signal
+   double            entryPrice;     // Entry price
+   double            exitPrice;      // Exit price
+   double            profit;         // Profit/loss
+   datetime          timestamp;      // Trade completion time
+   double            confidence;     // Original signal confidence
+   int               duration;       // Trade duration in minutes
+   string            exitReason;     // Reason for exit
+   
+   // Default constructor
+   STradeResult() : symbol(""), signal(SIGNAL_HOLD), entryPrice(0.0), exitPrice(0.0),
+                   profit(0.0), timestamp(0), confidence(0.0), duration(0), exitReason("") {}
+  };

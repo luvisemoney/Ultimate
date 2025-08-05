@@ -309,3 +309,245 @@ double CLearningEngine::GetMaxDrawdown(int lookback = 0)
    
    return (peak > 0) ? (maxDrawdown / peak * 100.0) : 0.0;
   }
+ 
+ 
+//+------------------------------------------------------------------+
+//| Initialize with external knowledge base - JAILBREAK ADDITION    |
+//+------------------------------------------------------------------+
+bool CLearningEngine::Initialize(CKnowledgeBase *knowledgeBase)
+  {
+   if(knowledgeBase == NULL)
+     {
+      Print("Error: External knowledge base is NULL");
+      return false;
+     }
+   
+   // Replace internal knowledge base with external one
+   if(m_knowledgeBase != NULL)
+      delete m_knowledgeBase;
+   
+   m_knowledgeBase = knowledgeBase;
+   
+   // Load existing model if available
+   if(m_knowledgeBase.ModelExists())
+     {
+      double weights[];
+      if(m_knowledgeBase.LoadModel(weights))
+        {
+         ArrayCopy(m_modelWeights, weights);
+         m_isTrained = true;
+         Print("Model loaded from external knowledge base");
+        }
+     }
+   
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Recognize pattern from price array - JAILBREAK ADDITION         |
+//+------------------------------------------------------------------+
+string CLearningEngine::RecognizePattern(const double &prices[], int count)
+  {
+   if(count < 3 || ArraySize(prices) < count)
+     {
+      return "";
+     }
+   
+   // Simple pattern recognition
+   double trend = prices[count-1] - prices[0];
+   double volatility = 0.0;
+   
+   // Calculate volatility
+   for(int i = 1; i < count; i++)
+     {
+      volatility += MathAbs(prices[i] - prices[i-1]);
+     }
+   volatility /= (count - 1);
+   
+   // Classify pattern
+   if(trend > volatility * 2)
+      return "UPTREND";
+   else if(trend < -volatility * 2)
+      return "DOWNTREND";
+   else if(volatility > (prices[0] * 0.01))
+      return "VOLATILE";
+   else
+      return "SIDEWAYS";
+  }
+
+//+------------------------------------------------------------------+
+//| Calculate pattern confidence - JAILBREAK ADDITION               |
+//+------------------------------------------------------------------+
+double CLearningEngine::CalculatePatternConfidence(const string pattern, const string symbol)
+  {
+   if(pattern == "")
+      return 0.0;
+   
+   // Simple confidence calculation based on pattern type
+   if(pattern == "UPTREND" || pattern == "DOWNTREND")
+      return 0.8;
+   else if(pattern == "VOLATILE")
+      return 0.6;
+   else if(pattern == "SIDEWAYS")
+      return 0.4;
+   
+   return 0.5; // Default confidence
+  }
+
+//+------------------------------------------------------------------+
+//| Process performance feedback - JAILBREAK ADDITION               |
+//+------------------------------------------------------------------+
+bool CLearningEngine::ProcessPerformanceFeedback(const SPerformanceMetrics &metrics)
+  {
+   if(metrics.totalTrades <= 0)
+     {
+      Print("Invalid performance metrics");
+      return false;
+     }
+   
+   // Adjust learning parameters based on performance
+   if(metrics.winRate < m_minWinRate)
+     {
+      // Increase learning rate for poor performance
+      m_learningRate = MathMin(m_learningRate * 1.1, 0.1);
+      Print("Increased learning rate due to poor performance: ", m_learningRate);
+     }
+   else if(metrics.winRate > 0.8)
+     {
+      // Decrease learning rate for good performance (fine-tuning)
+      m_learningRate = MathMax(m_learningRate * 0.9, 0.001);
+      Print("Decreased learning rate for fine-tuning: ", m_learningRate);
+     }
+   
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Track trade result - JAILBREAK ADDITION                         |
+//+------------------------------------------------------------------+
+bool CLearningEngine::TrackTradeResult(const STradeResult &result)
+  {
+   if(result.symbol == "" || result.timestamp == 0)
+     {
+      Print("Invalid trade result");
+      return false;
+     }
+   
+   // Convert trade result to trade record for storage
+   STradeRecord trade;
+   trade.ticket = (ulong)GetTickCount(); // Generate unique ticket
+   trade.symbol = result.symbol;
+   trade.signal = result.signal;
+   trade.openTime = result.timestamp - (result.duration * 60);
+   trade.closeTime = result.timestamp;
+   trade.openPrice = result.entryPrice;
+   trade.closePrice = result.exitPrice;
+   trade.profit = result.profit;
+   trade.confidence = result.confidence;
+   trade.comment = "Tracked result";
+   trade.isLive = false; // Simulated for tracking
+   
+   // Add to knowledge base
+   if(m_knowledgeBase != NULL)
+     {
+      return m_knowledgeBase.AddTrade(trade);
+     }
+   
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Analyze performance - JAILBREAK ADDITION                        |
+//+------------------------------------------------------------------+
+SPerformanceMetrics CLearningEngine::AnalyzePerformance(const string symbol, int timeframeHours)
+  {
+   SPerformanceMetrics metrics;
+   metrics.symbol = symbol;
+   metrics.strategy = "CLearningEngine";
+   metrics.timeframe = timeframeHours;
+   metrics.timestamp = TimeCurrent();
+   
+   if(m_knowledgeBase == NULL)
+     {
+      return metrics;
+     }
+   
+   // Get recent trades
+   STradeRecord trades[];
+   if(!m_knowledgeBase.GetRecentTrades(m_windowSize, trades))
+     {
+      return metrics;
+     }
+   
+   int totalTrades = ArraySize(trades);
+   if(totalTrades == 0)
+     {
+      return metrics;
+     }
+   
+   // Calculate metrics
+   metrics.totalTrades = totalTrades;
+   
+   int wins = 0;
+   double totalProfit = 0.0;
+   double totalLoss = 0.0;
+   
+   for(int i = 0; i < totalTrades; i++)
+     {
+      if(trades[i].profit > 0)
+        {
+         wins++;
+         totalProfit += trades[i].profit;
+        }
+      else
+        {
+         totalLoss += MathAbs(trades[i].profit);
+        }
+     }
+   
+   metrics.winRate = (double)wins / totalTrades;
+   metrics.avgProfit = totalProfit / totalTrades;
+   metrics.profitFactor = (totalLoss > 0) ? (totalProfit / totalLoss) : 0.0;
+   metrics.maxDrawdown = GetMaxDrawdown(0);
+   
+   return metrics;
+  }
+
+//+------------------------------------------------------------------+
+//| Analyze market condition - JAILBREAK ADDITION                   |
+//+------------------------------------------------------------------+
+string CLearningEngine::AnalyzeMarketCondition(const string symbol)
+  {
+   // Get recent price data
+   MqlRates rates[];
+   if(CopyRates(symbol, PERIOD_H1, 0, 24, rates) < 24)
+     {
+      return "UNKNOWN";
+     }
+   
+   // Calculate volatility
+   double totalRange = 0.0;
+   for(int i = 0; i < 24; i++)
+     {
+      totalRange += rates[i].high - rates[i].low;
+     }
+   double avgRange = totalRange / 24;
+   
+   // Calculate trend
+   double trend = rates[23].close - rates[0].close;
+   double trendPercent = trend / rates[0].close * 100;
+   
+   // Classify market condition
+   if(MathAbs(trendPercent) > 1.0)
+     {
+      return (trendPercent > 0) ? "STRONG_UPTREND" : "STRONG_DOWNTREND";
+     }
+   else if(avgRange > (rates[23].close * 0.005))
+     {
+      return "VOLATILE";
+     }
+   else
+     {
+      return "SIDEWAYS";
+     }
+  }
