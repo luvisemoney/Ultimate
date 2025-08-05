@@ -1,11 +1,18 @@
 @echo off
 REM ============================================================================
-REM COMPILE_MASTER_FINAL.bat - JAILBREAK HARDENED COMPILATION SYSTEM
+REM COMPILE_MASTER_CORRECTED.bat - JAILBREAK CORRECTED COMPILATION SYSTEM
 REM ============================================================================
-REM Purpose: MQL5-AWARE compilation system with arithmetic fixes
-REM Author: Red Team Architecture Panel - FINAL HARDENED VERSION
-REM Version: 3.1 - ARITHMETIC FIXED EDITION
+REM Purpose: MQL5-AWARE compilation with ACCURATE .ex5 verification
+REM Author: Red Team Architecture Panel - FALSE POSITIVE CORRECTED
+REM Version: 4.0 - ACCURATE VALIDATION EDITION
 REM Date: %DATE%
+REM ============================================================================
+REM 
+REM 💣 JAILBREAK FIXES FOR FALSE POSITIVES:
+REM - Replaced unreliable ERRORLEVEL checking with .ex5 file verification
+REM - Added pre-compilation .ex5 cleanup to ensure fresh results
+REM - Implemented accurate success/failure detection
+REM - Added detailed compilation output capture
 REM ============================================================================
 
 setlocal enabledelayedexpansion
@@ -15,13 +22,13 @@ set TIMESTAMP=%DATE:~-4,4%-%DATE:~-10,2%-%DATE:~-7,2%_%TIME:~0,2%-%TIME:~3,2%-%T
 set TIMESTAMP=%TIMESTAMP: =0%
 
 REM ============================================================================
-REM PHASE 1: INITIALIZATION
+REM PHASE 1: INITIALIZATION WITH ACCURATE VALIDATION
 REM ============================================================================
 echo.
 echo ============================================================================
-echo COMPILE_MASTER_FINAL.bat - JAILBREAK HARDENED SYSTEM v3.1
+echo COMPILE_MASTER_CORRECTED.bat - ACCURATE VALIDATION SYSTEM v4.0
 echo ============================================================================
-echo Red Team Architecture: MQL5-Aware Compilation Engine
+echo Red Team Architecture: .ex5 Verification Based Compilation
 echo Timestamp: %TIMESTAMP%
 echo Project Root: %PROJECT_ROOT%
 echo MetaEditor Path: %METAEDITOR%
@@ -33,12 +40,14 @@ if not exist "ValidationLogs" mkdir "ValidationLogs"
 if not exist "ArchitectureLogs" mkdir "ArchitectureLogs"
 
 REM Initialize log files
-set MASTER_LOG=CompilationLogs\CompilationReport_FINAL_%TIMESTAMP%.txt
-set ERROR_LOG=CompilationLogs\ErrorReport_FINAL_%TIMESTAMP%.txt
-set VALIDATION_LOG=ValidationLogs\ValidationReport_FINAL_%TIMESTAMP%.txt
-set JAILBREAK_LOG=ArchitectureLogs\JailbreakFindings_FINAL_%TIMESTAMP%.txt
+set MASTER_LOG=CompilationLogs\CompilationReport_CORRECTED_%TIMESTAMP%.txt
+set ERROR_LOG=CompilationLogs\ErrorReport_CORRECTED_%TIMESTAMP%.txt
+set VALIDATION_LOG=ValidationLogs\ValidationReport_CORRECTED_%TIMESTAMP%.txt
+set DETAILED_LOG=CompilationLogs\DetailedCompilation_%TIMESTAMP%.txt
 
-echo JAILBREAK HARDENED COMPILATION STARTED: %DATE% %TIME% > %MASTER_LOG%
+echo ACCURATE COMPILATION VALIDATION STARTED: %DATE% %TIME% > %MASTER_LOG%
+echo ============================================================================ >> %MASTER_LOG%
+echo CORRECTED LOGIC: .ex5 file verification instead of exit codes >> %MASTER_LOG%
 echo ============================================================================ >> %MASTER_LOG%
 echo. >> %MASTER_LOG%
 
@@ -53,11 +62,11 @@ if not exist %METAEDITOR% (
 echo MetaEditor verified: %METAEDITOR% >> %MASTER_LOG%
 
 REM ============================================================================
-REM PHASE 2: FILE CLASSIFICATION
+REM PHASE 2: FILE CLASSIFICATION WITH CLEANUP
 REM ============================================================================
 echo.
 echo ============================================================================
-echo Phase 2: Intelligent File Classification
+echo Phase 2: File Classification and Pre-Compilation Cleanup
 echo ============================================================================
 
 REM Count files
@@ -78,12 +87,24 @@ echo   Production EAs: %PRODUCTION_EAS% >> %MASTER_LOG%
 echo   Test Files: %TEST_FILES% >> %MASTER_LOG%
 echo. >> %MASTER_LOG%
 
+REM Clean up existing .ex5 files for accurate testing
+echo Cleaning up existing .ex5 files for accurate validation... >> %MASTER_LOG%
+set INITIAL_EX5_COUNT=0
+for /f %%i in ('powershell -c "(Get-ChildItem -Recurse -Filter '*.ex5').Count" 2^>nul') do set INITIAL_EX5_COUNT=%%i
+echo Initial .ex5 files found: %INITIAL_EX5_COUNT% >> %MASTER_LOG%
+
+REM Delete existing .ex5 files to ensure fresh compilation results
+for /r . %%F in (*.ex5) do (
+    echo Removing existing: %%F >> %MASTER_LOG%
+    del "%%F" 2>nul
+)
+
 REM ============================================================================
-REM PHASE 3: COMPILATION EXECUTION
+REM PHASE 3: ACCURATE COMPILATION WITH .EX5 VERIFICATION
 REM ============================================================================
 echo.
 echo ============================================================================
-echo Phase 3: Compilation Execution
+echo Phase 3: Accurate Compilation with .ex5 Verification
 echo ============================================================================
 
 REM Initialize counters
@@ -93,13 +114,15 @@ set FAILED_COMPILATIONS=0
 set PRODUCTION_SUCCESS=0
 set TEST_SUCCESS=0
 
-echo COMPILATION STARTED: %DATE% %TIME% >> %MASTER_LOG%
+echo ACCURATE COMPILATION STARTED: %DATE% %TIME% >> %MASTER_LOG%
+echo VALIDATION METHOD: .ex5 file existence verification >> %MASTER_LOG%
+echo ============================================================================ >> %MASTER_LOG%
 
 REM ============================================================================
-REM CYCLE 1: PRODUCTION EA COMPILATION
+REM CYCLE 1: PRODUCTION EA COMPILATION WITH ACCURATE VALIDATION
 REM ============================================================================
 echo.
-echo --- Cycle 1: Production EA Compilation ---
+echo --- Cycle 1: Production EA Compilation (Accurate Validation) ---
 echo Cycle 1: Production EA Compilation >> %MASTER_LOG%
 
 REM Compile production EAs
@@ -108,25 +131,47 @@ for %%F in (%PRODUCTION_TARGETS%) do (
     if exist "%%F" (
         echo Compiling PRODUCTION EA: %%F
         echo Compiling PRODUCTION EA: %%F >> %MASTER_LOG%
-        %METAEDITOR% /compile:"%%F" /log >> %MASTER_LOG% 2>> %ERROR_LOG%
-        if !ERRORLEVEL! EQU 0 (
-            echo SUCCESS: %%F >> %MASTER_LOG%
+        
+        REM Get expected .ex5 file path
+        set "EX5_FILE=%%~dpnF.ex5"
+        
+        REM Ensure .ex5 doesn't exist before compilation
+        if exist "!EX5_FILE!" (
+            del "!EX5_FILE!" 2>nul
+            echo Pre-deleted existing: !EX5_FILE! >> %DETAILED_LOG%
+        )
+        
+        REM Compile with detailed output
+        echo Executing: %METAEDITOR% /compile:"%%F" /log >> %DETAILED_LOG%
+        %METAEDITOR% /compile:"%%F" /log >> %DETAILED_LOG% 2>&1
+        set COMPILE_EXIT_CODE=!ERRORLEVEL!
+        
+        REM Wait a moment for file system to update
+        timeout /t 1 /nobreak >nul 2>&1
+        
+        REM Check if .ex5 file was actually created (ACCURATE VALIDATION)
+        if exist "!EX5_FILE!" (
+            echo ✅ SUCCESS: %%F (Verified .ex5 created) >> %MASTER_LOG%
+            echo ✅ SUCCESS: %%F - .ex5 file verified
             set /a SUCCESSFUL_COMPILATIONS+=1
             set /a PRODUCTION_SUCCESS+=1
         ) else (
-            echo FAILED: %%F compilation failed >> %ERROR_LOG%
-            echo FAILED: %%F compilation failed
+            echo ❌ FAILED: %%F (No .ex5 file generated) >> %ERROR_LOG%
+            echo ❌ FAILED: %%F - No .ex5 file generated
+            echo Exit Code: !COMPILE_EXIT_CODE! >> %ERROR_LOG%
             set /a FAILED_COMPILATIONS+=1
         )
         set /a TOTAL_COMPILATION_TARGETS+=1
+    ) else (
+        echo ⚠️ WARNING: Production EA not found: %%F >> %ERROR_LOG%
     )
 )
 
 REM ============================================================================
-REM CYCLE 2: TEST COMPILATION
+REM CYCLE 2: TEST COMPILATION WITH ACCURATE VALIDATION
 REM ============================================================================
 echo.
-echo --- Cycle 2: Test Suite Compilation ---
+echo --- Cycle 2: Test Suite Compilation (Accurate Validation) ---
 echo Cycle 2: Test Suite Compilation >> %MASTER_LOG%
 
 REM Compile all .mq5 test files
@@ -139,14 +184,33 @@ for /r . %%F in (*.mq5) do (
     if !ERRORLEVEL! NEQ 0 (
         echo Compiling TEST: %%F
         echo Compiling TEST: %%F >> %MASTER_LOG%
-        %METAEDITOR% /compile:"%%F" /log >> %MASTER_LOG% 2>> %ERROR_LOG%
-        if !ERRORLEVEL! EQU 0 (
-            echo SUCCESS: %%F >> %MASTER_LOG%
+        
+        REM Get expected .ex5 file path
+        set "EX5_FILE=%%~dpnF.ex5"
+        
+        REM Ensure .ex5 doesn't exist before compilation
+        if exist "!EX5_FILE!" (
+            del "!EX5_FILE!" 2>nul
+            echo Pre-deleted existing: !EX5_FILE! >> %DETAILED_LOG%
+        )
+        
+        REM Compile with detailed output
+        echo Executing: %METAEDITOR% /compile:"%%F" /log >> %DETAILED_LOG%
+        %METAEDITOR% /compile:"%%F" /log >> %DETAILED_LOG% 2>&1
+        set COMPILE_EXIT_CODE=!ERRORLEVEL!
+        
+        REM Wait a moment for file system to update
+        timeout /t 1 /nobreak >nul 2>&1
+        
+        REM Check if .ex5 file was actually created (ACCURATE VALIDATION)
+        if exist "!EX5_FILE!" (
+            echo ✅ SUCCESS: %%F (Verified .ex5 created) >> %MASTER_LOG%
             set /a SUCCESSFUL_COMPILATIONS+=1
             set /a TEST_SUCCESS+=1
         ) else (
-            echo FAILED: %%F compilation failed >> %ERROR_LOG%
-            echo FAILED: %%F compilation failed
+            echo ❌ FAILED: %%F (No .ex5 file generated) >> %ERROR_LOG%
+            echo ❌ FAILED: %%F - No .ex5 file generated
+            echo Exit Code: !COMPILE_EXIT_CODE! >> %ERROR_LOG%
             set /a FAILED_COMPILATIONS+=1
         )
         set /a TOTAL_COMPILATION_TARGETS+=1
@@ -154,61 +218,27 @@ for /r . %%F in (*.mq5) do (
 )
 
 REM ============================================================================
-REM CYCLE 3: INCLUDE VALIDATION
-REM ============================================================================
-echo.
-echo --- Cycle 3: Include File Validation ---
-echo Cycle 3: Include File Validation >> %MASTER_LOG%
-
-set VALIDATED_INCLUDES=0
-set FAILED_INCLUDE_VALIDATIONS=0
-
-echo INCLUDE VALIDATION (NO COMPILATION): >> %VALIDATION_LOG%
-for /r "Include" %%F in (*.mqh) do (
-    echo Validating INCLUDE: %%F
-    echo Validating INCLUDE: %%F >> %VALIDATION_LOG%
-    
-    if exist "%%F" (
-        findstr /C:"#property" /C:"#include" /C:"class" /C:"struct" /C:"enum" "%%F" >nul 2>&1
-        if !ERRORLEVEL! EQU 0 (
-            echo VALID: %%F >> %VALIDATION_LOG%
-            set /a VALIDATED_INCLUDES+=1
-        ) else (
-            echo VALID: %%F (Basic file) >> %VALIDATION_LOG%
-            set /a VALIDATED_INCLUDES+=1
-        )
-    ) else (
-        echo INVALID: %%F (Not found) >> %VALIDATION_LOG%
-        set /a FAILED_INCLUDE_VALIDATIONS+=1
-    )
-)
-
-REM ============================================================================
-REM PHASE 4: REPORTING WITH SAFE ARITHMETIC
+REM PHASE 4: ACCURATE REPORTING
 REM ============================================================================
 echo.
 echo ============================================================================
-echo Phase 4: Final Reporting
+echo Phase 4: Accurate Compilation Reporting
 echo ============================================================================
 
-REM Safe arithmetic calculations
+REM Count actual .ex5 files generated
+set ACTUAL_EX5_COUNT=0
+for /f %%i in ('powershell -c "(Get-ChildItem -Recurse -Filter '*.ex5').Count" 2^>nul') do set ACTUAL_EX5_COUNT=%%i
+
+REM Calculate accurate success rates
 set COMPILATION_SUCCESS_RATE=0
-set INCLUDE_VALIDATION_RATE=0
-
 if %TOTAL_COMPILATION_TARGETS% GTR 0 (
     set /a TEMP_CALC=%SUCCESSFUL_COMPILATIONS% * 100
     set /a COMPILATION_SUCCESS_RATE=!TEMP_CALC! / %TOTAL_COMPILATION_TARGETS%
 )
 
-set /a TOTAL_INCLUDES=%VALIDATED_INCLUDES% + %FAILED_INCLUDE_VALIDATIONS%
-if %TOTAL_INCLUDES% GTR 0 (
-    set /a TEMP_CALC2=%VALIDATED_INCLUDES% * 100
-    set /a INCLUDE_VALIDATION_RATE=!TEMP_CALC2! / %TOTAL_INCLUDES%
-)
-
 echo. >> %MASTER_LOG%
 echo ============================================================================ >> %MASTER_LOG%
-echo JAILBREAK HARDENED COMPILATION SUMMARY >> %MASTER_LOG%
+echo ACCURATE COMPILATION SUMMARY >> %MASTER_LOG%
 echo ============================================================================ >> %MASTER_LOG%
 echo COMPILATION TARGETS: >> %MASTER_LOG%
 echo   Total Targets: %TOTAL_COMPILATION_TARGETS% >> %MASTER_LOG%
@@ -216,76 +246,62 @@ echo   Successful: %SUCCESSFUL_COMPILATIONS% >> %MASTER_LOG%
 echo   Failed: %FAILED_COMPILATIONS% >> %MASTER_LOG%
 echo   Success Rate: %COMPILATION_SUCCESS_RATE%%% >> %MASTER_LOG%
 echo. >> %MASTER_LOG%
-echo INCLUDE VALIDATION: >> %MASTER_LOG%
-echo   Total Includes: %TOTAL_INCLUDES% >> %MASTER_LOG%
-echo   Validated: %VALIDATED_INCLUDES% >> %MASTER_LOG%
-echo   Failed: %FAILED_INCLUDE_VALIDATIONS% >> %MASTER_LOG%
-echo   Validation Rate: %INCLUDE_VALIDATION_RATE%%% >> %MASTER_LOG%
+echo VERIFICATION RESULTS: >> %MASTER_LOG%
+echo   Actual .ex5 Files Generated: %ACTUAL_EX5_COUNT% >> %MASTER_LOG%
+echo   Expected .ex5 Files: %SUCCESSFUL_COMPILATIONS% >> %MASTER_LOG%
+echo   Verification Match: %ACTUAL_EX5_COUNT%/%SUCCESSFUL_COMPILATIONS% >> %MASTER_LOG%
 echo. >> %MASTER_LOG%
 echo PRODUCTION STATUS: >> %MASTER_LOG%
 echo   Production EAs: %PRODUCTION_SUCCESS%/%PRODUCTION_EAS% >> %MASTER_LOG%
 echo   Test Files: %TEST_SUCCESS%/%TEST_FILES% >> %MASTER_LOG%
 echo ============================================================================ >> %MASTER_LOG%
 
-REM Generate jailbreak findings
-echo JAILBREAK FINDINGS: >> %JAILBREAK_LOG%
-echo ============================================================================ >> %JAILBREAK_LOG%
-echo ARCHITECTURAL IMPROVEMENTS: >> %JAILBREAK_LOG%
-echo 1. Separated compilation (%TOTAL_MQ5_FILES% files) from validation (%TOTAL_MQH_FILES% files) >> %JAILBREAK_LOG%
-echo 2. Eliminated %TOTAL_MQH_FILES% false compilation attempts >> %JAILBREAK_LOG%
-echo 3. Provided accurate success metrics: %COMPILATION_SUCCESS_RATE%%% >> %JAILBREAK_LOG%
-echo 4. Implemented MQL5-aware file classification >> %JAILBREAK_LOG%
-echo 5. Fixed arithmetic calculation errors >> %JAILBREAK_LOG%
-echo ============================================================================ >> %JAILBREAK_LOG%
-
 REM Final report
 echo.
 echo ============================================================================
-echo JAILBREAK HARDENED COMPILATION COMPLETE
+echo ACCURATE COMPILATION COMPLETE
 echo ============================================================================
-echo COMPILATION STATISTICS:
+echo COMPILATION STATISTICS (VERIFIED):
 echo   Total Targets: %TOTAL_COMPILATION_TARGETS%
 echo   Successful: %SUCCESSFUL_COMPILATIONS%
 echo   Failed: %FAILED_COMPILATIONS%
 echo   Success Rate: %COMPILATION_SUCCESS_RATE%%%
 echo.
-echo INCLUDE VALIDATION:
-echo   Total Includes: %TOTAL_INCLUDES%
-echo   Validated: %VALIDATED_INCLUDES%
-echo   Validation Rate: %INCLUDE_VALIDATION_RATE%%%
+echo VERIFICATION RESULTS:
+echo   Actual .ex5 Files: %ACTUAL_EX5_COUNT%
+echo   Expected .ex5 Files: %SUCCESSFUL_COMPILATIONS%
+echo   Verification Accuracy: %ACTUAL_EX5_COUNT%/%SUCCESSFUL_COMPILATIONS%
 echo.
 echo PRODUCTION STATUS:
 echo   Production EAs: %PRODUCTION_SUCCESS%/%PRODUCTION_EAS%
 echo   Test Files: %TEST_SUCCESS%/%TEST_FILES%
 echo.
-echo JAILBREAK IMPROVEMENTS:
-echo   - Eliminated %TOTAL_MQH_FILES% false compilation attempts
-echo   - Improved accuracy to %COMPILATION_SUCCESS_RATE%%%
-echo   - Fixed arithmetic calculation errors
-echo   - Implemented MQL5-aware architecture compliance
+echo CORRECTED VALIDATION:
+echo   - Replaced unreliable exit codes with .ex5 verification
+echo   - Pre-compilation cleanup ensures accurate results
+echo   - Detailed logging captures actual compilation output
 echo.
 echo Log Files:
 echo   - Master Log: %MASTER_LOG%
 echo   - Error Log: %ERROR_LOG%
-echo   - Validation Log: %VALIDATION_LOG%
-echo   - Jailbreak Findings: %JAILBREAK_LOG%
+echo   - Detailed Log: %DETAILED_LOG%
 echo.
 
 if %FAILED_COMPILATIONS% GTR 0 (
-    echo WARNING: %FAILED_COMPILATIONS% compilation errors detected.
+    echo WARNING: %FAILED_COMPILATIONS% compilation failures detected.
     echo Review error log: %ERROR_LOG%
+    echo Review detailed log: %DETAILED_LOG%
     echo.
-    echo JAILBREAK INSIGHT: Previous system would have reported much higher
-    echo failure rate due to attempting compilation of %TOTAL_MQH_FILES% non-compilable files.
+    echo CORRECTED INSIGHT: Previous false positives eliminated through .ex5 verification.
 ) else (
     echo SUCCESS: All compilation targets compiled successfully!
-    echo Include validation: %INCLUDE_VALIDATION_RATE%%% success rate
+    echo Verification: %ACTUAL_EX5_COUNT% .ex5 files generated as expected.
     echo.
-    echo JAILBREAK SUCCESS: Architectural redesign eliminated false failures.
+    echo VALIDATION SUCCESS: Accurate compilation detection achieved.
 )
 
 echo ============================================================================
-echo JAILBREAK HARDENED COMPILE_MASTER execution completed.
+echo CORRECTED COMPILE_MASTER execution completed.
 echo ============================================================================
 
 if %FAILED_COMPILATIONS% GTR 0 (
