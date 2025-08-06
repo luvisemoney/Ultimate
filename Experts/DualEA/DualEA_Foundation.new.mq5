@@ -4,8 +4,8 @@
 //| Expert Panel: Maximum Paranoia + Advanced Features              |
 //+------------------------------------------------------------------+
 #property copyright "EscapeEA - Jailbreak Level 5 Implementation"
-#property version   "3.00"
-#property description "Foundation EA - Institutional Grade Paper-Live Trading System"
+#property version   "1.00"
+#property description "Foundation EA - Institutional Grade Security-First Approach"
 #property strict
 
 // JAILBREAK CRITICAL: Essential MQL5 trading libraries
@@ -15,26 +15,13 @@
 #include <Trade\SymbolInfo.mqh>
 
 // JAILBREAK ADVANCED: Include institutional-grade components
-#include "Include\Core\JailbreakSecurity.mqh"
-#include "Include\Core\EmergencyCircuitBreaker.mqh"
-#include "Include\Core\StateSyncManager.mqh"
-#include "Include\Core\ErrorRecoveryManager.mqh"
-#include "Include\Signals\AdvancedSignalProcessor.mqh"
-#include "Include\Risk\InstitutionalRiskManager.mqh"
-#include "Include\Trading\HighFrequencyExecutor.mqh"
-#include "Include\Performance\PerformanceMonitor.mqh"
-#include "Include\Trading\PaperEA.mqh"
-#include "Include\Trading\LiveEA.mqh"
-
-// Global variables
-CPaperEA *g_paperEA = NULL;
-CLiveEA *g_liveEA = NULL;
-CJailbreakSecurity *g_security = NULL;
-CPerformanceMonitor *g_perfMonitor = NULL;
+#include "Include/Core/JailbreakSecurity.mqh"
+#include "Include/Core/EmergencyCircuitBreaker.mqh"
+#include "Include/Signals/AdvancedSignalProcessor.mqh"
+#include "Include/Risk/InstitutionalRiskManager.mqh"
+#include "Include/Trading/HighFrequencyExecutor.mqh"
+#include "Include/Performance/PerformanceMonitor.mqh"
 #include "Include/Utils/JailbreakLogger.mqh"
-#include "Include/Knowledge/SharedKnowledgeBase.mqh"
-#include "Include/Trading/PaperEA.mqh"
-#include "Include/Trading/LiveEA.mqh"
 
 //--- JAILBREAK SECURITY: Paranoid Input Validation
 input group "=== JAILBREAK SECURITY CONTROLS ==="
@@ -50,12 +37,6 @@ input bool     InpEnableHFT = false;               // JAILBREAK: High-frequency 
 input double   InpSignalConfidenceThreshold = 0.8; // JAILBREAK: High confidence required
 input int      InpMaxLatencyMicroseconds = 1000;   // JAILBREAK: 1ms max latency
 
-input group "=== JAILBREAK PAPER-LIVE INTEGRATION ==="
-input int      InpMaxSyncLatencyMs = 100;          // Max sync latency (ms)
-input int      InpMinPaperTrades = 100;            // Min paper trades before live
-input double   InpMinPaperWinRate = 0.65;          // Min paper win rate (65%)
-input double   InpMinConfidence = 0.85;            // Min confidence for live trade
-
 input group "=== JAILBREAK MONITORING ==="
 input bool     InpEnableLogging = true;            // JAILBREAK: Force logging
 input bool     InpEnableAlerts = true;             // JAILBREAK: Force alerts
@@ -70,9 +51,6 @@ CInstitutionalRiskManager*  g_RiskManager = NULL;
 CHighFrequencyExecutor*     g_Executor = NULL;
 CPerformanceMonitor*        g_PerformanceMonitor = NULL;
 CJailbreakLogger*           g_Logger = NULL;
-CSharedKnowledgeBase*       g_KnowledgeBase = NULL;
-CPaperEA*                   g_PaperEA = NULL;
-CLiveEA*                    g_LiveEA = NULL;
 
 //--- JAILBREAK STATE VARIABLES
 bool g_IsInitialized = false;
@@ -91,18 +69,13 @@ ulong g_ExecutionTimeNs = 0;
 ulong g_TotalTicks = 0;
 
 //--- JAILBREAK CONSTANTS
+#define MAX_CONSECUTIVE_LOSSES 3
 #define MAX_DAILY_TRADES 10
 #define EMERGENCY_DRAWDOWN_LIMIT 0.02  // 2%
 #define LOG_INTERVAL_SECONDS 30
 #define PERFORMANCE_LOG_INTERVAL 300   // 5 minutes
 #define MAX_TICK_PROCESSING_TIME_NS 500000  // 0.5ms
-// MAX_CONSECUTIVE_LOSSES and MIN_MARGIN_LEVEL are now defined in EmergencyCircuitBreaker.mqh and JailbreakSecurity.mqh respectively.
-
-//+------------------------------------------------------------------+
-//| JAILBREAK SECURITY: System Components                          |
-//+------------------------------------------------------------------+
-CStateSyncManager* g_StateManager = NULL;
-CErrorRecoveryManager* g_ErrorManager = NULL;
+#define MIN_MARGIN_LEVEL 100.0  // 100% minimum margin level
 
 //+------------------------------------------------------------------+
 //| JAILBREAK SECURITY: Institutional-Grade Initialization          |
@@ -111,21 +84,6 @@ int OnInit()
 {
     // JAILBREAK LOG: Initialization start with timestamp
     Print("=== JAILBREAK LEVEL 5 EA INITIALIZATION START ===");
-    
-    // Initialize core system components first
-    g_StateManager = new CStateSyncManager();
-    if(!g_StateManager || !g_StateManager.Initialize())
-    {
-        Print("CRITICAL ERROR: Failed to initialize state synchronization system");
-        return INIT_FAILED;
-    }
-    
-    g_ErrorManager = new CErrorRecoveryManager(g_StateManager);
-    if(!g_ErrorManager || !g_ErrorManager.Initialize())
-    {
-        Print("CRITICAL ERROR: Failed to initialize error recovery system");
-        return INIT_FAILED;
-    }
     
     // JAILBREAK ADVANCED: Initialize logger first
     g_Logger = new CJailbreakLogger(InpLogPrefix, InpEnableLogging);
@@ -144,22 +102,6 @@ int OnInit()
         g_Logger.LogCritical("INIT_FAIL", "Security framework initialization failed");
         return INIT_FAILED;
     }
-    
-    // Register components with state manager
-    g_StateManager.RegisterComponent("SECURITY");
-    g_StateManager.RegisterComponent("LOGGER");
-    g_StateManager.RegisterComponent("RISK_MANAGER");
-    g_StateManager.RegisterComponent("SIGNAL_PROCESSOR");
-    g_StateManager.RegisterComponent("CIRCUIT_BREAKER");
-    g_StateManager.RegisterComponent("PERFORMANCE_MONITOR");
-    
-    // Register components with error recovery
-    g_ErrorManager.RegisterComponent("SECURITY");
-    g_ErrorManager.RegisterComponent("LOGGER");
-    g_ErrorManager.RegisterComponent("RISK_MANAGER");
-    g_ErrorManager.RegisterComponent("SIGNAL_PROCESSOR");
-    g_ErrorManager.RegisterComponent("CIRCUIT_BREAKER");
-    g_ErrorManager.RegisterComponent("PERFORMANCE_MONITOR");
     
     // JAILBREAK SECURITY: Validate account with enhanced checks
     if(!ValidateAccountAdvanced())
@@ -207,31 +149,7 @@ int OnInit()
         return INIT_FAILED;
     }
     
-    // Initialize Knowledge Base first (required by both Paper and Live EA)
-    g_KnowledgeBase = new CSharedKnowledgeBase();
-    if(g_KnowledgeBase == NULL || !g_KnowledgeBase.Initialize())
-    {
-        g_Logger.LogCritical("INIT_FAIL", "Knowledge base initialization failed");
-        return INIT_FAILED;
-    }
-    
-    // Initialize Paper EA (must be before Live EA)
-    g_PaperEA = new CPaperEA();
-    if(g_PaperEA == NULL || !g_PaperEA.Initialize())
-    {
-        g_Logger.LogCritical("INIT_FAIL", "Paper EA initialization failed");
-        return INIT_FAILED;
-    }
-    
-    // Initialize Live EA
-    g_LiveEA = new CLiveEA();
-    if(g_LiveEA == NULL || !g_LiveEA.Initialize())
-    {
-        g_Logger.LogCritical("INIT_FAIL", "Live EA initialization failed");
-        return INIT_FAILED;
-    }
-    
-    // Initialize performance monitor last to track all components
+    // JAILBREAK ADVANCED: Initialize performance monitor
     g_PerformanceMonitor = new CPerformanceMonitor();
     if(g_PerformanceMonitor == NULL || !g_PerformanceMonitor.Initialize(InpEnablePerformanceMonitoring))
     {
@@ -250,17 +168,6 @@ int OnInit()
     g_InitialBalance = AccountInfoDouble(ACCOUNT_BALANCE);
     g_LastTickTime = TimeCurrent();
     g_LastLogTime = g_LastTickTime;
-    
-    // Initialize state synchronization
-    g_StateManager.PostStateEvent("INIT", "SYSTEM", "READY");
-    
-    // Perform initial state backup
-    if(!g_ErrorManager.BackupSystemState())
-    {
-        g_Logger.LogCritical("INIT_FAIL", "Initial state backup failed");
-        return INIT_FAILED;
-    }
-    
     g_IsInitialized = true;
     
     // JAILBREAK ADVANCED: Set EA parameters
@@ -334,128 +241,6 @@ bool ValidateInputsAdvanced()
     }
     
     return true;
-}
-
-//+------------------------------------------------------------------+
-//| JAILBREAK SECURITY: System State Validation                    |
-//+------------------------------------------------------------------+
-bool ValidateSystemState()
-{
-    if(!g_IsInitialized || g_EmergencyShutdown)
-        return false;
-        
-    // Check component health
-    if(!g_Security || !g_KnowledgeBase || !g_RiskManager || 
-       !g_PaperEA || !g_LiveEA || !g_PerformanceMonitor)
-    {
-        g_Logger.LogCritical("SYSTEM", "Critical component missing");
-        return false;
-    }
-    
-    // Validate Paper-Live synchronization
-    if(!g_Security.ValidatePaperLiveSync())
-    {
-        g_Logger.LogWarning("SYNC", "Paper-Live sync validation failed");
-        return false;
-    }
-    
-    // Check knowledge base state
-    if(!g_KnowledgeBase.ValidateState())
-    {
-        g_Logger.LogWarning("KB", "Knowledge base validation failed");
-        return false;
-    }
-    
-    return true;
-}
-
-//+------------------------------------------------------------------+
-//| Expert tick function                                              |
-//+------------------------------------------------------------------+
-void OnTick()
-{
-    if(!ValidateSystemState()) return;
-    
-    ulong tickStart = GetMicrosecondCount();
-    
-    // Start performance monitoring
-    g_PerformanceMonitor.OnTickStart();
-    
-    // Process Paper EA first
-    if(g_PaperEA != NULL)
-    {
-        g_PaperEA.OnTick();
-        if(!g_KnowledgeBase.SyncPaperTrading())
-        {
-            g_Logger.LogWarning("PAPER", "Failed to sync paper trading data");
-            return;
-        }
-    }
-    
-    // Process Live EA only if Paper EA successful and conditions met
-    if(g_LiveEA != NULL && g_KnowledgeBase.CanExecuteLive())
-    {
-        g_LiveEA.OnTick();
-        if(!g_KnowledgeBase.SyncLiveTrading())
-        {
-            g_Logger.LogWarning("LIVE", "Failed to sync live trading data");
-            return;
-        }
-    }
-    
-    // Update performance metrics
-    g_PerformanceMonitor.UpdateMetrics();
-    
-    // Log execution time
-    ulong tickEnd = GetMicrosecondCount();
-    g_TickProcessingTimeNs = (tickEnd - tickStart) * 1000; // Convert to nanoseconds
-    
-    // Check latency threshold
-    if(g_TickProcessingTimeNs > MAX_TICK_PROCESSING_TIME_NS)
-    {
-        g_Logger.LogWarning("PERFORMANCE", 
-            StringFormat("Tick processing time exceeded: %d ns", g_TickProcessingTimeNs));
-    }
-    
-    g_TotalTicks++;
-}
-
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                   |
-//+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-{
-    // Clean up in reverse order of initialization
-    if(g_LiveEA != NULL) delete g_LiveEA;
-    if(g_PaperEA != NULL) delete g_PaperEA;
-    if(g_KnowledgeBase != NULL) delete g_KnowledgeBase;
-    if(g_PerformanceMonitor != NULL) delete g_PerformanceMonitor;
-    if(g_Executor != NULL) delete g_Executor;
-    if(g_RiskManager != NULL) delete g_RiskManager;
-    if(g_SignalProcessor != NULL) delete g_SignalProcessor;
-    if(g_CircuitBreaker != NULL) delete g_CircuitBreaker;
-    if(g_Security != NULL) delete g_Security;
-    if(g_Logger != NULL) 
-    {
-        g_Logger.LogInfo("DEINIT", StringFormat("EA deinitialized, reason: %d", reason));
-        delete g_Logger;
-    }
-}
-
-//+------------------------------------------------------------------+
-//| Expert timer function                                              |
-//+------------------------------------------------------------------+
-void OnTimer()
-{
-    if(!ValidateSystemState()) return;
-    
-    // Update performance metrics
-    if(g_PerformanceMonitor != NULL)
-        g_PerformanceMonitor.OnTimer();
-        
-    // Perform knowledge base maintenance
-    if(g_KnowledgeBase != NULL)
-        g_KnowledgeBase.PerformMaintenance();
 }
 
 //+------------------------------------------------------------------+

@@ -36,198 +36,66 @@ echo MetaEditor found: %MT5_COMPILER% >> "%LOG_FILE%"
 echo.
 
 REM Component compilation counters
-set /a TOTAL_COMPONENTS=9
-set /a COMPILED_SUCCESS=0
-set /a COMPILED_FAILED=0
 
-echo Starting compilation of %TOTAL_COMPONENTS% core components...
-echo Starting compilation of %TOTAL_COMPONENTS% core components... >> "%LOG_FILE%"
-echo.
+REM =========================
+REM DYNAMIC MQ5 COMPILATION
+REM =========================
+setlocal enabledelayedexpansion
+set "MT5_PATH=C:\Program Files\MetaTrader 5"
+set "MT5_COMPILER=%MT5_PATH%\metaeditor64.exe"
+set "PROJECT_PATH=%~dp0"
+set "LOG_FILE=%PROJECT_PATH%JAILBREAK_COMPILATION_LOG.txt"
 
-REM ============================================================================
-REM COMPONENT 1: Main EA Foundation
-REM ============================================================================
-echo [1/9] Compiling Main EA Foundation...
-echo [1/9] Compiling Main EA Foundation... >> "%LOG_FILE%"
-"%MT5_COMPILER%" /compile:"%PROJECT_PATH%DualEA_Foundation.mq5" /log:"%PROJECT_PATH%compile_foundation.log"
-if !errorlevel! equ 0 (
-    echo ✓ SUCCESS: DualEA_Foundation.mq5 compiled successfully
-    echo ✓ SUCCESS: DualEA_Foundation.mq5 compiled successfully >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: DualEA_Foundation.mq5 compilation failed
-    echo ✗ FAILED: DualEA_Foundation.mq5 compilation failed >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 2: Security Framework
-REM ============================================================================
-echo [2/9] Validating Security Framework...
-echo [2/9] Validating Security Framework... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Core\JailbreakSecurity.mqh" (
-    echo ✓ SUCCESS: JailbreakSecurity.mqh found and validated
-    echo ✓ SUCCESS: JailbreakSecurity.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: JailbreakSecurity.mqh not found
-    echo ✗ FAILED: JailbreakSecurity.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 3: Emergency Circuit Breaker
-REM ============================================================================
-echo [3/9] Validating Emergency Circuit Breaker...
-echo [3/9] Validating Emergency Circuit Breaker... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Core\EmergencyCircuitBreaker.mqh" (
-    echo ✓ SUCCESS: EmergencyCircuitBreaker.mqh found and validated
-    echo ✓ SUCCESS: EmergencyCircuitBreaker.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: EmergencyCircuitBreaker.mqh not found
-    echo ✗ FAILED: EmergencyCircuitBreaker.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 4: Advanced Signal Processor
-REM ============================================================================
-echo [4/9] Validating Advanced Signal Processor...
-echo [4/9] Validating Advanced Signal Processor... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Signals\AdvancedSignalProcessor.mqh" (
-    echo ✓ SUCCESS: AdvancedSignalProcessor.mqh found and validated
-    echo ✓ SUCCESS: AdvancedSignalProcessor.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: AdvancedSignalProcessor.mqh not found
-    echo ✗ FAILED: AdvancedSignalProcessor.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 5: Institutional Risk Manager
-REM ============================================================================
-echo [5/9] Validating Institutional Risk Manager...
-echo [5/9] Validating Institutional Risk Manager... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Risk\InstitutionalRiskManager.mqh" (
-    echo ✓ SUCCESS: InstitutionalRiskManager.mqh found and validated
-    echo ✓ SUCCESS: InstitutionalRiskManager.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: InstitutionalRiskManager.mqh not found
-    echo ✗ FAILED: InstitutionalRiskManager.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 6: High Frequency Executor
-REM ============================================================================
-echo [6/9] Validating High Frequency Executor...
-echo [6/9] Validating High Frequency Executor... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Trading\HighFrequencyExecutor.mqh" (
-    echo ✓ SUCCESS: HighFrequencyExecutor.mqh found and validated
-    echo ✓ SUCCESS: HighFrequencyExecutor.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: HighFrequencyExecutor.mqh not found
-    echo ✗ FAILED: HighFrequencyExecutor.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 7: Performance Monitor
-REM ============================================================================
-echo [7/9] Validating Performance Monitor...
-echo [7/9] Validating Performance Monitor... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Performance\PerformanceMonitor.mqh" (
-    echo ✓ SUCCESS: PerformanceMonitor.mqh found and validated
-    echo ✓ SUCCESS: PerformanceMonitor.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: PerformanceMonitor.mqh not found
-    echo ✗ FAILED: PerformanceMonitor.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 8: Jailbreak Logger
-REM ============================================================================
-echo [8/9] Validating Jailbreak Logger...
-echo [8/9] Validating Jailbreak Logger... >> "%LOG_FILE%"
-if exist "%PROJECT_PATH%Include\Utils\JailbreakLogger.mqh" (
-    echo ✓ SUCCESS: JailbreakLogger.mqh found and validated
-    echo ✓ SUCCESS: JailbreakLogger.mqh found and validated >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: JailbreakLogger.mqh not found
-    echo ✗ FAILED: JailbreakLogger.mqh not found >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPONENT 9: Test Suite
-REM ============================================================================
-echo [9/9] Compiling Test Suite...
-echo [9/9] Compiling Test Suite... >> "%LOG_FILE%"
-"%MT5_COMPILER%" /compile:"%PROJECT_PATH%Tests\JailbreakTestSuite.mq5" /log:"%PROJECT_PATH%compile_tests.log"
-if !errorlevel! equ 0 (
-    echo ✓ SUCCESS: JailbreakTestSuite.mq5 compiled successfully
-    echo ✓ SUCCESS: JailbreakTestSuite.mq5 compiled successfully >> "%LOG_FILE%"
-    set /a COMPILED_SUCCESS+=1
-) else (
-    echo ✗ FAILED: JailbreakTestSuite.mq5 compilation failed
-    echo ✗ FAILED: JailbreakTestSuite.mq5 compilation failed >> "%LOG_FILE%"
-    set /a COMPILED_FAILED+=1
-)
-echo.
-
-REM ============================================================================
-REM COMPILATION SUMMARY
-REM ============================================================================
-echo ===============================================================================
-echo JAILBREAK COMPILATION SUMMARY
-echo ===============================================================================
-echo Total Components: %TOTAL_COMPONENTS%
-echo Successfully Compiled/Validated: %COMPILED_SUCCESS%
-echo Failed: %COMPILED_FAILED%
-echo Success Rate: !COMPILED_SUCCESS!/%TOTAL_COMPONENTS%
-
+REM Initialize log file
+echo JAILBREAK COMPILATION LOG - %date% %time% > "%LOG_FILE%"
 echo =============================================================================== >> "%LOG_FILE%"
-echo JAILBREAK COMPILATION SUMMARY >> "%LOG_FILE%"
-echo =============================================================================== >> "%LOG_FILE%"
-echo Total Components: %TOTAL_COMPONENTS% >> "%LOG_FILE%"
-echo Successfully Compiled/Validated: %COMPILED_SUCCESS% >> "%LOG_FILE%"
-echo Failed: %COMPILED_FAILED% >> "%LOG_FILE%"
-echo Success Rate: !COMPILED_SUCCESS!/%TOTAL_COMPONENTS% >> "%LOG_FILE%"
-echo Compilation completed at: %date% %time% >> "%LOG_FILE%"
 
-if %COMPILED_FAILED% equ 0 (
-    echo.
-    echo 🎉 ALL COMPONENTS SUCCESSFULLY COMPILED/VALIDATED!
-    echo 🎉 JAILBREAK LEVEL 5 EA IS READY FOR DEPLOYMENT!
-    echo.
-    echo 🎉 ALL COMPONENTS SUCCESSFULLY COMPILED/VALIDATED! >> "%LOG_FILE%"
-    echo 🎉 JAILBREAK LEVEL 5 EA IS READY FOR DEPLOYMENT! >> "%LOG_FILE%"
-) else (
-    echo.
-    echo ⚠️  COMPILATION ISSUES DETECTED!
-    echo ⚠️  Please review the compilation logs and fix errors.
-    echo.
-    echo ⚠️  COMPILATION ISSUES DETECTED! >> "%LOG_FILE%"
-    echo ⚠️  Please review the compilation logs and fix errors. >> "%LOG_FILE%"
+REM Find and compile all .mq5 files recursively
+
+for /r "%PROJECT_PATH%" %%F in (*.mq5) do (
+    setlocal enabledelayedexpansion
+    set "COMPILE_LOG=%PROJECT_PATH%compile_%%~nF.log"
+    echo Compiling %%~nxF ...
+    echo Compiling %%~nxF ... >> "%LOG_FILE%"
+    "%MT5_COMPILER%" /compile:"%%F" /log:"!COMPILE_LOG!"
+    REM Wait for log file to be created
+    set /a waitCount=0
+    :waitForLog
+    if not exist "!COMPILE_LOG!" (
+        set /a waitCount+=1
+        if !waitCount! gtr 50 (
+            echo ERROR: Log file !COMPILE_LOG! not created for %%~nxF >> "%LOG_FILE%"
+            goto :continueLoop
+        )
+        timeout /t 1 >nul
+        goto :waitForLog
+    )
+    REM Check for errors
+    findstr /i ": error" "!COMPILE_LOG!" >nul
+    if !errorlevel! equ 0 (
+        echo ✗ FAILED: %%~nxF compilation errors detected
+        echo ✗ FAILED: %%~nxF compilation errors detected >> "%LOG_FILE%"
+        findstr /i ": error" "!COMPILE_LOG!" >> "%LOG_FILE%"
+    ) else (
+        echo ✓ SUCCESS: %%~nxF compiled with no errors
+        echo ✓ SUCCESS: %%~nxF compiled with no errors >> "%LOG_FILE%"
+    )
+    REM Check for warnings
+    findstr /i ": warning" "!COMPILE_LOG!" >nul
+    if !errorlevel! equ 0 (
+        echo ⚠️  WARNINGS: %%~nxF has warnings
+        echo ⚠️  WARNINGS: %%~nxF has warnings >> "%LOG_FILE%"
+        findstr /i ": warning" "!COMPILE_LOG!" >> "%LOG_FILE%"
+    )
+    echo. >> "%LOG_FILE%"
+    :continueLoop
+    endlocal
 )
 
-echo.
+echo ===============================================================================
+echo DYNAMIC JAILBREAK COMPILATION SUMMARY
+echo ===============================================================================
 echo Log file saved to: %LOG_FILE%
-echo.
+echo Compilation completed at: %date% %time%
 echo Press any key to continue...
 pause >nul

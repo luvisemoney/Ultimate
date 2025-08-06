@@ -14,12 +14,27 @@
 #define MAX_RISK_PERCENT 0.02
 #define SECURITY_CHECK_INTERVAL 1000  // milliseconds
 
+//--- JAILBREAK SECURITY: Paper-Live sync constants
+#define MAX_SYNC_LATENCY 500    // maximum allowable sync latency in milliseconds
+#define MAX_SYNC_FAILURES 3     // maximum number of sync failures before emergency shutdown
+#define MIN_SYNC_INTERVAL 100   // minimum time between syncs in milliseconds
+#define CRITICAL_LOAD_THRESHOLD 80.0  // system load percentage that triggers warnings
+
+#include "ThreadSafety.mqh"
+
 //+------------------------------------------------------------------+
 //| JAILBREAK SECURITY: Institutional Security Framework Class      |
 //+------------------------------------------------------------------+
 class CJailbreakSecurity
 {
 private:
+    // JAILBREAK SECURITY: Thread-safe state management
+    bool m_initState;
+    bool m_securityState;
+    bool m_syncState;
+    bool m_sysState;
+    CCriticalSection m_securityLock;
+    
     // JAILBREAK SECURITY: Internal security state
     bool m_isInitialized;
     bool m_securityEnabled;
@@ -31,6 +46,25 @@ private:
     int m_accountValidationCount;
     int m_inputValidationCount;
     int m_symbolValidationCount;
+    
+    // JAILBREAK SECURITY: Paper-Live sync validation
+    struct SPaperLiveState {
+        bool isSynchronized;
+        datetime lastSyncTime;
+        double syncLatency;
+        int syncFailures;
+        bool emergencyShutdown;
+    } m_paperLiveState;
+    
+    // JAILBREAK SECURITY: System integrity state
+    struct SSystemState {
+        bool isIntegrityValid;
+        datetime lastValidation;
+        int validationFailures;
+        string lastChecksum;
+        double systemLoad;
+        int criticalErrors;
+    } m_systemState;
     
     // JAILBREAK SECURITY: Advanced security methods
     ulong CalculateSecurityHash(const string& data);
@@ -61,14 +95,156 @@ public:
     
     // JAILBREAK SECURITY: Advanced security checks
     bool PerformSecurityAudit();
-    bool ValidateSystemIntegrity();
     bool CheckForAnomalousActivity();
+    
+    // JAILBREAK SECURITY: Paper-Live sync methods
+    bool ValidatePaperLiveSync() {
+        if (!m_isInitialized) return false;
+        
+        // Check last sync time
+        if (TimeCurrent() - m_paperLiveState.lastSyncTime > SECURITY_CHECK_INTERVAL) {
+            m_paperLiveState.syncFailures++;
+            return HandleSyncFailure();
+        }
+        
+        // Validate sync latency
+        if (!CheckSyncLatency()) {
+            m_paperLiveState.syncFailures++;
+            return false;
+        }
+        
+        m_paperLiveState.isSynchronized = true;
+        return true;
+    }
+    
+    bool CheckSyncLatency() {
+        if (m_paperLiveState.syncLatency > MAX_SYNC_LATENCY) {
+            if (m_paperLiveState.syncFailures++ > MAX_SYNC_FAILURES) {
+                EmergencyShutdown();
+                return false;
+            }
+            return false;
+        }
+        return true;
+    }
+    
+    void UpdateSyncState(bool isSync, double latency) {
+        m_paperLiveState.isSynchronized = isSync;
+        m_paperLiveState.lastSyncTime = TimeCurrent();
+        m_paperLiveState.syncLatency = latency;
+        
+        if (!isSync) {
+            m_paperLiveState.syncFailures++;
+            if (m_paperLiveState.syncFailures > MAX_SYNC_FAILURES) {
+                EmergencyShutdown();
+            }
+        } else {
+            m_paperLiveState.syncFailures = 0;
+        }
+    }
+    
+    bool HandleSyncFailure() {
+        if (m_paperLiveState.syncFailures > MAX_SYNC_FAILURES) {
+            EmergencyShutdown();
+            return false;
+        }
+        return true;
+    }
+    
+    void EmergencyShutdown() {
+        m_paperLiveState.emergencyShutdown = true;
+        m_securityEnabled = false;
+        // Add emergency logging and notification here
+    }
     
     // JAILBREAK SECURITY: Security metrics
     int GetFailedValidationCount() const { return m_failedValidationCount; }
     int GetAccountValidationCount() const { return m_accountValidationCount; }
     bool IsSecurityEnabled() const { return m_securityEnabled; }
     datetime GetLastSecurityCheck() const { return m_lastSecurityCheck; }
+    
+    // JAILBREAK SECURITY: System integrity implementation
+    bool ValidateSystemIntegrity() {
+        if (!m_isInitialized) return false;
+        
+        string currentChecksum = CalculateSystemChecksum();
+        if (!ValidateChecksum(currentChecksum)) {
+            m_systemState.validationFailures++;
+            return HandleCriticalError();
+        }
+        
+        MonitorSystemLoad();
+        m_systemState.lastValidation = TimeCurrent();
+        m_systemState.isIntegrityValid = true;
+        return true;
+    }
+    
+    string CalculateSystemChecksum() {
+        string checksum = "";
+        // Implement cryptographic checksum calculation here
+        // This should include validation of critical system components
+        return checksum;
+    }
+    
+    bool ValidateChecksum(const string &checksum) {
+        if (checksum == "") return false;
+        
+        if (m_systemState.lastChecksum != "" && 
+            m_systemState.lastChecksum != checksum) {
+            return false;
+        }
+        
+        m_systemState.lastChecksum = checksum;
+        return true;
+    }
+    
+    void MonitorSystemLoad() {
+        m_systemState.systemLoad = GetSystemLoad();
+        
+        if (m_systemState.systemLoad > CRITICAL_LOAD_THRESHOLD) {
+            HandleCriticalError();
+        }
+    }
+    
+    double GetSystemLoad() {
+        double load = 0.0;
+        
+        // Monitor memory usage
+        double totalMemory = TerminalInfoInteger(TERMINAL_MEMORY_TOTAL);
+        double usedMemory = TerminalInfoInteger(TERMINAL_MEMORY_USED);
+        if(totalMemory > 0) {
+            load = MathMax(load, (usedMemory / totalMemory) * 100.0);
+        }
+        
+        // Monitor CPU usage through trade operations
+        double trades = SymbolInfoInteger(Symbol(), SYMBOL_TRADES);
+        double maxTrades = SymbolInfoInteger(Symbol(), SYMBOL_TRADE_FREEZE_LEVEL);
+        if(maxTrades > 0) {
+            load = MathMax(load, (trades / maxTrades) * 100.0);
+        }
+        
+        // Monitor tick processing load
+        static datetime lastTick = 0;
+        datetime currentTick = TimeCurrent();
+        if(lastTick > 0) {
+            double tickDelay = (double)(currentTick - lastTick);
+            if(tickDelay > 0) {
+                load = MathMax(load, (1.0 / tickDelay) * 100.0);
+            }
+        }
+        lastTick = currentTick;
+        
+        return load;
+    }
+    
+    bool HandleCriticalError() {
+        m_systemState.criticalErrors++;
+        if (m_systemState.criticalErrors > MAX_SYNC_FAILURES) {
+            EmergencyShutdown();
+            return false;
+        }
+        return true;
+    }
 };
 
 //+------------------------------------------------------------------+
@@ -84,6 +260,21 @@ CJailbreakSecurity::CJailbreakSecurity()
     m_accountValidationCount = 0;
     m_inputValidationCount = 0;
     m_symbolValidationCount = 0;
+    
+    // Initialize Paper-Live state
+    m_paperLiveState.isSynchronized = false;
+    m_paperLiveState.lastSyncTime = 0;
+    m_paperLiveState.syncLatency = 0;
+    m_paperLiveState.syncFailures = 0;
+    m_paperLiveState.emergencyShutdown = false;
+    
+    // Initialize system state
+    m_systemState.isIntegrityValid = false;
+    m_systemState.lastValidation = 0;
+    m_systemState.validationFailures = 0;
+    m_systemState.lastChecksum = "";
+    m_systemState.systemLoad = 0;
+    m_systemState.criticalErrors = 0;
 }
 
 //+------------------------------------------------------------------+
@@ -120,6 +311,28 @@ bool CJailbreakSecurity::Initialize()
     m_inputValidationCount = 0;
     m_symbolValidationCount = 0;
     m_lastSecurityCheck = TimeCurrent();
+    
+    // JAILBREAK SECURITY: Initialize Paper-Live sync state
+    m_paperLiveState.isSynchronized = false;
+    m_paperLiveState.lastSyncTime = TimeCurrent();
+    m_paperLiveState.syncLatency = 0;
+    m_paperLiveState.syncFailures = 0;
+    m_paperLiveState.emergencyShutdown = false;
+    
+    // JAILBREAK SECURITY: Initialize system integrity state
+    m_systemState.isIntegrityValid = true;
+    m_systemState.lastValidation = TimeCurrent();
+    m_systemState.validationFailures = 0;
+    m_systemState.lastChecksum = CalculateSystemChecksum();
+    m_systemState.systemLoad = GetSystemLoad();
+    m_systemState.criticalErrors = 0;
+    
+    // JAILBREAK SECURITY: Perform initial system validation
+    if(!ValidateSystemIntegrity())
+    {
+        Print("JAILBREAK SECURITY ERROR: Initial system integrity validation failed");
+        return false;
+    }
     
     m_securityEnabled = true;
     m_isInitialized = true;

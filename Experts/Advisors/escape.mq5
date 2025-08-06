@@ -716,13 +716,27 @@ SMarketCondition GetMarketCondition()
    double atr = GetATR(Symbol(), PERIOD_CURRENT, 14, 0);
    double spread = (double)SymbolInfoInteger(Symbol(), SYMBOL_SPREAD) * _Point;
 
-// Calculate trend and volatility
+   // If RSI or ATR is -1, suppress further calculations and return default condition
+   if(rsi == -1 || atr == -1)
+   {
+      static datetime lastRSIError = 0;
+      if(TimeCurrent() - lastRSIError > 60) // Only print once per minute
+      {
+         Print("Insufficient bars for RSI/ATR calculation. Waiting for more data...");
+         lastRSIError = TimeCurrent();
+      }
+      condition.condition = MARKET_NORMAL;
+      condition.lastUpdate = TimeCurrent();
+      return condition;
+   }
+
+   // Calculate trend and volatility
    condition.trend = (rsi - 50.0) * 2.0;  // Convert RSI to -100 to +100 range
    condition.volatility = MathMin(atr / _Point / 10.0, 100.0);  // Scale ATR to 0-100 range
    condition.volume = 50.0;  // Placeholder for volume analysis
    condition.spread = spread / _Point;
 
-// Determine market state based on conditions
+   // Determine market state based on conditions
    if(spread > 30 * _Point)
      {
       condition.condition = MARKET_HIGH_SPREAD;
@@ -756,16 +770,35 @@ SMarketCondition GetMarketCondition()
 //+------------------------------------------------------------------+
 double GetRSI(string symbol, ENUM_TIMEFRAMES timeframe, int period, int shift = 0)
   {
+   // Check for enough bars before requesting indicator data
+   if(Bars(symbol, timeframe) < period + shift)
+   {
+      static datetime lastRSIError = 0;
+      if(TimeCurrent() - lastRSIError > 60) // Only print once per minute
+      {
+         Print("Not enough bars for RSI calculation. Required: ", period + shift, ", Available: ", Bars(symbol, timeframe));
+         lastRSIError = TimeCurrent();
+      }
+      return -1;
+   }
    double buffer[];
    ArraySetAsSeries(buffer, true);
    int handle = iRSI(symbol, timeframe, period, PRICE_CLOSE);
    if(handle == INVALID_HANDLE)
-      return 0;
+      return -1;
 
-   if(CopyBuffer(handle, 0, shift, 1, buffer) <= 0)
+   int copied = CopyBuffer(handle, 0, shift, 1, buffer);
+   if(copied <= 0)
      {
+      static datetime lastRSIErrorCopy = 0;
+      if(TimeCurrent() - lastRSIErrorCopy > 60)
+      {
+         // Suppress repeated error messages for RSI
+         Print("(Suppressed) Error getting RSI values. Copied: ", copied, ", Error: ", GetLastError());
+         lastRSIErrorCopy = TimeCurrent();
+      }
       IndicatorRelease(handle);
-      return 0;
+      return -1;
      }
 
    double value = buffer[0];
@@ -778,16 +811,35 @@ double GetRSI(string symbol, ENUM_TIMEFRAMES timeframe, int period, int shift = 
 //+------------------------------------------------------------------+
 double GetATR(string symbol, ENUM_TIMEFRAMES timeframe, int period, int shift = 0)
   {
+   // Check for enough bars before requesting indicator data
+   if(Bars(symbol, timeframe) < period + shift)
+   {
+      static datetime lastATRError = 0;
+      if(TimeCurrent() - lastATRError > 60)
+      {
+         Print("Not enough bars for ATR calculation. Required: ", period + shift, ", Available: ", Bars(symbol, timeframe));
+         lastATRError = TimeCurrent();
+      }
+      return -1;
+   }
    double buffer[];
    ArraySetAsSeries(buffer, true);
    int handle = iATR(symbol, timeframe, period);
    if(handle == INVALID_HANDLE)
-      return 0;
+      return -1;
 
-   if(CopyBuffer(handle, 0, shift, 1, buffer) <= 0)
+   int copied = CopyBuffer(handle, 0, shift, 1, buffer);
+   if(copied <= 0)
      {
+      static datetime lastATRErrorCopy = 0;
+      if(TimeCurrent() - lastATRErrorCopy > 60)
+      {
+         // Suppress repeated error messages for ATR
+         Print("(Suppressed) Error getting ATR values. Copied: ", copied, ", Error: ", GetLastError());
+         lastATRErrorCopy = TimeCurrent();
+      }
       IndicatorRelease(handle);
-      return 0;
+      return -1;
      }
 
    double value = buffer[0];

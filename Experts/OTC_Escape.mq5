@@ -3,7 +3,7 @@
 //|                        Optimized for OTC Markets                 |
 //|                                    Based on escape.mq5 template  |
 //+------------------------------------------------------------------+
-#property version   "1.000"
+#property version   "1.100"
 #property strict
 
 //--- Include files
@@ -14,6 +14,77 @@
 #include <Trade\DealInfo.mqh>
 #include <Trade\OrderInfo.mqh>
 
+//--- Market Analysis Class
+class CMarketAnalysis
+{
+private:
+    double m_trend_strength;
+    double m_volatility;
+    bool   m_trend_aligned;
+    int    m_ma_fast_handle;
+    int    m_ma_slow_handle;
+    
+public:
+    CMarketAnalysis(int ma_fast_handle, int ma_slow_handle)
+    {
+        m_ma_fast_handle = ma_fast_handle;
+        m_ma_slow_handle = ma_slow_handle;
+    }
+    
+    bool AnalyzeMarketConditions()
+    {
+        //--- Get MA values for trend analysis
+        double ma_fast[3], ma_slow[3];
+        if(CopyBuffer(m_ma_fast_handle, 0, 0, 3, ma_fast) <= 0 ||
+           CopyBuffer(m_ma_slow_handle, 0, 0, 3, ma_slow) <= 0)
+            return false;
+            
+        //--- Calculate trend strength
+        m_trend_strength = MathAbs(ma_fast[0] - ma_slow[0]) / Point();
+        
+        //--- Calculate volatility
+        double atr[1];
+        int atr_handle = iATR(_Symbol, PERIOD_CURRENT, 14);
+        if(CopyBuffer(atr_handle, 0, 0, 1, atr) > 0)
+            m_volatility = atr[0] / Point();
+        IndicatorRelease(atr_handle);
+        
+        //--- Check trend alignment
+        m_trend_aligned = (ma_fast[0] > ma_fast[2]) == (ma_slow[0] > ma_slow[2]);
+        
+        return true;
+    }
+    
+    bool ValidateTradeSetup(ENUM_POSITION_TYPE type)
+    {
+        if(!AnalyzeMarketConditions())
+            return false;
+            
+        //--- Minimum trend strength required
+        if(m_trend_strength < 10)
+        {
+            Print("Insufficient trend strength: ", m_trend_strength);
+            return false;
+        }
+            
+        //--- Check if volatility is within acceptable range
+        if(m_volatility < 5 || m_volatility > 50)
+        {
+            Print("Volatility outside acceptable range: ", m_volatility);
+            return false;
+        }
+            
+        //--- Ensure trend alignment
+        if(!m_trend_aligned)
+        {
+            Print("Trend misalignment detected");
+            return false;
+        }
+            
+        return true;
+    }
+};
+
 //--- Global Objects
 CPositionInfo  m_position;                   // trade position object
 CTrade         m_trade;                      // trading object
@@ -21,6 +92,7 @@ CSymbolInfo    m_symbol;                     // symbol info object
 CAccountInfo   m_account;                    // account info wrapper
 CDealInfo      m_deal;                       // deals object
 COrderInfo     m_order;                      // pending orders object
+CMarketAnalysis* market_analysis = NULL;     // market analysis object
 
 //--- Input Parameters (Optimized for OTC Markets)
 input ushort InpTakeProfit_l = 40;           // TakeProfit for long positions (points)
@@ -31,15 +103,16 @@ input string InpName_Expert  = "OTC_Escape"; // Expert Name
 input ulong  InpSlippage     = 3;            // Slippage (points)
 input bool   UseSound        = false;        // Enable sounds
 input string NameFileSound   = "Alert.wav";  // Sound file
-input double InpLots         = 0.02;          // Lot size
-input int    InpMAPeriod1    = 5;            // Fast MA Period
-input int    InpMAPeriod2    = 10;           // Slow MA Period
+input double InpLots         = 0.02;         // Lot size
+input int    InpMAPeriod1    = 5;           // Fast MA Period
+input int    InpMAPeriod2    = 10;          // Slow MA Period
 input ENUM_MA_METHOD InpMAMethod = MODE_SMA; // MA Method
 input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE; // MA Price
-input int    InpMaxSpread   = 65;            // Maximum allowed spread (points)
-input bool   InpUseTimeFilter = true;        // Use time filter
-input int    InpStartHour    = 1;            // Start trading hour (broker time)
-input int    InpEndHour      = 22;           // End trading hour (broker time)
+input int    InpMaxSpread   = 65;           // Maximum allowed spread (points)
+input bool   InpUseTimeFilter = true;       // Use time filter
+input int    InpStartHour    = 1;           // Start trading hour (broker time)
+input int    InpEndHour      = 22;          // End trading hour (broker time)
+input double InpRiskPercent  = 2.0;         // Risk per trade (%)
 
 //--- Global Variables
 ulong        m_magic = 987569;               // Magic number
@@ -79,6 +152,14 @@ int OnInit()
       return(INIT_FAILED);
    }
    
+   //--- Initialize market analysis
+   market_analysis = new CMarketAnalysis(handle_ma_fast, handle_ma_slow);
+   if(market_analysis == NULL)
+   {
+      Print("Failed to create market analysis object");
+      return(INIT_FAILED);
+   }
+   
    //--- Adjust for 3/5 digit brokers
    m_digits_adjust = (m_symbol.Digits() == 3 || m_symbol.Digits() == 5) ? 10 : 1;
    
@@ -99,6 +180,12 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   if(market_analysis != NULL)
+   {
+      delete market_analysis;
+      market_analysis = NULL;
+   }
+   
    //--- Release indicator handles
    if(handle_ma_fast != INVALID_HANDLE)
       IndicatorRelease(handle_ma_fast);
@@ -144,7 +231,6 @@ bool CanTrade()
    //--- Check if market is open
    if(m_is_otc)
    {
-      // OTC markets might have different trading hours
       if(InpUseTimeFilter)
       {
          datetime time = TimeCurrent();
@@ -179,6 +265,15 @@ bool CanTrade()
 //+------------------------------------------------------------------+
 void CheckForOpen()
 {
+   if(!RefreshRates())
+      return;
+      
+   //--- Calculate risk-based position size
+   double account_risk = AccountInfoDouble(ACCOUNT_BALANCE) * (InpRiskPercent / 100.0);
+   double point_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double risk_based_lots = NormalizeDouble(account_risk / (InpStopLoss_l * point_value), 2);
+   double final_lots = MathMin(risk_based_lots, InpLots);
+   
    //--- Get indicator values
    double ma_fast[2], ma_slow[2];
    if(CopyBuffer(handle_ma_fast, 0, 0, 2, ma_fast) <= 0 ||
@@ -188,17 +283,17 @@ void CheckForOpen()
       return;
    }
    
-   //--- Check for buy signal (fast MA crosses above slow MA)
+   //--- Check for buy signal
    if(ma_fast[1] <= ma_slow[1] && ma_fast[0] > ma_slow[0])
    {
-      OpenBuy();
+      OpenBuy(final_lots);
       return;
    }
    
-   //--- Check for sell signal (fast MA crosses below slow MA)
+   //--- Check for sell signal
    if(ma_fast[1] >= ma_slow[1] && ma_fast[0] < ma_slow[0])
    {
-      OpenSell();
+      OpenSell(final_lots);
       return;
    }
 }
@@ -208,15 +303,12 @@ void CheckForOpen()
 //+------------------------------------------------------------------+
 void CheckForClose()
 {
-   // Check if we have an open position on the current symbol
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       if(m_position.SelectByIndex(i))
       {
          if(m_position.Symbol() == Symbol() && m_position.Magic() == m_magic)
          {
-            // Check if we need to close the position based on some condition
-            // This is a simple example - you might want to add more sophisticated logic
             if(m_position.PositionType() == POSITION_TYPE_BUY)
             {
                if(m_position.Profit() > 0 && 
@@ -229,7 +321,7 @@ void CheckForClose()
                   m_trade.PositionClose(m_position.Ticket());
                }
             }
-            else // POSITION_TYPE_SELL
+            else
             {
                if(m_position.Profit() > 0 && 
                   m_symbol.Ask() <= m_position.PriceOpen() - InpTakeProfit_s * m_symbol.Point())
@@ -249,8 +341,14 @@ void CheckForClose()
 //+------------------------------------------------------------------+
 //| Open Buy position                                                |
 //+------------------------------------------------------------------+
-void OpenBuy()
+void OpenBuy(double lots)
 {
+   if(!market_analysis.ValidateTradeSetup(POSITION_TYPE_BUY))
+   {
+      Print("Buy setup validation failed");
+      return;
+   }
+   
    if(!RefreshRates())
    {
       Print("Error refreshing rates");
@@ -260,7 +358,7 @@ void OpenBuy()
    double sl = (InpStopLoss_l > 0) ? m_symbol.Ask() - InpStopLoss_l * m_symbol.Point() : 0.0;
    double tp = (InpTakeProfit_l > 0) ? m_symbol.Ask() + InpTakeProfit_l * m_symbol.Point() : 0.0;
    
-   m_trade.Buy(InpLots, m_symbol.Name(), m_symbol.Ask(), sl, tp, "OTC_Escape_Buy");
+   m_trade.Buy(lots, m_symbol.Name(), m_symbol.Ask(), sl, tp, "OTC_Escape_Buy");
    
    if(UseSound)
       PlaySound(NameFileSound);
@@ -269,8 +367,14 @@ void OpenBuy()
 //+------------------------------------------------------------------+
 //| Open Sell position                                               |
 //+------------------------------------------------------------------+
-void OpenSell()
+void OpenSell(double lots)
 {
+   if(!market_analysis.ValidateTradeSetup(POSITION_TYPE_SELL))
+   {
+      Print("Sell setup validation failed");
+      return;
+   }
+   
    if(!RefreshRates())
    {
       Print("Error refreshing rates");
@@ -280,7 +384,7 @@ void OpenSell()
    double sl = (InpStopLoss_s > 0) ? m_symbol.Bid() + InpStopLoss_s * m_symbol.Point() : 0.0;
    double tp = (InpTakeProfit_s > 0) ? m_symbol.Bid() - InpTakeProfit_s * m_symbol.Point() : 0.0;
    
-   m_trade.Sell(InpLots, m_symbol.Name(), m_symbol.Bid(), sl, tp, "OTC_Escape_Sell");
+   m_trade.Sell(lots, m_symbol.Name(), m_symbol.Bid(), sl, tp, "OTC_Escape_Sell");
    
    if(UseSound)
       PlaySound(NameFileSound);
@@ -291,12 +395,9 @@ void OpenSell()
 //+------------------------------------------------------------------+
 bool IsOTCSymbol()
 {
-   // Add your OTC symbol detection logic here
-   // This is a simple example - you might want to customize it based on your broker's OTC symbols
    string symbol = Symbol();
    StringToLower(symbol);
    
-   // Common OTC symbols might include 'otc' in the name or have specific prefixes/suffixes
    if(StringFind(symbol, "otc") >= 0 || 
       StringFind(symbol, "cfd") >= 0 ||
       StringFind(symbol, "_o") >= 0)
