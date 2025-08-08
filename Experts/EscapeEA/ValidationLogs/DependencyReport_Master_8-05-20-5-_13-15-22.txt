@@ -1,9 +1,0 @@
-Dependency Analysis Started: 2025-08-05 13:15:22.34 
-============================================================================ 
-Validating Include directory structure... 
-FOUND: Include\Common\Enums.mqh 
-FOUND: Include\Common\Constants.mqh 
-FOUND: Include\Common\Structs.mqh 
-FOUND: Include\Utils\Logger.mqh 
-Dependency validation complete. 
- 
