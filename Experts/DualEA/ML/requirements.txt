@@ -1,0 +1,5 @@
+# Python libraries required for the ML component
+tensorflow
+numpy
+pandas
+flask
