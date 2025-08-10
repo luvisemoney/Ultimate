@@ -201,7 +201,7 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
          }
       }
     FileClose(h);
-    g_policy_loaded = (g_policy_min_conf>0.0);
+    g_policy_loaded = (ArraySize(g_pol_strat)>0);
     if(ShouldLog(LOG_INFO)) PrintFormat("Policy gating: min_conf=%.3f slices=%d", g_policy_min_conf, ArraySize(g_pol_strat));
     return g_policy_loaded;
    }

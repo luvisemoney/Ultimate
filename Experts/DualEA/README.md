@@ -92,6 +92,30 @@ MQL5/
   - Block (cap): `GATE: blocked ... reason=explore_cap_day|explore_cap_week (day=d/D, week=w/W)`
 - Resetting caps: delete the above CSV files from `Common\Files\DualEA` to reset counts.
 
+### Default Policy Fallback & Policy Gating
+- Inputs (PaperEA):
+  - `UsePolicyGating` (bool)
+  - `DefaultPolicyFallback` (bool, default true)
+  - `FallbackDemoOnly` (bool, default true)
+  - `FallbackWhenNoPolicy` (bool, default true)
+- Policy loaded detection:
+  - Policy is considered "loaded" when `policy.json` provides one or more slices (i.e., `slices > 0`).
+  - `min_confidence` from `policy.json` is used as a gating threshold, not to determine loaded state.
+- Fallback paths (neutral, safe for data collection):
+  - `fallback_no_policy`: triggers when `UsePolicyGating=true` and no policy is loaded (slices=0) and `FallbackWhenNoPolicy=true`.
+    - Allowed by default only on demo accounts (`FallbackDemoOnly=true`).
+    - Bypasses insights thresholds and exploration caps.
+    - Uses neutral scaling (no SL/TP/trailing multipliers).
+    - Log example: `FALLBACK: no policy loaded -> neutral scaling used for <strat> on <symbol>/<tf> demo=<true|false>`.
+  - `fallback_policy_miss`: triggers when `UsePolicyGating=true`, policy is loaded but the exact strategy/symbol/timeframe slice is missing.
+    - Same allow conditions and behavior as above (demo-only by default, neutral scaling, bypass caps).
+    - Log example: `FALLBACK: policy slice missing -> neutral scaling used for <strat> on <symbol>/<tf> demo=<true|false>`.
+- Policy scaling application:
+  - `ApplyPolicyScaling()` runs only when policy is loaded and an exact/aggregate slice exists (ppol>=0.0).
+  - On fallback, scaling is neutral (no adjustments applied).
+- Exploration counters:
+  - Fallback trades do not consume exploration quotas and do not increment exploration counters.
+
 ## Where Files Are Written
 We target the MT5 Common Files area so Strategy Tester, Demo/Paper, and Live share the same outputs.
 - Typical path: `C:\Users\<you>\AppData\Roaming\MetaQuotes\Terminal\Common\Files\DualEA\`
@@ -103,6 +127,12 @@ Files produced:
  - `explore_counts.csv` (weekly exploration usage)
  - `explore_counts_day.csv` (daily exploration usage)
  - `insights.json` (aggregated performance by strategy/symbol/timeframe)
+
+## Documentation
+- [Phase 3 Plan](docs/Phase3.md)
+- [Policy JSON Schema](docs/PolicySchema.md)
+- [Knowledge Base CSV Schemas](docs/KB-Schemas.md)
+- [Operations Guide](docs/Operations.md)
 
 ## Knowledge Base Schemas
 - `knowledge_base.csv`
@@ -123,17 +153,17 @@ Files produced:
 4. Run a backtest; outputs will be in `Common\Files\DualEA\` and visible in the Journal.
 
 ## Trainer Workflow (Windows)
-- Requirements: Python 3, internet access (for pip + Yahoo enrichment).
-- Steps:
-  1) Open a terminal in `MQL5/Experts/DualEA/ml/`.
-  2) Run: `run_train_and_export.bat`
-- What it does:
-  - Creates `.venv/`, installs `ml/requirements.txt`.
-  - Runs `train.py` to produce `ml/artifacts/tf_model.keras`, `scaler.pkl`, `features.json`.
-  - Runs `policy_export.py --min_conf 0.45` to write `Common\Files\DualEA\policy.json` with per-slice `p_win` and scaling fields: `sl_scale`, `tp_scale`, `trail_atr_mult`.
-  - Touches `Common\Files\DualEA\policy.reload`.
+ - Requirements: Python 3, internet access (for pip + Yahoo enrichment).
+ - Steps:
+   1) Open a terminal in `MQL5/Experts/DualEA/ML/`.
+   2) Run: `run_train_and_export.bat`
+ - What it does:
+   - Creates `.venv/`, installs `ML/requirements.txt`.
+   - Runs `train.py` to produce `ML/artifacts/tf_model.keras`, `scaler.pkl`, `features.json`.
+   - Runs `policy_export.py --min_conf 0.45` to write `Common\Files\DualEA\policy.json` with per-slice `p_win` and scaling fields: `sl_scale`, `tp_scale`, `trail_atr_mult`.
+   - Touches `Common\Files\DualEA\policy.reload`.
 - EA behavior:
-  - `PaperEA` calls `CheckPolicyReload()` in `OnTimer()`; when `policy.reload` exists, it reloads `policy.json` and logs `Policy gating: min_conf=..., slices=N`.
+  - `PaperEA` calls `CheckPolicyReload()` in both `OnTimer()` and `OnTick()`; when `policy.reload` exists, it reloads `policy.json` and logs `Policy gating: min_conf=..., slices=N`.
   - On trade execution, if policy is loaded, the EA applies per-slice scaling before sending the order.
 
 ### Rebuilding Insights (without rerunning trades)
@@ -150,6 +180,9 @@ Files produced:
 
 ## Roadmap (Phased)
 This roadmap aligns with the implementation plan.
+
+For detailed Phase 3 guidance (docs, hygiene, scoring, roadmap), see:
+- `docs/Phase3.md`
 
 ### Phase 1: Data & Insights Foundation
 - Extend KB: record per‑trade features (indicator values, ATR, spread, session, regime, signal strength) and labels (R multiple, MFE/MAE, duration).

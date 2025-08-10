@@ -1,0 +1,30 @@
+{
+  "features": [
+    "atr",
+    "atr_over_price",
+    "bb_lower",
+    "bb_middle",
+    "bb_upper",
+    "bb_width",
+    "close",
+    "dc_lower",
+    "dc_upper",
+    "duration_sec",
+    "ma1",
+    "ma2",
+    "mae_price",
+    "mae_r",
+    "mfe_price",
+    "mfe_r",
+    "rsi",
+    "sma_trend",
+    "spread_points",
+    "timeframe",
+    "trail_activation_points",
+    "trail_atr_multiplier",
+    "trail_atr_period",
+    "trail_distance_points",
+    "trail_step_points",
+    "trail_type"
+  ]
+}
