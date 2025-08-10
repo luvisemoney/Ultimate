@@ -3,3 +3,5 @@ tensorflow
 numpy
 pandas
 flask
+yfinance
+scikit-learn

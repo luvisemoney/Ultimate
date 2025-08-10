@@ -5,6 +5,8 @@
 #property link      "https://www.windsurf.ai"
 
 #include "..\IStrategy.mqh"
+// For CFeaturesKB
+#include "..\KnowledgeBase.mqh"
 
 // --- Buffer indices for the '2_Averages_with_BollingerBands' custom indicator
 #define MA1_BUFFER 0
@@ -32,6 +34,23 @@ public:
    virtual void      Refresh() override;
    virtual TradeOrder  CheckSignal() override;
    virtual string    Name() override { return "BollAveragesStrategy"; }
+   virtual void      ExportFeatures(CFeaturesKB* kb, const datetime ts) override
+     {
+      if(CheckPointer(kb)==POINTER_INVALID) return;
+      if(m_indicator_handle==INVALID_HANDLE) return;
+      // Read latest buffers
+      double ma1[1], ma2[1], bb_up[1], bb_mid[1], bb_lo[1];
+      if(CopyBuffer(m_indicator_handle, MA1_BUFFER, 0, 1, ma1)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "ma1", ma1[0]);
+      if(CopyBuffer(m_indicator_handle, MA2_BUFFER, 0, 1, ma2)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "ma2", ma2[0]);
+      if(CopyBuffer(m_indicator_handle, BB_UPPER_BUFFER, 0, 1, bb_up)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "bb_upper", bb_up[0]);
+      if(CopyBuffer(m_indicator_handle, BB_MIDDLE_BUFFER, 0, 1, bb_mid)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "bb_middle", bb_mid[0]);
+      if(CopyBuffer(m_indicator_handle, BB_LOWER_BUFFER, 0, 1, bb_lo)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "bb_lower", bb_lo[0]);
+     }
   };
 
 //+------------------------------------------------------------------+

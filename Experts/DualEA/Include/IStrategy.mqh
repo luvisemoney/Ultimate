@@ -6,6 +6,8 @@
 
 #include <Trade/Trade.mqh>
 #include <Object.mqh> // Required for CObject
+// Forward declaration to avoid circular include; concrete users should include KnowledgeBase.mqh
+class CFeaturesKB;
 
 // --- Trailing stop policy
 enum TrailingType
@@ -88,4 +90,8 @@ public:
       virtual void         Refresh() { }
    virtual TradeOrder   CheckSignal() { TradeOrder order; return order; }
    virtual string       Name() { return "IStrategy"; }
+   // Allow a strategy to export its indicator/context features at a timestamp
+   // Concrete strategies should include KnowledgeBase.mqh and write via kb->WriteKV(ts, symbol, Name(), feature, value)
+   virtual void         ExportFeatures(CFeaturesKB* kb, const datetime ts) { }
   };
+

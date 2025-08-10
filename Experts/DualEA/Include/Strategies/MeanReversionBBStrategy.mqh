@@ -5,6 +5,8 @@
 #property link      "https://www.windsurf.ai"
 
 #include "..\IStrategy.mqh"
+// For CFeaturesKB
+#include "..\KnowledgeBase.mqh"
 
 class CMeanReversionBBStrategy : public IStrategy
   {
@@ -26,6 +28,24 @@ public:
    virtual void      Refresh() override;
    virtual TradeOrder  CheckSignal() override;
    virtual string    Name() override { return "MeanReversionBBStrategy"; }
+   virtual void      ExportFeatures(CFeaturesKB* kb, const datetime ts) override
+     {
+      if(CheckPointer(kb)==POINTER_INVALID) return;
+      // latest price
+      MqlRates r[]; if(CopyRates(m_symbol, m_timeframe, 0, 1, r)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "close", r[0].close);
+      // SMA trend value
+      double sma[1]; if(CopyBuffer(m_ma_handle, 0, 0, 1, sma)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "sma_trend", sma[0]);
+      // BBands values
+      double up[1], lo[1];
+      if(CopyBuffer(m_bb_handle, 1, 0, 1, up)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "bb_upper", up[0]);
+      if(CopyBuffer(m_bb_handle, 2, 0, 1, lo)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "bb_lower", lo[0]);
+      if(CopyBuffer(m_bb_handle, 1, 0, 1, up)==1 && CopyBuffer(m_bb_handle, 2, 0, 1, lo)==1)
+         (*kb).WriteKV(ts, m_symbol, Name(), "bb_width", up[0]-lo[0]);
+     }
   };
 
 //+------------------------------------------------------------------+

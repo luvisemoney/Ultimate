@@ -19,6 +19,8 @@ struct TradeRecord
    double            profit;           // Profit or loss from the trade
    string            strategy_id;      // ID of the strategy that generated the trade
   };
+// Uncomment to enable verbose parsing diagnostics
+//#define INSIGHTS_DEBUG
 
 // --- Class to manage knowledge base operations
 class CKnowledgeBase
@@ -39,6 +41,542 @@ public:
 private:
    bool              OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV);
    void              CloseFile();
+  };
+
+// --- Class to manage features.csv logging (long format: one feature per row)
+class CFeaturesKB
+  {
+ private:
+    string m_file_path;
+    int    m_file_handle;
+    string m_csv_delim;
+    void   EnsureHeader()
+      {
+       // Ensure folder exists and header is present
+       FolderCreate("DualEA", FILE_COMMON);
+       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_COMMON);
+       if(h==INVALID_HANDLE)
+         {
+          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+          if(h!=INVALID_HANDLE)
+            {
+             FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
+             FileClose(h);
+            }
+         }
+       else
+         {
+          if(FileSize(h)==0)
+            {
+             FileClose(h);
+             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+             if(h!=INVALID_HANDLE)
+                FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
+            }
+          if(h!=INVALID_HANDLE) FileClose(h);
+         }
+       string full = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + m_file_path;
+       PrintFormat("KnowledgeBase: writing features CSV to Common Files: %s", full);
+      }
+ public:
+                  CFeaturesKB(string file_name="DualEA\\features.csv", string delimiter=",")
+                    {
+                     m_file_path = file_name;
+                     m_csv_delim = delimiter;
+                     m_file_handle = INVALID_HANDLE;
+                     EnsureHeader();
+                    }
+                  ~CFeaturesKB() {}
+    bool          WriteKV(const datetime ts, const string symbol, const string strategy, const string feature, const double value)
+                    {
+                     int h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_WRITE|FILE_COMMON);
+                     if(h==INVALID_HANDLE)
+                       {
+                        PrintFormat("Error opening features file '%s'. Error: %d", m_file_path, GetLastError());
+                        return false;
+                       }
+                     if(FileSize(h)==0)
+                        FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
+                     FileSeek(h, 0, SEEK_END);
+                     string line = TimeToString(ts) + m_csv_delim + symbol + m_csv_delim + strategy + m_csv_delim + feature + m_csv_delim + DoubleToString(value, 8);
+                     FileWriteString(h, line + "\n");
+                     FileClose(h);
+                     return true;
+                    }
+  };
+
+// --- Insights builder: reads KB and emits insights.json (basic counts scaffold)
+class CInsightsBuilder
+  {
+ private:
+    string m_kb_path;
+    string m_features_path;
+    string m_out_path;
+    string m_delim;
+    // --- helpers
+    string Trim(string s)
+      {
+       StringTrimLeft(s);
+        StringTrimRight(s);
+        return s;
+      }
+    string StripQuotes(string s)
+      {
+       s = Trim(s);
+       // strip BOM if present (U+FEFF or UTF-8 BOM 0xEF 0xBB 0xBF)
+       if(StringLen(s)>0)
+         {
+          int c0 = StringGetCharacter(s,0);
+          // U+FEFF
+          if(c0==65279)
+             s = StringSubstr(s,1);
+          else if(StringLen(s)>=3)
+            {
+             int b0 = c0;
+             int b1 = StringGetCharacter(s,1);
+             int b2 = StringGetCharacter(s,2);
+             if(b0==239 && b1==187 && b2==191)
+                s = StringSubstr(s,3);
+            }
+         }
+       // remove surrounding quotes
+       if(StringLen(s)>=2 && StringSubstr(s,0,1)=="\"" && StringSubstr(s,StringLen(s)-1,1)=="\"")
+          s = StringSubstr(s,1,StringLen(s)-2);
+       // remove stray quotes
+       StringReplace(s, "\"", "");
+       // remove CR/LF and NBSP
+       StringReplace(s, "\r", "");
+        StringReplace(s, "\n", "");
+        // remove non-breaking space (char code 160)
+        for(int i=0;i<StringLen(s);++i){ if(StringGetCharacter(s,i)==160){ s = StringSubstr(s,0,i)+StringSubstr(s,i+1); i--; } }
+       return s;
+      }
+    string NormalizeToken(string s)
+      {
+       s = StripQuotes(s);
+       // StringToLower modifies in place; do not assign its return value
+       StringToLower(s);
+       string out="";
+       for(int i=0;i<StringLen(s);++i)
+         {
+          int ch = StringGetCharacter(s,i);
+          bool ok = (ch>='a' && ch<='z') || (ch>='0' && ch<='9') || (ch=='_');
+          if(ok)
+             out = out + StringSubstr(s,i,1);
+         }
+       return out;
+      }
+    int    FindIndexString(string &arr[], const string key)
+      {
+       for(int i=0;i<ArraySize(arr);++i)
+         if(arr[i]==key) return i;
+       return -1;
+      }
+    void   PushUnique(string &arr[], const string key)
+      {
+       if(FindIndexString(arr,key)<0)
+         {
+          int n = ArraySize(arr);
+          ArrayResize(arr, n+1);
+          arr[n] = key;
+         }
+      }
+    double SafeDiv(const double a, const double b)
+      {
+       if(b==0.0) return 0.0;
+       return a/b;
+      }
+    double Median(double &values[])
+      {
+       int n = ArraySize(values);
+       if(n==0) return 0.0;
+       // Work on a copy to avoid side effects
+       double tmp[];
+       ArrayResize(tmp, n);
+       for(int i=0;i<n;++i) tmp[i]=values[i];
+       ArraySort(tmp);
+       if((n % 2)==1)
+          return tmp[n/2];
+       return 0.5*(tmp[n/2-1] + tmp[n/2]);
+      }
+    double MaxDrawdownR(double &r_series[])
+      {
+       // Computes max peak-to-trough drawdown on cumulative R
+       int n = ArraySize(r_series);
+       if(n==0) return 0.0;
+       double cum=0.0, peak=0.0, maxdd=0.0;
+       for(int i=0;i<n;++i)
+         {
+          cum += r_series[i];
+          if(cum>peak) peak=cum;
+          double dd = peak - cum; // in R
+          if(dd>maxdd) maxdd=dd;
+         }
+       return maxdd;
+      }
+  public:
+                  CInsightsBuilder(string kb_path="DualEA\\knowledge_base.csv", string features_path="DualEA\\features.csv", string out_path="DualEA\\insights.json", string delim=",")
+                    {
+                     m_kb_path = kb_path;
+                     m_features_path = features_path;
+                     m_out_path = out_path;
+                     m_delim = delim;
+                    }
+    bool          Build()
+                    {
+                    // Build insights from features.csv using r_multiple rows
+                    // Open features.csv with explicit comma delimiter
+                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_COMMON, (ushort)',' );
+                    if(hf==INVALID_HANDLE)
+                      {
+                       PrintFormat("InsightsBuilder: cannot open features '%s'. Err=%d", m_features_path, GetLastError());
+                       return false;
+                      }
+
+                    // Storage of r-multiples with metadata (plus optional timeframe)
+                    datetime ts_list[]; string sym_list[]; string strat_list[]; double r_list[]; int tf_list[];
+                    // Map (symbol|strategy) -> timeframe (last seen)
+                    string tf_keys[]; int tf_vals[];
+
+                    // Robust CSV scan: 5 fields per row, skip header if present
+                    bool header_checked=false;
+                    int parsed_rows=0;
+                    while(!FileIsEnding(hf))
+                      {
+                       string ts = FileReadString(hf);
+                       if(ts=="" && FileIsEnding(hf)) break;
+                       string sym = FileReadString(hf);
+                       string strat = FileReadString(hf);
+                       string feat = FileReadString(hf);
+                       string val  = FileReadString(hf);
+
+                       // Trim all fields to avoid CR/whitespace issues
+                       ts    = StripQuotes(ts);
+                       sym   = StripQuotes(sym);
+                       strat = StripQuotes(strat);
+                       feat  = StripQuotes(feat);
+                       val   = StripQuotes(val);
+
+                       if(feat=="") { continue; }
+                       if(!header_checked)
+                         {
+                          header_checked=true;
+                          string ts_norm = NormalizeToken(ts);
+                          string feat_norm_dbg = NormalizeToken(feat);
+                          int c0 = (StringLen(ts)>0? StringGetCharacter(ts,0) : -1);
+                          #ifdef INSIGHTS_DEBUG
+                          PrintFormat("InsightsBuilder: header-check ts_raw='%s' ts_norm='%s' c0=%d feat_raw='%s' feat_norm='%s'", ts, ts_norm, c0, feat, feat_norm_dbg);
+                          #endif
+                          if(ts_norm=="timestamp")
+                              continue; // skip header row
+                         }
+
+                       // Count this parsed data row (post header)
+                       parsed_rows++;
+                       if(parsed_rows<=5)
+                         {
+                          string feat_norm = NormalizeToken(feat);
+                          #ifdef INSIGHTS_DEBUG
+                          PrintFormat("InsightsBuilder: sample row %d feat='%s' feat_norm='%s' val='%s'", parsed_rows-1, feat, feat_norm, val);
+                          #endif
+                         }
+
+                       string feat_norm_main = NormalizeToken(feat);
+                       if(feat_norm_main=="timeframe")
+                         {
+                          // record latest timeframe for (symbol,strategy)
+                          int tfv = (int)StringToInteger(val);
+                          string key = sym+"|"+strat;
+                          bool updated=false;
+                          for(int i=0;i<ArraySize(tf_keys);++i){ if(tf_keys[i]==key){ tf_vals[i]=tfv; updated=true; break; } }
+                          if(!updated){ int k=ArraySize(tf_keys); ArrayResize(tf_keys,k+1); ArrayResize(tf_vals,k+1); tf_keys[k]=key; tf_vals[k]=tfv; }
+                         }
+                       else if(feat_norm_main=="r_multiple")
+                         {
+                          int n = ArraySize(r_list);
+                          ArrayResize(ts_list, n+1);
+                          ArrayResize(sym_list, n+1);
+                          ArrayResize(strat_list, n+1);
+                          ArrayResize(r_list, n+1);
+                          ArrayResize(tf_list, n+1);
+                          ts_list[n]    = StringToTime(ts);
+                          sym_list[n]   = sym;
+                          strat_list[n] = strat;
+                          r_list[n]     = StringToDouble(val);
+                          // lookup timeframe if available
+                          int tfv=-1; string key = sym+"|"+strat;
+                          for(int j=0;j<ArraySize(tf_keys);++j){ if(tf_keys[j]==key){ tfv=tf_vals[j]; break; } }
+                          tf_list[n]    = tfv;
+                          #ifdef INSIGHTS_DEBUG
+                          if(n<5)
+                            PrintFormat("InsightsBuilder: captured r_multiple row ts=%s sym=%s strat=%s r=%f", ts, sym, strat, r_list[n]);
+                          #endif
+                         }
+                      }
+                    FileClose(hf);
+
+                    int total = ArraySize(r_list);
+                    PrintFormat("InsightsBuilder: scanned rows=%d, r_multiple rows=%d from features '%s'", parsed_rows, total, m_features_path);
+                    // --- Fallback: if no r_multiple labels were found, derive metrics from knowledge_base.csv using profit
+                    if(total==0)
+                      {
+                       // Secondary fallback: parse features.csv as raw text lines and split by comma
+                       int ht = FileOpen(m_features_path, FILE_READ|FILE_COMMON|FILE_ANSI);
+                       if(ht!=INVALID_HANDLE)
+                         {
+                          int added=0; bool header_seen=false;
+                          while(!FileIsEnding(ht))
+                            {
+                             string line = FileReadString(ht);
+                             line = Trim(line);
+                             if(line=="") continue;
+                             string parts[]; int cnt = StringSplit(line, ",", parts);
+                             if(cnt<5) continue;
+                             // parts: 0 ts,1 sym,2 strat,3 feat,4 val
+                             string ts_s = StripQuotes(parts[0]);
+                             if(!header_seen)
+                               {
+                                header_seen=true;
+                                if(NormalizeToken(ts_s)=="timestamp") continue; // skip header
+                               }
+                             string f_s  = StripQuotes(parts[3]);
+                             string f_norm = NormalizeToken(f_s);
+                             if(f_norm=="timeframe")
+                               {
+                                int tfv = (int)StringToInteger(StripQuotes(parts[4]));
+                                string sy = StripQuotes(parts[1]); string st = StripQuotes(parts[2]);
+                                string key = sy+"|"+st; bool updated=false;
+                                for(int i2=0;i2<ArraySize(tf_keys);++i2){ if(tf_keys[i2]==key){ tf_vals[i2]=tfv; updated=true; break; } }
+                                if(!updated){ int k2=ArraySize(tf_keys); ArrayResize(tf_keys,k2+1); ArrayResize(tf_vals,k2+1); tf_keys[k2]=key; tf_vals[k2]=tfv; }
+                               }
+                             else if(f_norm=="r_multiple")
+                               {
+                                int n = ArraySize(r_list);
+                                ArrayResize(ts_list, n+1);
+                                ArrayResize(sym_list, n+1);
+                                ArrayResize(strat_list, n+1);
+                                ArrayResize(r_list, n+1);
+                                ArrayResize(tf_list, n+1);
+                                ts_list[n]    = StringToTime(ts_s);
+                                sym_list[n]   = StripQuotes(parts[1]);
+                                strat_list[n] = StripQuotes(parts[2]);
+                                r_list[n]     = StringToDouble(StripQuotes(parts[4]));
+                                // lookup timeframe if available
+                                int tfv=-1; string key2 = sym_list[n]+"|"+strat_list[n];
+                                for(int j2=0;j2<ArraySize(tf_keys);++j2){ if(tf_keys[j2]==key2){ tfv=tf_vals[j2]; break; } }
+                                tf_list[n]    = tfv;
+                                added++;
+                               }
+                            }
+                          FileClose(ht);
+                          if(added>0)
+                            {
+                             total = ArraySize(r_list);
+                             PrintFormat("InsightsBuilder: text-fallback collected %d r_multiple rows from features.csv", added);
+                            }
+                         }
+                       
+                       Print("InsightsBuilder: no r_multiple rows found in features.csv; falling back to knowledge_base.csv using profit as surrogate");
+                       // Open knowledge_base.csv with explicit comma delimiter
+                       int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_COMMON, (ushort)',' );
+                       if(hk!=INVALID_HANDLE)
+                         {
+                          // No header expected in knowledge_base.csv
+                          // Columns: ts,symbol,type,entry,sl,tp,close,profit,strategy
+                          string sym_list2[]; string strat_list2[]; double r_list2[]; // use profit as R substitute
+                          while(!FileIsEnding(hk))
+                            {
+                             string ts = FileReadString(hk); if(ts=="" && FileIsEnding(hk)) break;
+                             string sym = FileReadString(hk);
+                             string type= FileReadString(hk);
+                             string entry=FileReadString(hk);
+                             string sl  = FileReadString(hk);
+                             string tp  = FileReadString(hk);
+                             string close=FileReadString(hk);
+                             string profit=FileReadString(hk);
+                             string strat = FileReadString(hk);
+
+                             // Trim fields
+                             ts=Trim(ts); sym=Trim(sym); type=Trim(type); entry=Trim(entry); sl=Trim(sl); tp=Trim(tp); close=Trim(close); profit=Trim(profit); strat=Trim(strat);
+                             if(profit=="") continue;
+                             // consider only rows that look like closures (close price present OR profit non-zero)
+                             double pr = StringToDouble(profit);
+                             double cp = StringToDouble(close);
+                             if(cp>0.0 || pr!=0.0)
+                               {
+                                int n = ArraySize(r_list2);
+                                ArrayResize(r_list2, n+1);
+                                ArrayResize(sym_list2, n+1);
+                                ArrayResize(strat_list2, n+1);
+                                r_list2[n] = pr;
+                                sym_list2[n] = sym;
+                                strat_list2[n] = strat;
+                               }
+                            }
+                          FileClose(hk);
+                          // replace primary arrays for aggregation below
+                          ArraySwap(r_list, r_list2);
+                          ArraySwap(strat_list, strat_list2);
+                          ArraySwap(sym_list, sym_list2);
+                          total = ArraySize(r_list);
+                          PrintFormat("InsightsBuilder: fallback collected %d rows from knowledge_base.csv", total);
+                         }
+                      }
+                    // Unique strategies and symbols
+                    string uniq_strats[]; string uniq_syms[];
+                    for(int i=0;i<total;++i){ PushUnique(uniq_strats, strat_list[i]); PushUnique(uniq_syms, sym_list[i]); }
+
+                    // Overall aggregates
+                    double wins=0.0, sumR=0.0, gp=0.0, gl=0.0;
+                    double r_all[];
+                    ArrayResize(r_all, total);
+                    for(int i=0;i<total;++i)
+                      {
+                       double r = r_list[i];
+                       r_all[i]=r;
+                       sumR += r;
+                       if(r>0){ wins+=1.0; gp+=r; }
+                       else if(r<0){ gl += -r; }
+                      }
+                    double win_rate       = SafeDiv(wins, (double)total);
+                    double avg_R          = SafeDiv(sumR, (double)total);
+                    double pf             = (gl>0.0)? gp/gl : (gp>0.0? 9999.0 : 0.0);
+                    double median_R       = Median(r_all);
+                    double maxdd_R        = MaxDrawdownR(r_all);
+
+                    // Prepare output
+                    FolderCreate("DualEA", FILE_COMMON);
+                    int out = FileOpen(m_out_path, FILE_WRITE|FILE_COMMON);
+                    if(out==INVALID_HANDLE)
+                      {
+                       PrintFormat("InsightsBuilder: cannot open output '%s'. Err=%d", m_out_path, GetLastError());
+                       return false;
+                      }
+                    string now = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+                    FileWriteString(out, "{\n");
+                    FileWriteString(out, "  \"schema_version\": \"1.0\",\n");
+                    FileWriteString(out, "  \"generated_at\": \"" + now + "\",\n");
+                    FileWriteString(out, "  \"totals\": {\n");
+                    FileWriteString(out, "    \"trade_count\": " + IntegerToString(total) + ",\n");
+                    FileWriteString(out, "    \"win_rate\": " + DoubleToString(win_rate, 6) + ",\n");
+                    FileWriteString(out, "    \"avg_R\": " + DoubleToString(avg_R, 6) + ",\n");
+                    FileWriteString(out, "    \"median_R\": " + DoubleToString(median_R, 6) + ",\n");
+                    FileWriteString(out, "    \"profit_factor\": " + DoubleToString(pf, 6) + ",\n");
+                    FileWriteString(out, "    \"expectancy\": " + DoubleToString(avg_R, 6) + ",\n");
+                    FileWriteString(out, "    \"max_drawdown_R\": " + DoubleToString(maxdd_R, 6) + "\n");
+                    
+                    FileWriteString(out, "  },\n");
+
+                    // by_strategy breakdown
+                    FileWriteString(out, "  \"by_strategy\": [\n");
+                    for(int s=0; s<ArraySize(uniq_strats); ++s)
+                      {
+                       string sname = uniq_strats[s];
+                       // collect r for this strategy in file order
+                       double rs[]; int cnt=0; double s_sum=0.0, s_wins=0.0, s_gp=0.0, s_gl=0.0;
+                       for(int i=0;i<total;++i)
+                         if(strat_list[i]==sname)
+                           {
+                            int k = ArraySize(rs); ArrayResize(rs, k+1); rs[k]=r_list[i];
+                            double rr = r_list[i]; s_sum+=rr; if(rr>0){s_wins+=1.0; s_gp+=rr;} else if(rr<0){s_gl+=-rr;}
+                            cnt++;
+                           }
+                       double s_wr = SafeDiv(s_wins, (double)cnt);
+                       double s_avg= SafeDiv(s_sum, (double)cnt);
+                       double s_pf = (s_gl>0.0)? s_gp/s_gl : (s_gp>0.0? 9999.0 : 0.0);
+                       double s_med= Median(rs);
+                       double s_dd = MaxDrawdownR(rs);
+                       string comma = (s<ArraySize(uniq_strats)-1)?",":"";
+                       FileWriteString(out, StringFormat("    {\"strategy\": \"%s\", \"trade_count\": %d, \"win_rate\": %.6f, \"avg_R\": %.6f, \"median_R\": %.6f, \"profit_factor\": %.6f, \"expectancy\": %.6f, \"max_drawdown_R\": %.6f}%s\n",
+                                                      sname, cnt, s_wr, s_avg, s_med, s_pf, s_avg, s_dd, comma));
+                      }
+                    FileWriteString(out, "  ],\n");
+
+                    // by_timeframe breakdown (if available)
+                    // collect unique timeframes present in tf_list (>=0)
+                    int uniq_tf[]; for(int i=0;i<total;++i){ if(tf_list[i]>=0){ bool seen=false; for(int j=0;j<ArraySize(uniq_tf);++j){ if(uniq_tf[j]==tf_list[i]){seen=true;break;} } if(!seen){ int k=ArraySize(uniq_tf); ArrayResize(uniq_tf,k+1); uniq_tf[k]=tf_list[i]; } } }
+                    FileWriteString(out, "  \"by_timeframe\": [\n");
+                    for(int t=0;t<ArraySize(uniq_tf);++t)
+                      {
+                       int tfv = uniq_tf[t];
+                       double rs[]; int cnt=0; double s_sum=0.0, s_wins=0.0, s_gp=0.0, s_gl=0.0;
+                       for(int i=0;i<total;++i)
+                         if(tf_list[i]==tfv)
+                           { int k=ArraySize(rs); ArrayResize(rs,k+1); rs[k]=r_list[i]; double rr=r_list[i]; s_sum+=rr; if(rr>0){s_wins+=1.0; s_gp+=rr;} else if(rr<0){s_gl+=-rr;} cnt++; }
+                       double wr = (cnt>0? s_wins/cnt : 0.0);
+                       double avg = (cnt>0? s_sum/cnt : 0.0);
+                       double pf = (s_gl>0.0? s_gp/s_gl : (s_gp>0.0? 9999.0 : 0.0));
+                       double med= Median(rs);
+                       double dd = MaxDrawdownR(rs);
+                       string comma = (t<ArraySize(uniq_tf)-1)?",":"";
+                       FileWriteString(out, StringFormat("    {\"timeframe\": %d, \"trade_count\": %d, \"win_rate\": %.6f, \"avg_R\": %.6f, \"median_R\": %.6f, \"profit_factor\": %.6f, \"expectancy\": %.6f, \"max_drawdown_R\": %.6f}%s\n", tfv, cnt, wr, avg, med, pf, avg, dd, comma));
+                      }
+                    FileWriteString(out, "  ],\n");
+
+                    // by_symbol_strategy_timeframe breakdown
+                    FileWriteString(out, "  \"by_symbol_strategy_timeframe\": [\n");
+                    for(int s=0; s<ArraySize(uniq_strats); ++s)
+                      {
+                       string sname = uniq_strats[s];
+                       for(int y=0; y<ArraySize(uniq_syms); ++y)
+                         {
+                          string yname = uniq_syms[y];
+                          // collect unique tf for this (s,y)
+                          int tf_set_sy[];
+                          for(int i=0;i<total;++i) if(strat_list[i]==sname && sym_list[i]==yname && tf_list[i]>=0)
+                            { bool seen=false; for(int j=0;j<ArraySize(tf_set_sy);++j){ if(tf_set_sy[j]==tf_list[i]){seen=true;break;} } if(!seen){ int k=ArraySize(tf_set_sy); ArrayResize(tf_set_sy,k+1); tf_set_sy[k]=tf_list[i]; } }
+                          for(int t=0;t<ArraySize(tf_set_sy);++t)
+                            {
+                             int tfv = tf_set_sy[t];
+                             double rs[]; int cnt=0; double s_sum=0.0, s_wins=0.0, s_gp=0.0, s_gl=0.0;
+                             for(int i=0;i<total;++i)
+                               if(strat_list[i]==sname && sym_list[i]==yname && tf_list[i]==tfv)
+                                 { int k=ArraySize(rs); ArrayResize(rs,k+1); rs[k]=r_list[i]; double rr=r_list[i]; s_sum+=rr; if(rr>0){s_wins+=1.0; s_gp+=rr;} else if(rr<0){s_gl+=-rr;} cnt++; }
+                             double wr = (cnt>0? s_wins/cnt : 0.0);
+                             double avg = (cnt>0? s_sum/cnt : 0.0);
+                             double pf = (s_gl>0.0? s_gp/s_gl : (s_gp>0.0? 9999.0 : 0.0));
+                             double med= Median(rs);
+                             double dd = MaxDrawdownR(rs);
+                             // determine trailing comma: last item overall
+                             bool lastBlock = (s==ArraySize(uniq_strats)-1) && (y==ArraySize(uniq_syms)-1) && (t==ArraySize(tf_set_sy)-1);
+                             string comma = (lastBlock?"":",");
+                             FileWriteString(out, StringFormat("    {\"strategy\": \"%s\", \"symbol\": \"%s\", \"timeframe\": %d, \"trade_count\": %d, \"win_rate\": %.6f, \"avg_R\": %.6f, \"median_R\": %.6f, \"profit_factor\": %.6f, \"expectancy\": %.6f, \"max_drawdown_R\": %.6f}%s\n",
+                                                        sname, yname, tfv, cnt, wr, avg, med, pf, avg, dd, comma));
+                            }
+                         }
+                      }
+                    FileWriteString(out, "  ],\n");
+
+                    // by_symbol breakdown
+                    FileWriteString(out, "  \"by_symbol\": [\n");
+                    for(int y=0; y<ArraySize(uniq_syms); ++y)
+                      {
+                       string yname = uniq_syms[y];
+                       double rs2[]; int cnt2=0; double s_sum2=0.0, s_wins2=0.0, s_gp2=0.0, s_gl2=0.0;
+                       for(int i=0;i<total;++i)
+                         if(sym_list[i]==yname)
+                           {
+                            int k = ArraySize(rs2); ArrayResize(rs2, k+1); rs2[k]=r_list[i];
+                            double rr = r_list[i]; s_sum2+=rr; if(rr>0){s_wins2+=1.0; s_gp2+=rr;} else if(rr<0){s_gl2+=-rr;}
+                            cnt2++;
+                           }
+                       double y_wr = SafeDiv(s_wins2, (double)cnt2);
+                       double y_avg= SafeDiv(s_sum2, (double)cnt2);
+                       double y_pf = (s_gl2>0.0)? s_gp2/s_gl2 : (s_gp2>0.0? 9999.0 : 0.0);
+                       double y_med= Median(rs2);
+                       double y_dd = MaxDrawdownR(rs2);
+                       string comma2 = (y<ArraySize(uniq_syms)-1)?",":"";
+                       FileWriteString(out, StringFormat("    {\"symbol\": \"%s\", \"trade_count\": %d, \"win_rate\": %.6f, \"avg_R\": %.6f, \"median_R\": %.6f, \"profit_factor\": %.6f, \"expectancy\": %.6f, \"max_drawdown_R\": %.6f}%s\n",
+                                                      yname, cnt2, y_wr, y_avg, y_med, y_pf, y_avg, y_dd, comma2));
+                      }
+                    FileWriteString(out, "  ]\n");
+
+                    FileWriteString(out, "}\n");
+                    FileClose(out);
+                    string full = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + m_out_path;
+                    PrintFormat("InsightsBuilder: wrote %s", full);
+                    return true;
+                    }
   };
 
 //+------------------------------------------------------------------+

@@ -78,6 +78,20 @@ MQL5/
   - Trailing defaults (used if a strategy doesn’t set them): `TrailEnabled`, `TrailType=0(fixed)`, `TrailActivationPoints`, `TrailDistancePoints`, `TrailStepPoints`
   - Logging: `KBDebugInit` (writes INIT line), `DebugTrailing` (reserved)
 
+### Exploration Mode & Insights Gating
+- Purpose: allow limited trades to bootstrap insights for unseen slices (strategy|symbol|timeframe).
+- No‑slice‑only bypass: exploration bypass is permitted only when there is truly no existing slice. If a slice exists but fails thresholds, it is blocked (no bypass).
+- Caps and persistence:
+  - Per‑day cap: `ExploreMaxPerSlicePerDay` (default 2)
+  - Per‑week cap: `ExploreMaxPerSlice` (default 3), week bucket = Monday yyyymmdd
+  - Counters persist in Common Files:
+    - `DualEA/explore_counts_day.csv` (key,day_yyyymmdd,count)
+    - `DualEA/explore_counts.csv` (key,week_monday_yyyymmdd,count)
+- Logs (Journal):
+  - Allow: `GATE: explore allow <strat> on <symbol>/<tf> ... (day=d/D, week=w/W)`
+  - Block (cap): `GATE: blocked ... reason=explore_cap_day|explore_cap_week (day=d/D, week=w/W)`
+- Resetting caps: delete the above CSV files from `Common\Files\DualEA` to reset counts.
+
 ## Where Files Are Written
 We target the MT5 Common Files area so Strategy Tester, Demo/Paper, and Live share the same outputs.
 - Typical path: `C:\Users\<you>\AppData\Roaming\MetaQuotes\Terminal\Common\Files\DualEA\`
@@ -86,6 +100,9 @@ We target the MT5 Common Files area so Strategy Tester, Demo/Paper, and Live sha
 Files produced:
 - `knowledge_base.csv` (header created at init)
 - `knowledge_base_events.csv`
+ - `explore_counts.csv` (weekly exploration usage)
+ - `explore_counts_day.csv` (daily exploration usage)
+ - `insights.json` (aggregated performance by strategy/symbol/timeframe)
 
 ## Knowledge Base Schemas
 - `knowledge_base.csv`
@@ -104,6 +121,25 @@ Files produced:
 2. On the Inputs tab, click Reset to load the latest defaults.
 3. Adjust `LotSize`, `SL/TP`, and trailing inputs as needed.
 4. Run a backtest; outputs will be in `Common\Files\DualEA\` and visible in the Journal.
+
+## Trainer Workflow (Windows)
+- Requirements: Python 3, internet access (for pip + Yahoo enrichment).
+- Steps:
+  1) Open a terminal in `MQL5/Experts/DualEA/ml/`.
+  2) Run: `run_train_and_export.bat`
+- What it does:
+  - Creates `.venv/`, installs `ml/requirements.txt`.
+  - Runs `train.py` to produce `ml/artifacts/tf_model.keras`, `scaler.pkl`, `features.json`.
+  - Runs `policy_export.py --min_conf 0.45` to write `Common\Files\DualEA\policy.json` with per-slice `p_win` and scaling fields: `sl_scale`, `tp_scale`, `trail_atr_mult`.
+  - Touches `Common\Files\DualEA\policy.reload`.
+- EA behavior:
+  - `PaperEA` calls `CheckPolicyReload()` in `OnTimer()`; when `policy.reload` exists, it reloads `policy.json` and logs `Policy gating: min_conf=..., slices=N`.
+  - On trade execution, if policy is loaded, the EA applies per-slice scaling before sending the order.
+
+### Rebuilding Insights (without rerunning trades)
+- Use the provided script to recompute `insights.json` from the current `features.csv`:
+  1) In MT5 Navigator → Scripts → run `InsightsRebuild`.
+  2) Check `Common\Files\DualEA\insights.json` and Journal for status.
 
 ## Troubleshooting
 - “No CSVs in MQL5/Files”: Expected. Tester and Live now write to `Common\Files\DualEA` using `FILE_COMMON`.
@@ -153,3 +189,7 @@ This roadmap aligns with the implementation plan.
 
 ## License
 Copyright 2025, Windsurf Engineering.
+you truly need low-latency sync later, we can explore:
+
+Named pipes/local TCP with a lightweight Python service, or
+A minimal REST loopback server. But these add failure modes and deployment friction; file-based is simpler and reliable.
