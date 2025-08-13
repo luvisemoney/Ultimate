@@ -14,11 +14,11 @@ This repo currently focuses on the Paper EA with a production‑ready architectu
 flowchart LR
   subgraph Paper
     PEA[PaperEA]
-    STR[Strategies (IStrategy)]
-    TM[TradeManager (SL/TP/Trailing)]
+    STR[Strategies IStrategy]
+    TM[TradeManager SL/TP/Trailing]
   end
 
-  subgraph KB[Knowledge Base (Common\Files\DualEA)]
+  subgraph KB[Knowledge Base (Common\\Files\\DualEA)]
     FEAT[features.csv]
     TRD[knowledge_base.csv]
     EVT[knowledge_base_events.csv]
@@ -26,7 +26,7 @@ flowchart LR
     POL[policy.json]
   end
 
-  subgraph ML[Trainer (Python LSTM/GRU)]
+  subgraph ML[Trainer Python LSTM/GRU]
     TRN[train.py]
   end
 
