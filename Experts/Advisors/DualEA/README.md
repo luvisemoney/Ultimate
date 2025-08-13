@@ -12,36 +12,65 @@ This repo currently focuses on the Paper EA with a production‑ready architectu
 
 ```mermaid
 flowchart LR
+  %% Paper side orchestration
   subgraph Paper
     PEA[PaperEA]
-    STR[Strategies IStrategy]
-    TM[TradeManager SL/TP/Trailing]
+    REG[Strategy Registry default names]
+    STR[Strategies via IStrategy]
+    SEL[Selector gating]
+    TM[TradeManager SL TP Trailing]
+    TEL[Telemetry JSONL]
+    IB[InsightsBuilder]
   end
 
-  subgraph KB[Knowledge Base (Common\\Files\\DualEA)]
+  %% Knowledge Base in Common Files
+  subgraph KB[Knowledge Base Common\\Files\\DualEA]
     FEAT[features.csv]
     TRD[knowledge_base.csv]
     EVT[knowledge_base_events.csv]
+    TLM[telemetry\\paper_*.jsonl]
     INS[insights.json]
     POL[policy.json]
+    RLD[insights.reload]
   end
 
-  subgraph ML[Trainer Python LSTM/GRU]
+  %% ML trainer
+  subgraph ML[Trainer Python LSTM or GRU]
     TRN[train.py]
   end
 
-  PEA --> TM
-  PEA -->|logs| TRD
-  PEA -->|events| EVT
-  PEA -->|features| FEAT
-  FEAT --> TRN
-  TRN -->|writes| POL
-  POL --> PEA
-
+  %% Live EA
   subgraph Live
     LEA[LiveEA]
   end
 
+  %% Data flows from PaperEA
+  PEA --> REG
+  PEA --> STR
+  PEA --> TM
+  PEA --> TEL
+  TEL --> TLM
+  PEA -->|logs| TRD
+  PEA -->|events| EVT
+  STR -->|export features| FEAT
+  PEA -->|features| FEAT
+
+  %% Insights build and gating
+  RLD -->|OnTimer trigger| IB
+  FEAT -->|read| IB
+  TRD -->|read| IB
+  IB -->|write| INS
+  INS -->|load| SEL
+  SEL -->|gate decisions| PEA
+
+  %% ML policy training
+  FEAT --> TRN
+  TRD --> TRN
+  TRN -->|write| POL
+
+  %% Consumption in Paper and Live
+  POL --> PEA
+  INS --> LEA
   POL --> LEA
   LEA -->|results| TRD
   LEA -->|events| EVT
