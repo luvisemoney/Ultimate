@@ -144,6 +144,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 #include "..\Include\TradeManager.mqh"
 // --- Telemetry
 #include "..\Include\Telemetry.mqh"
+// --- Shared Insights loader (DRY)
+#include "..\Include\InsightsLoader.mqh"
 
 // --- Standard Libraries
 #include <Arrays/ArrayObj.mqh> // Include for CArrayObj
@@ -960,84 +962,18 @@ bool HasSlice(const string strategy, const string symbol, const int timeframe)
 
 bool Insights_Load()
   {
-   string path = "DualEA\\insights.json";
-   int h = FileOpen(path, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
-   if(h==INVALID_HANDLE)
-     {
-      PrintFormat("Insights gating: cannot open %s (Common). Err=%d", path, GetLastError());
+   int loaded = Insights_Load_Default(
+      g_gate_strat,
+      g_gate_sym,
+      g_gate_tf,
+      g_gate_cnt,
+      g_gate_wr,
+      g_gate_avgR,
+      g_gate_pf,
+      g_gate_dd
+   );
+   if(loaded<0)
       return false;
-     }
-   // clear arrays
-   ArrayResize(g_gate_strat,0); ArrayResize(g_gate_sym,0); ArrayResize(g_gate_tf,0);
-   ArrayResize(g_gate_cnt,0); ArrayResize(g_gate_wr,0); ArrayResize(g_gate_avgR,0);
-   ArrayResize(g_gate_pf,0); ArrayResize(g_gate_dd,0);
-
-   while(!FileIsEnding(h))
-     {
-      string line = FileReadString(h);
-      if(line=="" && FileIsEnding(h)) break;
-      // Only parse lines from by_symbol_strategy_timeframe blocks
-      if(StringFind(line, "\"strategy\"", 0) < 0) continue;
-      // Extract fields with simple token searches
-      string sname="", yname=""; int tfv=-1, cnt=0; double wr=0, avgR=0, pf=0, dd=0;
-      // helper lambda-like inline parsing
-      int p;
-      p = StringFind(line, "\"strategy\":", 0);
-      if(p>=0)
-        {
-         int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p));
-         int c1=StringFind(seg, "\"", 0); int c2=StringFind(seg, "\"", c1+1); int c3=StringFind(seg, "\"", c2+1); int c4=StringFind(seg, "\"", c3+1);
-         if(c3>0 && c4>c3) sname = StringSubstr(seg, c3+1, c4-c3-1);
-        }
-      p = StringFind(line, "\"symbol\":", 0);
-      if(p>=0)
-        {
-         int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p));
-         int c3=StringFind(seg, "\"", 0); c3 = StringFind(seg, "\"", c3+1); int c4=StringFind(seg, "\"", c3+1); int c5=StringFind(seg, "\"", c4+1);
-         if(c4>0 && c5>c4) yname = StringSubstr(seg, c4+1, c5-c4-1);
-        }
-      p = StringFind(line, "\"timeframe\":", 0);
-      if(p>=0)
-        {
-         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); tfv = (int)StringToInteger(num); }
-        }
-      p = StringFind(line, "\"trade_count\":", 0);
-      if(p>=0)
-        {
-         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); cnt = (int)StringToInteger(num); }
-        }
-      p = StringFind(line, "\"win_rate\":", 0);
-      if(p>=0)
-        {
-         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); wr = StringToDouble(num); }
-        }
-      p = StringFind(line, "\"avg_R\":", 0);
-      if(p>=0)
-        {
-         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); avgR = StringToDouble(num); }
-        }
-      p = StringFind(line, "\"profit_factor\":", 0);
-      if(p>=0)
-        {
-         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); pf = StringToDouble(num); }
-        }
-      p = StringFind(line, "\"max_drawdown_R\":", 0);
-      if(p>=0)
-        {
-         string seg = StringSubstr(line, p);
-         int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); dd = StringToDouble(num); }
-        }
-
-      if(sname!="" && yname!="" && tfv>=0)
-        {
-         int n = ArraySize(g_gate_strat);
-         ArrayResize(g_gate_strat,n+1); ArrayResize(g_gate_sym,n+1); ArrayResize(g_gate_tf,n+1); ArrayResize(g_gate_cnt,n+1);
-         ArrayResize(g_gate_wr,n+1); ArrayResize(g_gate_avgR,n+1); ArrayResize(g_gate_pf,n+1); ArrayResize(g_gate_dd,n+1);
-         g_gate_strat[n]=sname; g_gate_sym[n]=yname; g_gate_tf[n]=tfv;
-         g_gate_cnt[n]=cnt; g_gate_wr[n]=wr; g_gate_avgR[n]=avgR; g_gate_pf[n]=pf; g_gate_dd[n]=dd;
-        }
-     }
-   FileClose(h);
    if(ShouldLog(LOG_INFO)) PrintFormat("Insights gating: loaded %d slices", ArraySize(g_gate_strat));
    return ArraySize(g_gate_strat)>0;
   }
