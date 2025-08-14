@@ -824,7 +824,14 @@ bool CKnowledgeBase::OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV)
   {
    // Always target the Common files area so results are shared across Tester, Paper, and Live
    // The path m_file_path should include the subfolder, e.g. "DualEA\\knowledge_base.csv"
-   m_file_handle = FileOpen(m_file_path, flags | FILE_COMMON);
+   m_file_handle = INVALID_HANDLE;
+   // Retry open with read/write sharing to mitigate transient locks (e.g., validators or other EAs)
+   for(int attempt=0; attempt<10 && m_file_handle==INVALID_HANDLE; ++attempt)
+     {
+      m_file_handle = FileOpen(m_file_path, (flags | FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_COMMON));
+      if(m_file_handle==INVALID_HANDLE)
+         Sleep(25);
+     }
    if(m_file_handle == INVALID_HANDLE)
      {
       PrintFormat("Error opening knowledge base file '%s'. Error code: %d", m_file_path, GetLastError());
