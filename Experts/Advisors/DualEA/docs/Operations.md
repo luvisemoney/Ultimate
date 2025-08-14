@@ -29,18 +29,18 @@ flowchart LR
   %% PaperEA orchestration
   subgraph Paper
     PEA[PaperEA]
-    STR[Strategies (IStrategy)]
-    SEL[Selector (insights + recency)]
-    TM[TradeManager (SL/TP/Trailing)]
+    STR[Strategies - IStrategy]
+    SEL[Selector - insights + recency]
+    TM[TradeManager - SL/TP/Trailing]
     TEL[Telemetry]
   end
 
   %% Common Files runtime artifacts
-  subgraph KB["Knowledge Base (Common\\Files\\DualEA)"]
+  subgraph KB["Knowledge Base - Common Files DualEA"]
     FEAT[features.csv]
     TRD[knowledge_base.csv]
     EVT[knowledge_base_events.csv]
-    TLM[telemetry\\*.jsonl]
+    TLM[telemetry logs]
     INS[insights.json]
     POL[policy.json]
     EXPW[explore_counts.csv]
@@ -52,7 +52,7 @@ flowchart LR
 
   %% Insights builder (can be called by EA or script)
   subgraph Builder[Insights Builder]
-    IB[CInsightsBuilder.Build()]
+    IB[CInsightsBuilder.Build]
   end
 
   %% Scripts and CI helpers
@@ -79,8 +79,8 @@ flowchart LR
   PEA -->|logs| TRD
   PEA -->|events| EVT
   PEA -->|telemetry| TLM
-  PEA <--> |caps read/write| EXPW
-  PEA <--> |caps read/write| EXPD
+  PEA <-->|caps read/write| EXPW
+  PEA <-->|caps read/write| EXPD
 
   %% Insights lifecycle
   FEAT --> IB
@@ -89,14 +89,14 @@ flowchart LR
   PEA -. OnInit/OnTimer stale? .-> IB
   IB -->|write| INS
   INS -->|load| SEL
-  SEL -->|gate decisions (bypassed by NoConstraintsMode)| PEA
+  SEL -->|gate decisions - bypassed by NoConstraintsMode| PEA
 
   %% Policy lifecycle
   FEAT --> TRN
   TRD --> TRN
   TRN -->|write| POL
   RLDP -->|reload trigger| PEA
-  POL -->|load & scale| PEA
+  POL -->|load and scale| PEA
 
   %% Scripts / CI
   IRB -->|run builder| IB
