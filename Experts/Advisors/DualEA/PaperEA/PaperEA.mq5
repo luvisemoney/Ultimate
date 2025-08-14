@@ -1210,6 +1210,89 @@ void OnTick()
       if(pcur>g_pos_max_price[idx]) g_pos_max_price[idx]=pcur;
      if(pcur<g_pos_min_price[idx]) g_pos_min_price[idx]=pcur;
     }
+   //--- Detect closed positions and log outcomes (r_multiple + KB close record)
+   for(int i=0; i<ArraySize(g_pos_ids); )
+     {
+      ulong pid = g_pos_ids[i];
+      // If position is no longer open, attempt to log its closure
+      if(!PositionSelectByTicket(pid))
+        {
+         // Search recent history for the closing deal of this position
+         datetime t0 = (g_pos_start_time[i]>0? g_pos_start_time[i] - 3600 : TimeCurrent() - 7*86400);
+         HistorySelect(t0, TimeCurrent());
+         ulong close_deal = 0;
+         for(int d = HistoryDealsTotal()-1; d>=0; --d)
+           {
+            ulong deal_ticket = HistoryDealGetTicket(d);
+            if((ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID)==pid)
+              {
+               int entry_flag = (int)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+               if(entry_flag==DEAL_ENTRY_OUT)
+                 { close_deal = deal_ticket; break; }
+              }
+           }
+         if(close_deal>0)
+           {
+            // Extract closure details
+            string sym_close = HistoryDealGetString(close_deal, DEAL_SYMBOL);
+            double close_price = HistoryDealGetDouble(close_deal, DEAL_PRICE);
+            double profit_money = HistoryDealGetDouble(close_deal, DEAL_PROFIT);
+            datetime ts_close = (datetime)HistoryDealGetInteger(close_deal, DEAL_TIME);
+
+            // Compute R-multiple using initial price risk
+            double risk = g_pos_initial_risk[i];
+            double r = 0.0;
+            if(risk>0.0)
+              {
+               if(g_pos_type[i]==POSITION_TYPE_BUY)
+                  r = (close_price - g_pos_entry_price[i]) / risk;
+               else
+                  r = (g_pos_entry_price[i] - close_price) / risk;
+               if(CheckPointer(g_features)!=POINTER_INVALID)
+                  (*g_features).WriteKV(ts_close, sym_close, g_pos_strats[i], "r_multiple", r);
+              }
+
+            // Write final KB record for this trade
+            if(CheckPointer(g_kb)!=POINTER_INVALID)
+              {
+               TradeRecord rec;
+               rec.timestamp    = ts_close;
+               rec.symbol       = sym_close;
+               rec.type         = (g_pos_type[i]==POSITION_TYPE_BUY? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+               rec.entry_price  = g_pos_entry_price[i];
+               rec.stop_loss    = 0.0;
+               rec.take_profit  = 0.0;
+               rec.close_price  = close_price;
+               rec.profit       = profit_money;
+               rec.strategy_id  = g_pos_strats[i];
+               (*g_kb).WriteRecord(rec);
+              }
+
+            PrintFormat("Closed pos logged: pid=%I64u strat=%s r=%.6f profit=%.2f", pid, g_pos_strats[i], r, profit_money);
+
+            // Remove this tracked position via swap-with-last to keep arrays compact
+            int last = ArraySize(g_pos_ids)-1;
+            g_pos_ids[i] = g_pos_ids[last];
+            g_pos_strats[i] = g_pos_strats[last];
+            g_pos_entry_price[i] = g_pos_entry_price[last];
+            g_pos_initial_risk[i] = g_pos_initial_risk[last];
+            g_pos_start_time[i] = g_pos_start_time[last];
+            g_pos_type[i] = g_pos_type[last];
+            g_pos_max_price[i] = g_pos_max_price[last];
+            g_pos_min_price[i] = g_pos_min_price[last];
+            ArrayResize(g_pos_ids, last);
+            ArrayResize(g_pos_strats, last);
+            ArrayResize(g_pos_entry_price, last);
+            ArrayResize(g_pos_initial_risk, last);
+            ArrayResize(g_pos_start_time, last);
+            ArrayResize(g_pos_type, last);
+            ArrayResize(g_pos_max_price, last);
+            ArrayResize(g_pos_min_price, last);
+            continue; // re-check swapped element index i
+           }
+        }
+      ++i;
+     }
 //--- Iterate through each strategy
    if(CheckPointer(g_strategies)==POINTER_INVALID)
      {
