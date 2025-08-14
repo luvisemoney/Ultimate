@@ -445,4 +445,3 @@ you truly need low-latency sync later, we can explore:
 
 Named pipes/local TCP with a lightweight Python service, or
 A minimal REST loopback server. But these add failure modes and deployment friction; file-based is simpler and reliable.
-PaperEA is missing insights.reload

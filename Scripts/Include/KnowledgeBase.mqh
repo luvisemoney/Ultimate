@@ -31,6 +31,8 @@ private:
    string            m_file_path;      // Path to the knowledge base file
    int               m_file_handle;    // File handle
    string            m_csv_delimiter;  // CSV delimiter
+   string            m_lock_path;      // Path to lock file in Common Files
+   int               m_lock_handle;    // Lock file handle
 
 public:
                      CKnowledgeBase(string file_name="DualEA\\knowledge_base.csv", string delimiter=",");
@@ -40,9 +42,11 @@ public:
    bool              WriteRecord(const TradeRecord &record);
    bool              LogTrade(const string strategy_name, const int retcode, const ulong deal, const ulong order_id);
 
-private:
+ private:
    bool              OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV);
    void              CloseFile();
+   bool              AcquireLock(const int timeout_ms=3000);
+   void              ReleaseLock();
   };
 
 // --- Class to manage features.csv logging (long format: one feature per row)
@@ -235,12 +239,12 @@ class CInsightsBuilder
                        return false;
                       }
 
-                     // Storage of r-multiples with metadata (plus optional timeframe)
-                     datetime ts_list[]; string sym_list[]; string strat_list[]; double r_list[]; int tf_list[];
-                     // Map (symbol|strategy) -> timeframe (last seen)
-                     string tf_keys[]; int tf_vals[];
-                     // Collect all observed (symbol|strategy) pairs to support synthesis when timeframe is absent
-                     string all_keys[];
+                    // Storage of r-multiples with metadata (plus optional timeframe)
+                    datetime ts_list[]; string sym_list[]; string strat_list[]; double r_list[]; int tf_list[];
+                    // Map (symbol|strategy) -> timeframe (last seen)
+                    string tf_keys[]; int tf_vals[];
+                    // Collect all observed (symbol|strategy) pairs to support synthesis when timeframe is absent
+                    string all_keys[];
 
                     // Robust CSV scan: 5 fields per row, skip header if present
                     bool header_checked=false;
@@ -277,20 +281,20 @@ class CInsightsBuilder
 
                        // Count this parsed data row (post header)
                        parsed_rows++;
-                        if(parsed_rows<=5)
-                          {
-                           string feat_norm = NormalizeToken(feat);
-                           #ifdef INSIGHTS_DEBUG
-                           PrintFormat("InsightsBuilder: sample row %d feat='%s' feat_norm='%s' val='%s'", parsed_rows-1, feat, feat_norm, val);
-                           #endif
-                          }
+                       if(parsed_rows<=5)
+                         {
+                          string feat_norm = NormalizeToken(feat);
+                          #ifdef INSIGHTS_DEBUG
+                          PrintFormat("InsightsBuilder: sample row %d feat='%s' feat_norm='%s' val='%s'", parsed_rows-1, feat, feat_norm, val);
+                          #endif
+                         }
 
-                        // Track (symbol|strategy) pairs from any feature rows
-                        if(sym!="" && strat!="")
-                          {
-                           string key_any = sym + "|" + strat;
-                           PushUnique(all_keys, key_any);
-                          }
+                       // Track (symbol|strategy) pairs from any feature rows
+                       if(sym!="" && strat!="")
+                         {
+                          string key_any = sym + "|" + strat;
+                          PushUnique(all_keys, key_any);
+                         }
 
                        string feat_norm_main = NormalizeToken(feat);
                        if(feat_norm_main=="timeframe")
@@ -366,24 +370,24 @@ class CInsightsBuilder
                                 for(int i2=0;i2<ArraySize(tf_keys);++i2){ if(tf_keys[i2]==key){ tf_vals[i2]=tfv; updated=true; break; } }
                                 if(!updated){ int k2=ArraySize(tf_keys); ArrayResize(tf_keys,k2+1); ArrayResize(tf_vals,k2+1); tf_keys[k2]=key; tf_vals[k2]=tfv; }
                                }
-                             else if(f_norm=="r_multiple")
-                               {
-                                int n = ArraySize(r_list);
-                                ArrayResize(ts_list, n+1);
-                                ArrayResize(sym_list, n+1);
-                                ArrayResize(strat_list, n+1);
-                                ArrayResize(r_list, n+1);
-                                ArrayResize(tf_list, n+1);
-                                ts_list[n]    = StringToTime(ts_s);
-                                sym_list[n]   = StripQuotes(parts[1]);
-                                strat_list[n] = StripQuotes(parts[2]);
-                                r_list[n]     = StringToDouble(StripQuotes(parts[4]));
-                                // lookup timeframe if available
-                                int tfv=-1; string key2 = sym_list[n]+"|"+strat_list[n];
-                                for(int j2=0;j2<ArraySize(tf_keys);++j2){ if(tf_keys[j2]==key2){ tfv=tf_vals[j2]; break; } }
-                                tf_list[n]    = tfv;
-                                added++;
-                               }
+                              else if(f_norm=="r_multiple")
+                                {
+                                 int n = ArraySize(r_list);
+                                 ArrayResize(ts_list, n+1);
+                                 ArrayResize(sym_list, n+1);
+                                 ArrayResize(strat_list, n+1);
+                                 ArrayResize(r_list, n+1);
+                                 ArrayResize(tf_list, n+1);
+                                 ts_list[n]    = StringToTime(ts_s);
+                                 sym_list[n]   = StripQuotes(parts[1]);
+                                 strat_list[n] = StripQuotes(parts[2]);
+                                 r_list[n]     = StringToDouble(StripQuotes(parts[4]));
+                                 // lookup timeframe if available
+                                 int tfv=-1; string key2 = sym_list[n]+"|"+strat_list[n];
+                                 for(int j2=0;j2<ArraySize(tf_keys);++j2){ if(tf_keys[j2]==key2){ tfv=tf_vals[j2]; break; } }
+                                 tf_list[n]    = tfv;
+                                 added++;
+                                }
                             }
                           FileClose(ht);
                           if(added>0)
@@ -467,73 +471,73 @@ class CInsightsBuilder
                                 tf_list[n2]    = tf_vals[c];
                                }
                              total = ArraySize(r_list);
-                              if(total>0)
-                                 PrintFormat("InsightsBuilder: synthesized %d dummy rows from timeframe features (no r_multiple/profit found)", total);
-                             }
-                           }
-                         }
-                       // Final synthesis: if still no rows and no timeframe entries, synthesize from symbol/strategy pairs using default chart timeframe
-                       if(total==0 && ArraySize(all_keys)>0)
-                         {
-                          int tf_def = (int)Period();
-                          for(int c=0; c<ArraySize(all_keys); ++c)
-                            {
-                             int sep = StringFind(all_keys[c], "|", 0);
-                             if(sep<0) continue;
-                             int n2 = ArraySize(r_list);
-                             ArrayResize(r_list, n2+1);
-                             ArrayResize(strat_list, n2+1);
-                             ArrayResize(sym_list, n2+1);
-                             ArrayResize(tf_list, n2+1);
-                             sym_list[n2]   = StringSubstr(all_keys[c], 0, sep);
-                             strat_list[n2] = StringSubstr(all_keys[c], sep+1);
-                             r_list[n2]     = 0.0; // scaffold count only
-                             tf_list[n2]    = tf_def;
+                             if(total>0)
+                                PrintFormat("InsightsBuilder: synthesized %d dummy rows from timeframe features (no r_multiple/profit found)", total);
                             }
-                          total = ArraySize(r_list);
-                          if(total>0)
-                             PrintFormat("InsightsBuilder: synthesized %d dummy rows from symbol/strategy pairs (default timeframe=%d)", total, tf_def);
+                          }
                          }
-                     // Ensure general coverage on current chart symbol across multiple timeframes for all default strategies
+                    // Final synthesis: if still no rows and no timeframe entries, synthesize from symbol/strategy pairs using default chart timeframe
+                     if(total==0 && ArraySize(all_keys)>0)
                       {
-                       string def_strats[]; GetDefaultStrategyNames(def_strats);
-                       string csym = Symbol();
-                       int ctf = (int)Period();
-                       // Small TF set including current
-                       int tf_opts[]; ArrayResize(tf_opts, 5);
-                       tf_opts[0]=ctf; tf_opts[1]=PERIOD_M5; tf_opts[2]=PERIOD_M10; tf_opts[3]=PERIOD_M15; tf_opts[4]=PERIOD_M30;
-                       int added_before = ArraySize(r_list);
-                       for(int t=0; t<ArraySize(tf_opts); ++t)
+                       int tf_def = (int)Period();
+                       for(int c=0; c<ArraySize(all_keys); ++c)
                          {
-                          int tfc = tf_opts[t];
-                          for(int ds=0; ds<ArraySize(def_strats); ++ds)
-                            {
-                             bool exists=false;
-                             for(int i=0;i<total;++i)
-                               {
-                                if(sym_list[i]==csym && strat_list[i]==def_strats[ds] && tf_list[i]==tfc)
-                                  { exists=true; break; }
-                               }
-                             if(!exists)
-                               {
-                                int n3 = ArraySize(r_list);
-                                ArrayResize(r_list, n3+1);
-                                ArrayResize(strat_list, n3+1);
-                                ArrayResize(sym_list, n3+1);
-                                ArrayResize(tf_list, n3+1);
-                                sym_list[n3]   = csym;
-                                strat_list[n3] = def_strats[ds];
-                                r_list[n3]     = 0.0;
-                                tf_list[n3]    = tfc;
-                               }
-                            }
+                          int sep = StringFind(all_keys[c], "|", 0);
+                          if(sep<0) continue;
+                          int n2 = ArraySize(r_list);
+                          ArrayResize(r_list, n2+1);
+                          ArrayResize(strat_list, n2+1);
+                          ArrayResize(sym_list, n2+1);
+                          ArrayResize(tf_list, n2+1);
+                          sym_list[n2]   = StringSubstr(all_keys[c], 0, sep);
+                          strat_list[n2] = StringSubstr(all_keys[c], sep+1);
+                          r_list[n2]     = 0.0; // scaffold count only
+                          tf_list[n2]    = tf_def;
                          }
-                       int added_after = ArraySize(r_list);
-                       if(added_after>added_before)
-                          PrintFormat("InsightsBuilder: ensured multi-TF chart coverage by adding %d rows for symbol=%s across %d TFs and %d strategies", added_after-added_before, csym, ArraySize(tf_opts), ArraySize(def_strats));
+                       total = ArraySize(r_list);
+                       if(total>0)
+                          PrintFormat("InsightsBuilder: synthesized %d dummy rows from symbol/strategy pairs (default timeframe=%d)", total, tf_def);
                       }
-                     // Unique strategies and symbols
-                     string uniq_strats[]; string uniq_syms[];
+                    // Ensure general coverage on current chart symbol across multiple timeframes for all default strategies
+                    {
+                     string def_strats[]; GetDefaultStrategyNames(def_strats);
+                     string csym = Symbol();
+                     int ctf = (int)Period();
+                     // Small TF set including current
+                     int tf_opts[]; ArrayResize(tf_opts, 5);
+                     tf_opts[0]=ctf; tf_opts[1]=PERIOD_M5; tf_opts[2]=PERIOD_M10; tf_opts[3]=PERIOD_M15; tf_opts[4]=PERIOD_M30;
+                     int added_before = ArraySize(r_list);
+                     for(int t=0; t<ArraySize(tf_opts); ++t)
+                       {
+                        int tfc = tf_opts[t];
+                        for(int ds=0; ds<ArraySize(def_strats); ++ds)
+                          {
+                           bool exists=false;
+                           for(int i=0;i<total;++i)
+                             {
+                              if(sym_list[i]==csym && strat_list[i]==def_strats[ds] && tf_list[i]==tfc)
+                                { exists=true; break; }
+                             }
+                           if(!exists)
+                             {
+                              int n3 = ArraySize(r_list);
+                              ArrayResize(r_list, n3+1);
+                              ArrayResize(strat_list, n3+1);
+                              ArrayResize(sym_list, n3+1);
+                              ArrayResize(tf_list, n3+1);
+                              sym_list[n3]   = csym;
+                              strat_list[n3] = def_strats[ds];
+                              r_list[n3]     = 0.0;
+                              tf_list[n3]    = tfc;
+                             }
+                          }
+                       }
+                     int added_after = ArraySize(r_list);
+                     if(added_after>added_before)
+                        PrintFormat("InsightsBuilder: ensured multi-TF chart coverage by adding %d rows for symbol=%s across %d TFs and %d strategies", added_after-added_before, csym, ArraySize(tf_opts), ArraySize(def_strats));
+                    }
+                    // Unique strategies and symbols
+                    string uniq_strats[]; string uniq_syms[];
                     for(int i=0;i<total;++i){ PushUnique(uniq_strats, strat_list[i]); PushUnique(uniq_syms, sym_list[i]); }
 
                     // Overall aggregates
@@ -696,6 +700,14 @@ CKnowledgeBase::CKnowledgeBase(string file_name="DualEA\\knowledge_base.csv", st
   {
    m_csv_delimiter = delimiter;
    m_file_path = file_name; // Use subfolder under Common Files: DualEA\
+   m_lock_handle = INVALID_HANDLE;
+   // Derive a lock file path next to the KB file (e.g., DualEA\\knowledge_base.lock)
+   string lp = m_file_path;
+   int dot_lp = StringFind(lp, ".", 0);
+   if(dot_lp > 0)
+      m_lock_path = StringSubstr(lp, 0, dot_lp) + ".lock";
+   else
+      m_lock_path = lp + ".lock";
 
    // Ensure target subfolder exists in Common files
    // Common files base: TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files"
@@ -746,8 +758,16 @@ CKnowledgeBase::~CKnowledgeBase()
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
   {
-   if(!OpenFile(FILE_WRITE|FILE_CSV|FILE_SHARE_WRITE))
+   // Acquire cross-terminal lock to serialize writes
+   if(!AcquireLock(3000))
       return(false);
+
+   // Use READ|WRITE to avoid truncation; FILE_WRITE alone can clear the file
+   if(!OpenFile(FILE_READ|FILE_WRITE|FILE_CSV))
+     {
+      ReleaseLock();
+      return(false);
+     }
 
    FileSeek(m_file_handle, 0, SEEK_END);
 
@@ -764,6 +784,7 @@ bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
    FileWriteString(m_file_handle, record_string + "\n");
 
    CloseFile();
+   ReleaseLock();
    return(true);
   }
 
@@ -818,7 +839,14 @@ bool CKnowledgeBase::OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV)
   {
    // Always target the Common files area so results are shared across Tester, Paper, and Live
    // The path m_file_path should include the subfolder, e.g. "DualEA\\knowledge_base.csv"
-   m_file_handle = FileOpen(m_file_path, flags | FILE_COMMON);
+   m_file_handle = INVALID_HANDLE;
+   // Retry with read/write sharing to mitigate transient locks
+   for(int attempt=0; attempt<10 && m_file_handle==INVALID_HANDLE; ++attempt)
+     {
+      m_file_handle = FileOpen(m_file_path, (flags | FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_COMMON));
+      if(m_file_handle==INVALID_HANDLE)
+         Sleep(25);
+     }
    if(m_file_handle == INVALID_HANDLE)
      {
       PrintFormat("Error opening knowledge base file '%s'. Error code: %d", m_file_path, GetLastError());
@@ -834,4 +862,44 @@ void CKnowledgeBase::CloseFile()
   {
    if(m_file_handle != INVALID_HANDLE)
       FileClose(m_file_handle);
+  }
+
+//+------------------------------------------------------------------+
+//| Acquire exclusive lock via a temporary lock file                  |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::AcquireLock(const int timeout_ms)
+  {
+   m_lock_handle = INVALID_HANDLE;
+   int waited = 0;
+   // Do not specify share flags to request exclusive access on the lock file
+   while(waited < timeout_ms && m_lock_handle==INVALID_HANDLE)
+     {
+      m_lock_handle = FileOpen(m_lock_path, FILE_WRITE|FILE_COMMON);
+      if(m_lock_handle==INVALID_HANDLE)
+        {
+         Sleep(25);
+         waited += 25;
+        }
+     }
+   if(m_lock_handle==INVALID_HANDLE)
+     {
+      PrintFormat("KnowledgeBase: lock acquire timeout for %s (err=%d)", m_lock_path, GetLastError());
+      return false;
+     }
+   FileWriteString(m_lock_handle, "lock\n");
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Release the lock                                                  |
+//+------------------------------------------------------------------+
+void CKnowledgeBase::ReleaseLock()
+  {
+   if(m_lock_handle!=INVALID_HANDLE)
+     {
+      FileClose(m_lock_handle);
+      m_lock_handle = INVALID_HANDLE;
+      // Best-effort delete to avoid stale locks
+      FileDelete(m_lock_path, FILE_COMMON);
+     }
   }

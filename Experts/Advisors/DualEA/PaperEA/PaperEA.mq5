@@ -1,4 +1,133 @@
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Trade transactions handler                                       |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+   // Filter to current chart symbol and handle order cancellations
+   if(trans.symbol!=_Symbol) return;
+   int t = (int)trans.type;
+   if(t==TRADE_TRANSACTION_ORDER_DELETE)
+     {
+      // Clean pending order mapping if order is cancelled/expired
+      ulong ord = trans.order;
+      if(ord>0)
+        {
+         for(int i=0;i<ArraySize(g_pending_orders);++i)
+           if(g_pending_orders[i]==ord)
+             {
+              int last=ArraySize(g_pending_orders)-1;
+              g_pending_orders[i]=g_pending_orders[last]; g_pending_orders_strat[i]=g_pending_orders_strat[last];
+              ArrayResize(g_pending_orders,last); ArrayResize(g_pending_orders_strat,last);
+              break;
+             }
+        }
+      return;
+     }
+   // We only care about deal executions beyond this point
+   if(t!=TRADE_TRANSACTION_DEAL_ADD) return;
+
+   ulong deal = trans.deal;
+   if(deal==0) return;
+
+   int entry_flag = (int)HistoryDealGetInteger(deal, DEAL_ENTRY);
+   ulong pid = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+   string sym = HistoryDealGetString(deal, DEAL_SYMBOL);
+   long dmagic = (long)HistoryDealGetInteger(deal, DEAL_MAGIC);
+
+   // Filter to current chart symbol and our magic if available
+   if(sym!=_Symbol) return;
+   if(MagicNumber>0 && dmagic!=MagicNumber) return;
+
+   if(entry_flag==DEAL_ENTRY_IN)
+     {
+      // Track newly opened position if not already tracked
+      if(pid>0)
+        {
+         if(FindTrackedIndexByPid(pid)>=0) return; // already tracked
+         string strat_name = "unknown";
+         // Try to attribute strategy from pending mapping
+         for(int m=0; m<ArraySize(g_pending_deals); ++m)
+           {
+            if(g_pending_deals[m]==deal)
+              {
+               strat_name = g_pending_deals_strat[m];
+               int last = ArraySize(g_pending_deals)-1;
+               g_pending_deals[m] = g_pending_deals[last];
+               g_pending_deals_strat[m] = g_pending_deals_strat[last];
+               ArrayResize(g_pending_deals, last);
+               ArrayResize(g_pending_deals_strat, last);
+               break;
+              }
+           }
+         // Fallback: attribute by originating order mapping if available
+         if(strat_name=="unknown" && trans.order>0)
+           {
+            for(int j=0;j<ArraySize(g_pending_orders);++j)
+              {
+               if(g_pending_orders[j]==trans.order)
+                 {
+                  strat_name = g_pending_orders_strat[j];
+                  int last2=ArraySize(g_pending_orders)-1;
+                  g_pending_orders[j]=g_pending_orders[last2];
+                  g_pending_orders_strat[j]=g_pending_orders_strat[last2];
+                  ArrayResize(g_pending_orders,last2);
+                  ArrayResize(g_pending_orders_strat,last2);
+                  break;
+                 }
+              }
+           }
+         int k = ArraySize(g_pos_ids);
+         ArrayResize(g_pos_ids,k+1);
+         ArrayResize(g_pos_strats,k+1);
+         ArrayResize(g_pos_entry_price,k+1);
+         ArrayResize(g_pos_initial_risk,k+1);
+         ArrayResize(g_pos_start_time,k+1);
+         ArrayResize(g_pos_type,k+1);
+         ArrayResize(g_pos_max_price,k+1);
+         ArrayResize(g_pos_min_price,k+1);
+         g_pos_ids[k]=pid; g_pos_strats[k]=strat_name;
+         double entry_p = HistoryDealGetDouble(deal, DEAL_PRICE);
+         if(entry_p<=0 && PositionSelectByTicket(pid)) entry_p = PositionGetDouble(POSITION_PRICE_OPEN);
+         g_pos_entry_price[k]=entry_p;
+         g_pos_max_price[k]=entry_p; g_pos_min_price[k]=entry_p;
+         int ptype = POSITION_TYPE_BUY;
+         if(PositionSelectByTicket(pid)) ptype = (int)PositionGetInteger(POSITION_TYPE);
+         g_pos_type[k]=ptype;
+         double init_risk = 0.0;
+         if(PositionSelectByTicket(pid))
+           {
+            double slc = PositionGetDouble(POSITION_SL);
+            double eop = PositionGetDouble(POSITION_PRICE_OPEN);
+            if(slc>0 && eop>0) init_risk = MathAbs((ptype==POSITION_TYPE_BUY? eop - slc : slc - eop));
+           }
+         g_pos_initial_risk[k]=init_risk;
+         // Use deal time for accurate hold time
+         g_pos_start_time[k]=(datetime)HistoryDealGetInteger(deal, DEAL_TIME);
+         PrintFormat("Tracked pos via OnTradeTransaction: ticket=%I64u strat=%s entry=%.5f initR=%.5f", pid, g_pos_strats[k], entry_p, init_risk);
+        }
+      return;
+     }
+   else if(entry_flag==DEAL_ENTRY_OUT)
+     {
+      if(pid==0) return;
+      int idx = FindTrackedIndexByPid(pid);
+      if(idx<0)
+        {
+         // Not tracked; nothing to do
+         return;
+        }
+      // If still open, treat as partial close; wait for final close
+      if(PositionSelectByTicket(pid)) return;
+      // Fully closed -> log and remove
+       HandlePositionClosed(idx, deal);
+       return;
+      }
+  }
+
 //|                                                      PaperEA.mq5 |
 //|                                  Copyright 2025, Windsurf, Inc. |
 //|                                              https://windsurf.ai |
@@ -57,6 +186,10 @@ input double GateMinWinRate       = 0.00;     // loosened for bootstrap
 input double GateMinExpectancyR   = -10.0;    // loosened for bootstrap
 input double GateMaxDrawdownR     = 1000000.0;// loosened for bootstrap
 input double GateMinProfitFactor  = 0.00;     // loosened for bootstrap
+// --- Insights auto-build & staleness
+input bool   InsightsAutoBuild    = true;     // auto-build insights.json when missing or stale
+input int    InsightsStaleHours   = 6;        // rebuild if older than N hours (0=disable age check)
+input bool   InsightsCheckOnTimer = true;     // also check on timer events
 // --- Exploration Mode (bootstrap unseen slices)
 input bool   ExploreOnNoSlice     = true;    // allow limited trades when slice has no data
 input int    ExploreMaxPerSlice   = 100;     // loosened for bootstrap
@@ -135,7 +268,7 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
       }
    }
  
- // Load policy.json from Common Files and cache min_confidence and slice_probs
+  // Load policy.json from Common Files and cache min_confidence and slice_probs
  bool Policy_Load()
    {
     g_policy_loaded = false;
@@ -361,6 +494,57 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
                    order.strategy_name, symbol, timeframe, ppol, sls, tps, trs);
     }
 
+// Determine if insights.json is missing or stale vs features/knowledge_base or by age
+bool Insights_IsStale(const int stale_hours)
+  {
+   string ip = "DualEA\\insights.json";
+   long ex_i = FileGetInteger(ip, FILE_EXISTS, true);
+   if(ex_i==0) return true; // missing insights
+   datetime ti = (datetime)FileGetInteger(ip, FILE_MODIFY_DATE, true);
+   if(stale_hours>0)
+     {
+      if((TimeCurrent() - ti) > (stale_hours*60*60))
+         return true;
+     }
+   // Rebuild if source CSVs are newer
+   string fp = "DualEA\\features.csv";
+   if(FileGetInteger(fp, FILE_EXISTS, true)>0)
+     {
+      datetime tf = (datetime)FileGetInteger(fp, FILE_MODIFY_DATE, true);
+      if(tf>ti) return true;
+     }
+   string kp = "DualEA\\knowledge_base.csv";
+   if(FileGetInteger(kp, FILE_EXISTS, true)>0)
+     {
+      datetime tk = (datetime)FileGetInteger(kp, FILE_MODIFY_DATE, true);
+      if(tk>ti) return true;
+     }
+   return false;
+  }
+
+// Rebuild insights.json and reload gating/selector caches
+bool Insights_RebuildAndReload(const string reason)
+  {
+   if(ShouldLog(LOG_INFO)) PrintFormat("Insights auto-build triggered (%s)", reason);
+   CInsightsBuilder b;
+   bool ok = b.Build();
+   if(!ok)
+     {
+      PrintFormat("Insights auto-build FAILED (%s). Err=%d", reason, GetLastError());
+      return false;
+     }
+   // Reload insights gating cache
+   bool gate_loaded = Insights_Load();
+   if(ShouldLog(LOG_INFO)) PrintFormat("Insights gating cache reload after build: %s", (gate_loaded?"ok":"fail"));
+   // Reload selector insights if available
+   if(CheckPointer(g_selector)!=POINTER_INVALID)
+     {
+      bool sel_ok = (*g_selector).Load();
+      if(ShouldLog(LOG_INFO)) PrintFormat("Selector insights reload after build: %s", (sel_ok?"ok":"fail"));
+     }
+   return true;
+  }
+
 // --- String trim helper (returns a trimmed copy)
 string TrimCopy(string s)
   {
@@ -493,6 +677,113 @@ datetime                g_pos_start_time[];    // entry time
 int                     g_pos_type[];          // POSITION_TYPE_*
 double                  g_pos_max_price[];     // MFE price
 double                  g_pos_min_price[];     // MAE price
+
+// --- Helpers: tracking lookup and robust closure logging/removal
+int FindTrackedIndexByPid(ulong pid)
+  {
+   for(int t=0; t<ArraySize(g_pos_ids); ++t)
+     if(g_pos_ids[t]==pid) return t;
+   return -1;
+  }
+
+void HandlePositionClosed(int idx, ulong close_deal)
+  {
+   if(idx<0 || idx>=ArraySize(g_pos_ids)) return;
+   ulong   pid         = g_pos_ids[idx];
+   string  strat       = g_pos_strats[idx];
+   double  entry_price = g_pos_entry_price[idx];
+   double  init_risk   = g_pos_initial_risk[idx]; // price units
+   datetime t_start    = g_pos_start_time[idx];
+   int     ptype       = g_pos_type[idx];
+   double  max_price   = g_pos_max_price[idx];
+   double  min_price   = g_pos_min_price[idx];
+
+   string  sym_close   = HistoryDealGetString(close_deal, DEAL_SYMBOL);
+   double  close_price = HistoryDealGetDouble(close_deal, DEAL_PRICE);
+   double  profit_money= HistoryDealGetDouble(close_deal, DEAL_PROFIT);
+   datetime ts_close   = (datetime)HistoryDealGetInteger(close_deal, DEAL_TIME);
+
+   // Compute R-multiple
+   double r = 0.0;
+   if(init_risk>0.0 && entry_price>0.0 && close_price>0.0)
+     {
+      if(ptype==POSITION_TYPE_BUY) r = (close_price - entry_price) / init_risk;
+      else                         r = (entry_price - close_price) / init_risk;
+     }
+
+   // Compute MFE/MAE in points and R
+   double fav_pts=0.0, adv_pts=0.0;
+   if(ptype==POSITION_TYPE_BUY)
+     { fav_pts = (max_price - entry_price) / _Point; adv_pts = (entry_price - min_price) / _Point; }
+   else
+     { fav_pts = (entry_price - min_price) / _Point; adv_pts = (max_price - entry_price) / _Point; }
+   double mfe_r = 0.0, mae_r = 0.0;
+   if(init_risk>0.0)
+     { mfe_r = (fav_pts * _Point) / init_risk; mae_r = (adv_pts * _Point) / init_risk; }
+
+   // Hold time (seconds)
+   double hold_secs = 0.0; if(ts_close>t_start) hold_secs = (double)(ts_close - t_start);
+
+   // Feature logging at close
+   if(CheckPointer(g_features)!=POINTER_INVALID)
+     {
+      if(init_risk>0.0) (*g_features).WriteKV(ts_close, sym_close, strat, "r_multiple", r);
+      (*g_features).WriteKV(ts_close, sym_close, strat, "hold_time_seconds", hold_secs);
+      (*g_features).WriteKV(ts_close, sym_close, strat, "mfe_points", fav_pts);
+      (*g_features).WriteKV(ts_close, sym_close, strat, "mae_points", adv_pts);
+      if(init_risk>0.0)
+        {
+         (*g_features).WriteKV(ts_close, sym_close, strat, "mfe_r", mfe_r);
+         (*g_features).WriteKV(ts_close, sym_close, strat, "mae_r", mae_r);
+        }
+     }
+
+   // Final KB record
+   if(CheckPointer(g_kb)!=POINTER_INVALID)
+     {
+      TradeRecord rec;
+      rec.timestamp    = ts_close;
+      rec.symbol       = sym_close;
+      rec.type         = (ptype==POSITION_TYPE_BUY? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+      rec.entry_price  = entry_price;
+      rec.stop_loss    = 0.0;
+      rec.take_profit  = 0.0;
+      rec.close_price  = close_price;
+      rec.profit       = profit_money;
+      rec.strategy_id  = strat;
+      (*g_kb).WriteRecord(rec);
+     }
+
+   // Telemetry for closure
+   if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+     {
+      string details = StringFormat("pid=%I64u r=%.6f profit=%.2f hold=%.0fs mfe_r=%.6f mae_r=%.6f",
+                                   pid, r, profit_money, hold_secs, mfe_r, mae_r);
+      (*g_telemetry).LogEvent(sym_close, (int)_Period, strat, "position_closed", details);
+     }
+
+   if(ShouldLog(LOG_INFO))
+     PrintFormat("[CLOSE] pid=%I64u strat=%s r=%.6f profit=%.2f hold=%.0fs mfe_pts=%.1f mae_pts=%.1f", pid, strat, r, profit_money, hold_secs, fav_pts, adv_pts);
+
+   // Remove tracked position via swap-with-last to keep arrays compact
+   int last = ArraySize(g_pos_ids)-1;
+   g_pos_ids[idx] = g_pos_ids[last];
+   g_pos_strats[idx] = g_pos_strats[last];
+   g_pos_entry_price[idx] = g_pos_entry_price[last];
+   g_pos_initial_risk[idx] = g_pos_initial_risk[last];
+   g_pos_start_time[idx] = g_pos_start_time[last];
+   g_pos_type[idx] = g_pos_type[last];
+   g_pos_max_price[idx] = g_pos_max_price[last];
+   g_pos_min_price[idx] = g_pos_min_price[last];
+   ArrayResize(g_pos_ids, last);
+   ArrayResize(g_pos_strats, last);
+   ArrayResize(g_pos_entry_price, last);
+   ArrayResize(g_pos_initial_risk, last);
+   ArrayResize(g_pos_start_time, last);
+   ArrayResize(g_pos_type, last);
+   ArrayResize(g_pos_max_price, last);
+   ArrayResize(g_pos_min_price, last);
+  }
 
 // Pending order/deal attribution (to map back strategy names on asynchronous trade events)
 ulong                   g_pending_orders[];
@@ -692,28 +983,56 @@ bool Insights_Load()
       // helper lambda-like inline parsing
       int p;
       p = StringFind(line, "\"strategy\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = StringSubstr(line, p, q-p); int c1=StringFind(seg, "\"", 0); int c2=StringFind(seg, "\"", c1+1); int c3=StringFind(seg, "\"", c2+1); int c4=StringFind(seg, "\"", c3+1); if(c3>0 && c4>c3) sname = StringSubstr(seg, c3+1, c4-c3-1); }
+      if(p>=0)
+        {
+         int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p));
+         int c1=StringFind(seg, "\"", 0); c1 = StringFind(seg, "\"", c1+1); int c2=StringFind(seg, "\"", c1+1); int c3=StringFind(seg, "\"", c2+1); int c4=StringFind(seg, "\"", c3+1);
+         if(c3>0 && c4>c3) sname = StringSubstr(seg, c3+1, c4-c3-1);
+        }
       p = StringFind(line, "\"symbol\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p)); int c3=StringFind(seg, "\"", 0); c3 = StringFind(seg, "\"", c3+1); int c4=StringFind(seg, "\"", c3+1); int c5=StringFind(seg, "\"", c4+1); if(c4>0 && c5>c4) yname = StringSubstr(seg, c4+1, c5-c4-1); }
+      if(p>=0)
+        {
+         int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p));
+         int c3=StringFind(seg, "\"", 0); c3 = StringFind(seg, "\"", c3+1); int c4=StringFind(seg, "\"", c3+1); int c5=StringFind(seg, "\"", c4+1);
+         if(c4>0 && c5>c4) yname = StringSubstr(seg, c4+1, c5-c4-1);
+        }
       p = StringFind(line, "\"timeframe\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p)); int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); tfv = (int)StringToInteger(num); } }
+      if(p>=0)
+        {
+         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); tfv = (int)StringToInteger(num); }
+        }
       p = StringFind(line, "\"trade_count\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p)); int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); cnt = (int)StringToInteger(num); } }
+      if(p>=0)
+        {
+         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); cnt = (int)StringToInteger(num); }
+        }
       p = StringFind(line, "\"win_rate\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p)); int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); wr = StringToDouble(num); } }
+      if(p>=0)
+        {
+         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); wr = StringToDouble(num); }
+        }
       p = StringFind(line, "\"avg_R\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p)); int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); avgR = StringToDouble(num); } }
+      if(p>=0)
+        {
+         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); avgR = StringToDouble(num); }
+        }
       p = StringFind(line, "\"profit_factor\":", 0);
-      if(p>=0){ int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p)); int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); pf = StringToDouble(num); } }
+      if(p>=0)
+        {
+         int c = StringFind(line, ":", p); if(c>=0){ string num = TrimCopy(StringSubstr(line, c+1)); pf = StringToDouble(num); }
+        }
       p = StringFind(line, "\"max_drawdown_R\":", 0);
-      if(p>=0){ string seg = StringSubstr(line, p); int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); dd = StringToDouble(num); } }
+      if(p>=0)
+        {
+         string seg = StringSubstr(line, p);
+         int c = StringFind(seg, ":", 0); if(c>=0){ string num = TrimCopy(StringSubstr(seg, c+1)); dd = StringToDouble(num); }
+        }
 
       if(sname!="" && yname!="" && tfv>=0)
         {
          int n = ArraySize(g_gate_strat);
-         ArrayResize(g_gate_strat,n+1); ArrayResize(g_gate_sym,n+1); ArrayResize(g_gate_tf,n+1);
-         ArrayResize(g_gate_cnt,n+1); ArrayResize(g_gate_wr,n+1); ArrayResize(g_gate_avgR,n+1);
-         ArrayResize(g_gate_pf,n+1); ArrayResize(g_gate_dd,n+1);
+         ArrayResize(g_gate_strat,n+1); ArrayResize(g_gate_sym,n+1); ArrayResize(g_gate_tf,n+1); ArrayResize(g_gate_cnt,n+1);
+         ArrayResize(g_gate_wr,n+1); ArrayResize(g_gate_avgR,n+1); ArrayResize(g_gate_pf,n+1); ArrayResize(g_gate_dd,n+1);
          g_gate_strat[n]=sname; g_gate_sym[n]=yname; g_gate_tf[n]=tfv;
          g_gate_cnt[n]=cnt; g_gate_wr[n]=wr; g_gate_avgR[n]=avgR; g_gate_pf[n]=pf; g_gate_dd[n]=dd;
         }
@@ -925,8 +1244,10 @@ void LogHeartbeat()
          IStrategy *st = (IStrategy*)g_strategies.At(i);
          if(CheckPointer(st)==POINTER_INVALID) continue;
          string nm = st.Name();
-         double p = (UsePolicyGating ? GetPolicyProb(nm, _Symbol, tf) : -1.0);
-         string ps = (p<0.0?"-":DoubleToString(p,3));
+         double wr = -1.0;
+         if(CheckPointer(g_selector)!=POINTER_INVALID)
+           wr = (*g_selector).GetWinRate(_Symbol, tf, nm, true);
+         string ps = (wr<0.0?"-":DoubleToString(wr,3));
          if(ShouldLog(LOG_INFO)) PrintFormat("[STRAT] %s p_win=%s", nm, ps);
         }
      }
@@ -956,19 +1277,39 @@ int OnInit()
    if(CheckPointer(g_trade_manager)==POINTER_INVALID)
       g_trade_manager = new CTradeManager(_Symbol, LotSize, MagicNumber);
 
-   // Telemetry
-   if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
-     {
-      g_telemetry = new CTelemetry(TelemetryDir, TelemetryExperiment, TelemetryLevel, TelemetryBufferMax);
-      if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-        (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "init", StringFormat("NoConstraints=%s", (NoConstraintsMode?"true":"false")));
-     }
+    // Telemetry
+    if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
+      {
+       g_telemetry = new CTelemetry(TelemetryDir, TelemetryExperiment, TelemetryLevel, TelemetryBufferMax);
+       if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+         (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "init", StringFormat("NoConstraints=%s", (NoConstraintsMode?"true":"false")));
+      }
 
-   // Strategy selector
-   if(CheckPointer(g_selector)==POINTER_INVALID)
-     {
-      g_selector = new CStrategySelector();
-      (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
+    // Reset pending mappings and tracking arrays to ensure a clean state on (re)init
+    ArrayResize(g_pending_orders, 0);
+    ArrayResize(g_pending_orders_strat, 0);
+    ArrayResize(g_pending_deals, 0);
+    ArrayResize(g_pending_deals_strat, 0);
+    ArrayResize(g_pos_ids, 0);
+    ArrayResize(g_pos_strats, 0);
+    ArrayResize(g_pos_entry_price, 0);
+    ArrayResize(g_pos_initial_risk, 0);
+    ArrayResize(g_pos_start_time, 0);
+    ArrayResize(g_pos_type, 0);
+    ArrayResize(g_pos_max_price, 0);
+    ArrayResize(g_pos_min_price, 0);
+    g_explore_pending_key = "";
+    // Reset explore-cap dedupe state
+    g_ecap_bar_time = 0;
+    ArrayResize(g_ecap_keys, 0);
+    ArrayResize(g_ecap_counts, 0);
+    ArrayResize(g_ecap_printed_once, 0);
+
+    // Strategy selector
+    if(CheckPointer(g_selector)==POINTER_INVALID)
+      {
+       g_selector = new CStrategySelector();
+       (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
       (*g_selector).ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
       // Align thresholds with gating inputs
       (*g_selector).ConfigureThresholds(GateMinTrades, GateMinWinRate, GateMinExpectancyR, GateMinProfitFactor, GateMaxDrawdownR);
@@ -1012,6 +1353,14 @@ int OnInit()
       if(ShouldLog(LOG_INFO)) PrintFormat("Policy gating cache load: %s", (pol_ok?"ok":"fail"));
      }
 
+   // Auto-build insights if missing or stale
+   if(InsightsAutoBuild)
+     {
+      bool stale = Insights_IsStale(InsightsStaleHours);
+      if(stale)
+        Insights_RebuildAndReload("OnInit-stale-or-missing");
+     }
+
    // Load persistent exploration counters (weekly and daily)
    bool wk_ok = LoadExploreCounts();
    bool dy_ok = LoadExploreCountsDay();
@@ -1038,25 +1387,45 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   // Persist exploration counters
-   SaveExploreCounts();
-   SaveExploreCountsDay();
+    // Persist exploration counters
+    SaveExploreCounts();
+    SaveExploreCountsDay();
 
-   // Telemetry flush & dispose
-   if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-     {
-      // session end marker
-      if(TelemetryEnabled)
-        (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "deinit", StringFormat("reason=%d", reason));
-      (*g_telemetry).Flush();
-      delete g_telemetry; g_telemetry=NULL;
-     }
+    // Telemetry flush & dispose
+    if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+      {
+       // session end marker
+       if(TelemetryEnabled)
+         (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "deinit", StringFormat("reason=%d", reason));
+       (*g_telemetry).Flush();
+       delete g_telemetry; g_telemetry=NULL;
+      }
 
-   // Dispose strategies
-   if(CheckPointer(g_strategies)!=POINTER_INVALID)
-     {
-      for(int i=0;i<g_strategies.Total();++i)
-        {
+    // Clear pending mappings and tracking arrays to free memory and avoid leakage across reinitializations
+    ArrayResize(g_pending_orders, 0);
+    ArrayResize(g_pending_orders_strat, 0);
+    ArrayResize(g_pending_deals, 0);
+    ArrayResize(g_pending_deals_strat, 0);
+    ArrayResize(g_pos_ids, 0);
+    ArrayResize(g_pos_strats, 0);
+    ArrayResize(g_pos_entry_price, 0);
+    ArrayResize(g_pos_initial_risk, 0);
+    ArrayResize(g_pos_start_time, 0);
+    ArrayResize(g_pos_type, 0);
+    ArrayResize(g_pos_max_price, 0);
+    ArrayResize(g_pos_min_price, 0);
+    g_explore_pending_key = "";
+    // Reset explore-cap dedupe state
+    g_ecap_bar_time = 0;
+    ArrayResize(g_ecap_keys, 0);
+    ArrayResize(g_ecap_counts, 0);
+    ArrayResize(g_ecap_printed_once, 0);
+
+    // Dispose strategies
+    if(CheckPointer(g_strategies)!=POINTER_INVALID)
+      {
+       for(int i=0;i<g_strategies.Total();++i)
+         {
          CObject* obj = (CObject*)g_strategies.At(i);
          if(CheckPointer(obj)!=POINTER_INVALID) delete obj;
         }
@@ -1089,10 +1458,16 @@ void OnTimer()
        else   { Print("[INSIGHTS] rebuild failed"); }
        FileDelete(reload, FILE_COMMON);
       }
-   }
-   // Flush telemetry periodically regardless of heartbeat setting
-   if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-       (*g_telemetry).Flush();
+     }
+    // Periodic staleness check and auto-rebuild
+    if(InsightsAutoBuild && InsightsCheckOnTimer)
+      {
+       if(Insights_IsStale(InsightsStaleHours))
+        Insights_RebuildAndReload("OnTimer-stale");
+      }
+    // Flush telemetry periodically regardless of heartbeat setting
+    if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+        (*g_telemetry).Flush();
    if(!HeartbeatEnabled || HeartbeatMinutes<=0) return;
    LogHeartbeat();
   }
@@ -1141,6 +1516,35 @@ void OnTick()
       if(pcur>g_pos_max_price[idx]) g_pos_max_price[idx]=pcur;
      if(pcur<g_pos_min_price[idx]) g_pos_min_price[idx]=pcur;
     }
+   //--- Detect closed positions and log outcomes (r_multiple + KB close record)
+   for(int i=0; i<ArraySize(g_pos_ids); )
+     {
+      ulong pid = g_pos_ids[i];
+      // If position is no longer open, attempt to log its closure
+      if(!PositionSelectByTicket(pid))
+        {
+         // Search recent history for the closing deal of this position
+         datetime t0 = (g_pos_start_time[i]>0? g_pos_start_time[i] - 3600 : TimeCurrent() - 7*86400);
+         HistorySelect(t0, TimeCurrent());
+         ulong close_deal = 0;
+         for(int d = HistoryDealsTotal()-1; d>=0; --d)
+           {
+            ulong deal_ticket = HistoryDealGetTicket(d);
+            if((ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID)==pid)
+              {
+               int entry_flag = (int)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+               if(entry_flag==DEAL_ENTRY_OUT)
+                 { close_deal = deal_ticket; break; }
+              }
+           }
+         if(close_deal>0)
+           {
+            HandlePositionClosed(i, close_deal);
+            continue; // re-check swapped element index i
+           }
+        }
+      ++i;
+     }
 //--- Iterate through each strategy
    if(CheckPointer(g_strategies)==POINTER_INVALID)
      {
@@ -1510,3 +1914,110 @@ void OnTick()
      }
   }
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Trade transaction handler                                        |
+//+------------------------------------------------------------------+
+#ifdef DUP_HANDLER_DISABLED // duplicate handler disabled (merged into top-of-file handler)
+void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
+  {
+   // Only process events for this chart's symbol
+   if(trans.symbol!=_Symbol)
+      return;
+
+   int t = (int)trans.type;
+   if(t==TRADE_TRANSACTION_DEAL_ADD)
+     {
+      ulong deal = trans.deal;
+      if(deal==0) return;
+      // Ensure history context for the recent window
+      HistorySelect(TimeCurrent()-7*86400, TimeCurrent());
+
+      long dmag = HistoryDealGetInteger(deal, DEAL_MAGIC);
+      if(dmag!=MagicNumber) return; // ignore foreign deals
+
+      int   entry_flag = (int)HistoryDealGetInteger(deal, DEAL_ENTRY);
+      ulong pos_id     = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+
+      if(entry_flag==DEAL_ENTRY_IN)
+        {
+         // Attribute strategy via pending maps
+         string strat = "unknown";
+         int idxpd=-1; for(int i=0;i<ArraySize(g_pending_deals);++i){ if(g_pending_deals[i]==deal){ idxpd=i; break; } }
+         if(idxpd>=0)
+           {
+            strat = g_pending_deals_strat[idxpd];
+            int last=ArraySize(g_pending_deals)-1;
+            g_pending_deals[idxpd]=g_pending_deals[last]; g_pending_deals_strat[idxpd]=g_pending_deals_strat[last];
+            ArrayResize(g_pending_deals,last); ArrayResize(g_pending_deals_strat,last);
+           }
+         else if(trans.order>0)
+           {
+            int idxpo=-1; for(int j=0;j<ArraySize(g_pending_orders);++j){ if(g_pending_orders[j]==trans.order){ idxpo=j; break; } }
+            if(idxpo>=0)
+              {
+               strat = g_pending_orders_strat[idxpo];
+               int last2=ArraySize(g_pending_orders)-1;
+               g_pending_orders[idxpo]=g_pending_orders[last2]; g_pending_orders_strat[idxpo]=g_pending_orders_strat[last2];
+               ArrayResize(g_pending_orders,last2); ArrayResize(g_pending_orders_strat,last2);
+              }
+           }
+
+         if(pos_id>0 && FindTrackedIndexByPid(pos_id)<0)
+           {
+            // Track newly opened position
+            int k = ArraySize(g_pos_ids);
+            ArrayResize(g_pos_ids,k+1);
+            ArrayResize(g_pos_strats,k+1);
+            ArrayResize(g_pos_entry_price,k+1);
+            ArrayResize(g_pos_initial_risk,k+1);
+            ArrayResize(g_pos_start_time,k+1);
+            ArrayResize(g_pos_type,k+1);
+            ArrayResize(g_pos_max_price,k+1);
+            ArrayResize(g_pos_min_price,k+1);
+            g_pos_ids[k]=pos_id; g_pos_strats[k]=strat;
+            double eprice = HistoryDealGetDouble(deal, DEAL_PRICE);
+            g_pos_entry_price[k]=eprice; g_pos_max_price[k]=eprice; g_pos_min_price[k]=eprice;
+            int ptype = POSITION_TYPE_BUY;
+            if(PositionSelectByTicket(pos_id)) ptype = (int)PositionGetInteger(POSITION_TYPE);
+            g_pos_type[k]=ptype;
+            double init_r = 0.0;
+            if(PositionSelectByTicket(pos_id))
+              {
+               double slc = PositionGetDouble(POSITION_SL);
+               double eop = PositionGetDouble(POSITION_PRICE_OPEN);
+               if(slc>0 && eop>0) init_r = MathAbs((ptype==POSITION_TYPE_BUY? eop - slc : slc - eop));
+              }
+            g_pos_initial_risk[k]=init_r;
+            g_pos_start_time[k]=TimeCurrent();
+            if(ShouldLog(LOG_INFO)) PrintFormat("OnTradeTransaction: tracked entry pid=%I64u strat=%s", pos_id, g_pos_strats[k]);
+           }
+        }
+      else if(entry_flag==DEAL_ENTRY_OUT)
+        {
+         if(pos_id>0)
+           {
+            int idx = FindTrackedIndexByPid(pos_id);
+            if(idx>=0)
+              HandlePositionClosed(idx, deal);
+           }
+        }
+     }
+   else if(t==TRADE_TRANSACTION_ORDER_DELETE)
+     {
+      // Clean pending order mapping if order is cancelled/expired
+      ulong ord = trans.order;
+      if(ord>0)
+        {
+         for(int i=0;i<ArraySize(g_pending_orders);++i)
+           if(g_pending_orders[i]==ord)
+             {
+              int last=ArraySize(g_pending_orders)-1;
+              g_pending_orders[i]=g_pending_orders[last]; g_pending_orders_strat[i]=g_pending_orders_strat[last];
+              ArrayResize(g_pending_orders,last); ArrayResize(g_pending_orders_strat,last);
+              break;
+             }
+        }
+     }
+  }
+ #endif // duplicate handler disabled

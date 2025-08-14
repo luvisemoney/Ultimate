@@ -280,4 +280,70 @@ public:
         }
       return best;
      }
+
+   string NormalizeSymbolLocal(string s)
+     {
+      string lowers = s; StringToLower(lowers);
+      string suf[] = { "_otc", "_pro", "_ecn", "_mini", "_micro", ".r", ".i", ".pro", ".ecn", ".m" };
+      for(int i=0;i<ArraySize(suf);++i)
+        {
+         int p = StringFind(lowers, suf[i], StringLen(lowers)-StringLen(suf[i]));
+         if(p>=0 && p==StringLen(lowers)-StringLen(suf[i]))
+           {
+            s = StringSubstr(s, 0, StringLen(s)-StringLen(suf[i]));
+            break;
+           }
+        }
+      return s;
+     }
+
+   // Return exact slice index for strategy+symbol+timeframe; -1 if missing
+   int FindIndex(const string symbol, const int timeframe, const string strategy)
+     {
+      string symN = NormalizeSymbolLocal(symbol);
+      for(int i=0;i<ArraySize(m_strat);++i)
+        if(m_strat[i]==strategy && NormalizeSymbolLocal(m_sym[i])==symN && m_tf[i]==timeframe)
+          return i;
+      return -1;
+     }
+
+   // Get win rate for a slice, optionally blended with recency overlay.
+   // Fallbacks: (1) aggregate by strategy+symbol across TFs; (2) aggregate by strategy across all.
+   // Returns -1.0 when no data exists.
+   double GetWinRate(const string symbol, const int timeframe, const string strategy, const bool blended=true)
+     {
+      // No insights loaded
+      if(ArraySize(m_strat)==0 || !m_has_data)
+         return -1.0;
+
+      int i = FindIndex(symbol, timeframe, strategy);
+      if(i>=0)
+        {
+         double wr = m_wr[i];
+         if(blended && use_recency && i<ArraySize(m_rc_wr) && m_rc_cnt[i]>0)
+           wr = (1.0-rec_alpha)*wr + rec_alpha*m_rc_wr[i];
+         return wr;
+        }
+
+      // Fallback 1: aggregate by strategy+symbol across all timeframes
+      int total=0; double wins=0.0; string symN = NormalizeSymbolLocal(symbol);
+      for(int j=0;j<ArraySize(m_strat);++j)
+        if(m_strat[j]==strategy && NormalizeSymbolLocal(m_sym[j])==symN)
+          {
+           total += m_cnt[j];
+           wins  += m_wr[j]*m_cnt[j];
+          }
+      if(total>0)
+        return wins/(double)total;
+
+      // Fallback 2: aggregate by strategy across all symbols/timeframes
+      total=0; wins=0.0;
+      for(int j=0;j<ArraySize(m_strat);++j)
+        if(m_strat[j]==strategy)
+          { total += m_cnt[j]; wins += m_wr[j]*m_cnt[j]; }
+      if(total>0)
+        return wins/(double)total;
+
+      return -1.0;
+     }
   };

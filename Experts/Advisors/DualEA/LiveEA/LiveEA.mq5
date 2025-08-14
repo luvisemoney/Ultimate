@@ -256,17 +256,141 @@ string                  g_pending_orders_strat[];
 ulong                   g_pending_deals[];
 string                  g_pending_deals_strat[];
 
-// Returns Monday date of the week as yyyymmdd integer for the provided time
-int WeekMondayId(datetime t)
+// --- Helpers: tracking lookup and robust closure logging/removal
+int FindTrackedIndexByPid(ulong pid)
   {
-   MqlDateTime dt; TimeToStruct(t, dt);
-   // MT5: day_of_week 0=Sunday, 1=Monday, ... 6=Saturday
-   int dow = dt.day_of_week;
-   int delta_days = (dow==0 ? 6 : (dow-1));
-   datetime monday = t - (delta_days * 86400);
-   MqlDateTime md; TimeToStruct(monday, md);
-   return (md.year*10000 + md.mon*100 + md.day);
+   for(int t=0; t<ArraySize(g_pos_ids); ++t)
+     if(g_pos_ids[t]==pid) return t;
+   return -1;
   }
+
+bool IsPositionOpenByIdentifier(const ulong pid)
+  {
+   int total = PositionsTotal();
+   CPositionInfo pos;
+   for(int i=0; i<total; ++i)
+     {
+      if(!pos.SelectByIndex(i)) continue;
+      // Filter same symbol & magic to reduce scan cost
+      string sym = pos.Symbol();
+      long   mag = (long)pos.Magic();
+      if(sym!=_Symbol || mag!=MagicNumber) continue;
+      ulong  id  = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(id==pid) return true;
+     }
+   return false;
+  }
+
+void HandlePositionClosed(int idx, ulong close_deal)
+   {
+    if(idx<0 || idx>=ArraySize(g_pos_ids)) return;
+    ulong   pid         = g_pos_ids[idx];
+    string  strat       = g_pos_strats[idx];
+    double  entry_price = g_pos_entry_price[idx];
+    double  init_risk   = g_pos_initial_risk[idx]; // price units
+    datetime t_start    = g_pos_start_time[idx];
+    int     ptype       = g_pos_type[idx];
+    double  max_price   = g_pos_max_price[idx];
+    double  min_price   = g_pos_min_price[idx];
+
+    string  sym_close   = HistoryDealGetString(close_deal, DEAL_SYMBOL);
+    double  close_price = HistoryDealGetDouble(close_deal, DEAL_PRICE);
+    double  profit_money= HistoryDealGetDouble(close_deal, DEAL_PROFIT);
+    datetime ts_close   = (datetime)HistoryDealGetInteger(close_deal, DEAL_TIME);
+
+    // Compute R-multiple
+    double r = 0.0;
+    if(init_risk>0.0 && entry_price>0.0 && close_price>0.0)
+      {
+       if(ptype==POSITION_TYPE_BUY) r = (close_price - entry_price) / init_risk;
+       else                         r = (entry_price - close_price) / init_risk;
+      }
+
+    // Compute MFE/MAE in points and R
+    double fav_pts=0.0, adv_pts=0.0;
+    if(ptype==POSITION_TYPE_BUY)
+      { fav_pts = (max_price - entry_price) / _Point; adv_pts = (entry_price - min_price) / _Point; }
+    else
+      { fav_pts = (entry_price - min_price) / _Point; adv_pts = (max_price - entry_price) / _Point; }
+    double mfe_r = 0.0, mae_r = 0.0;
+    if(init_risk>0.0)
+      { mfe_r = (fav_pts * _Point) / init_risk; mae_r = (adv_pts * _Point) / init_risk; }
+
+    // Hold time (seconds)
+    double hold_secs = 0.0; if(ts_close>t_start) hold_secs = (double)(ts_close - t_start);
+
+    // Feature logging at close
+    if(CheckPointer(g_features)!=POINTER_INVALID)
+      {
+       if(init_risk>0.0) (*g_features).WriteKV(ts_close, sym_close, strat, "r_multiple", r);
+       (*g_features).WriteKV(ts_close, sym_close, strat, "hold_time_seconds", hold_secs);
+       (*g_features).WriteKV(ts_close, sym_close, strat, "mfe_points", fav_pts);
+       (*g_features).WriteKV(ts_close, sym_close, strat, "mae_points", adv_pts);
+       if(init_risk>0.0)
+         {
+          (*g_features).WriteKV(ts_close, sym_close, strat, "mfe_r", mfe_r);
+          (*g_features).WriteKV(ts_close, sym_close, strat, "mae_r", mae_r);
+         }
+      }
+
+    // Final KB record
+    if(CheckPointer(g_kb)!=POINTER_INVALID)
+      {
+       TradeRecord rec;
+       rec.timestamp    = ts_close;
+       rec.symbol       = sym_close;
+       rec.type         = (ptype==POSITION_TYPE_BUY? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+       rec.entry_price  = entry_price;
+       rec.stop_loss    = 0.0;
+       rec.take_profit  = 0.0;
+       rec.close_price  = close_price;
+       rec.profit       = profit_money;
+       rec.strategy_id  = strat;
+       (*g_kb).WriteRecord(rec);
+      }
+
+    // Telemetry for closure
+    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+      {
+       string details = StringFormat("pid=%I64u r=%.6f profit=%.2f hold=%.0fs mfe_r=%.6f mae_r=%.6f",
+                                    pid, r, profit_money, hold_secs, mfe_r, mae_r);
+       (*g_telemetry).LogEvent(sym_close, (int)_Period, strat, "position_closed", details);
+      }
+
+    if(ShouldLog(LOG_INFO))
+      PrintFormat("[CLOSE] pid=%I64u strat=%s r=%.6f profit=%.2f hold=%.0fs mfe_pts=%.1f mae_pts=%.1f", pid, strat, r, profit_money, hold_secs, fav_pts, adv_pts);
+
+    // Remove tracked position via swap-with-last to keep arrays compact
+    int last = ArraySize(g_pos_ids)-1;
+    g_pos_ids[idx] = g_pos_ids[last];
+    g_pos_strats[idx] = g_pos_strats[last];
+    g_pos_entry_price[idx] = g_pos_entry_price[last];
+    g_pos_initial_risk[idx] = g_pos_initial_risk[last];
+    g_pos_start_time[idx] = g_pos_start_time[last];
+    g_pos_type[idx] = g_pos_type[last];
+    g_pos_max_price[idx] = g_pos_max_price[last];
+    g_pos_min_price[idx] = g_pos_min_price[last];
+    ArrayResize(g_pos_ids, last);
+    ArrayResize(g_pos_strats, last);
+    ArrayResize(g_pos_entry_price, last);
+    ArrayResize(g_pos_initial_risk, last);
+    ArrayResize(g_pos_start_time, last);
+    ArrayResize(g_pos_type, last);
+    ArrayResize(g_pos_max_price, last);
+    ArrayResize(g_pos_min_price, last);
+   }
+
+ // Returns Monday date of the week as yyyymmdd integer for the provided time
+ int WeekMondayId(datetime t)
+   {
+    MqlDateTime dt; TimeToStruct(t, dt);
+    // MT5: day_of_week 0=Sunday, 1=Monday, ... 6=Saturday
+    int dow = dt.day_of_week;
+    int delta_days = (dow==0 ? 6 : (dow-1));
+    datetime monday = t - (delta_days * 86400);
+    MqlDateTime md; TimeToStruct(monday, md);
+    return (md.year*10000 + md.mon*100 + md.day);
+   }
 
 string ExploreCountsPath()
   {
@@ -971,8 +1095,10 @@ void LogHeartbeat()
          IStrategy *st = (IStrategy*)g_strategies.At(i);
          if(CheckPointer(st)==POINTER_INVALID) continue;
          string nm = st.Name();
-         double p = (UsePolicyGating ? GetPolicyProb(nm, _Symbol, tf) : -1.0);
-         string ps = (p<0.0?"-":DoubleToString(p,3));
+         double wr = -1.0;
+         if(CheckPointer(g_selector)!=POINTER_INVALID)
+           wr = (*g_selector).GetWinRate(_Symbol, tf, nm, true);
+         string ps = (wr<0.0?"-":DoubleToString(wr,3));
          if(ShouldLog(LOG_INFO)) PrintFormat("[STRAT] %s p_win=%s", nm, ps);
         }
      }
@@ -1195,6 +1321,35 @@ void OnDeinit(const int reason)
        if(idx<0) continue;
        if(pcur>g_pos_max_price[idx]) g_pos_max_price[idx]=pcur;
        if(pcur<g_pos_min_price[idx]) g_pos_min_price[idx]=pcur;
+      }
+    // Detect closed positions and log outcomes
+    for(int i=0; i<ArraySize(g_pos_ids); )
+      {
+       ulong pid = g_pos_ids[i];
+       // If position is no longer open, attempt to log its closure
+       if(!IsPositionOpenByIdentifier(pid))
+         {
+          // Search recent history for the closing deal of this position
+          datetime t0 = (g_pos_start_time[i]>0? g_pos_start_time[i] - 3600 : TimeCurrent() - 7*86400);
+          HistorySelect(t0, TimeCurrent());
+          ulong close_deal = 0;
+          for(int d = HistoryDealsTotal()-1; d>=0; --d)
+            {
+             ulong deal_ticket = HistoryDealGetTicket(d);
+             if((ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID)==pid)
+               {
+                int entry_flag = (int)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+                if(entry_flag==DEAL_ENTRY_OUT)
+                  { close_deal = deal_ticket; break; }
+               }
+            }
+          if(close_deal>0)
+            {
+             HandlePositionClosed(i, close_deal);
+             continue; // do not increment i, array was compacted
+            }
+         }
+       ++i;
       }
     // Iterate through each strategy
     if(CheckPointer(g_strategies)==POINTER_INVALID)
