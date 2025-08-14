@@ -31,6 +31,8 @@ private:
    string            m_file_path;      // Path to the knowledge base file
    int               m_file_handle;    // File handle
    string            m_csv_delimiter;  // CSV delimiter
+   string            m_lock_path;      // Path to lock file in Common Files
+   int               m_lock_handle;    // Lock file handle
 
 public:
                      CKnowledgeBase(string file_name="DualEA\\knowledge_base.csv", string delimiter=",");
@@ -43,6 +45,8 @@ public:
 private:
    bool              OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV);
    void              CloseFile();
+   bool              AcquireLock(const int timeout_ms=3000);
+   void              ReleaseLock();
   };
 
 // --- Class to manage features.csv logging (long format: one feature per row)
@@ -700,8 +704,16 @@ class CInsightsBuilder
 //+------------------------------------------------------------------+
 CKnowledgeBase::CKnowledgeBase(string file_name="DualEA\\knowledge_base.csv", string delimiter=",")
   {
-   m_csv_delimiter = delimiter;
-   m_file_path = file_name; // Use subfolder under Common Files: DualEA\
+    m_csv_delimiter = delimiter;
+    m_file_path = file_name; // Use subfolder under Common Files: DualEA\
+    m_lock_handle = INVALID_HANDLE;
+    // Derive a lock file path next to the KB file (e.g., DualEA\\knowledge_base.lock)
+    string lp = m_file_path;
+    int dot_lp = StringFind(lp, ".", 0);
+    if(dot_lp > 0)
+       m_lock_path = StringSubstr(lp, 0, dot_lp) + ".lock";
+    else
+       m_lock_path = lp + ".lock";
 
    // Ensure target subfolder exists in Common files
    // Common files base: TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files"
@@ -752,9 +764,15 @@ CKnowledgeBase::~CKnowledgeBase()
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
   {
+   if(!AcquireLock(3000))
+      return(false);
+
    // IMPORTANT: use FILE_READ|FILE_WRITE to avoid truncation (FILE_WRITE alone clears the file)
    if(!OpenFile(FILE_READ|FILE_WRITE|FILE_CSV))
+     {
+      ReleaseLock();
       return(false);
+     }
 
    FileSeek(m_file_handle, 0, SEEK_END);
 
@@ -771,6 +789,7 @@ bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
    FileWriteString(m_file_handle, record_string + "\n");
 
    CloseFile();
+   ReleaseLock();
    return(true);
   }
 
@@ -848,4 +867,45 @@ void CKnowledgeBase::CloseFile()
   {
    if(m_file_handle != INVALID_HANDLE)
       FileClose(m_file_handle);
+  }
+
+//+------------------------------------------------------------------+
+//| Acquire exclusive lock via a temporary lock file                  |
+//+------------------------------------------------------------------+
+bool CKnowledgeBase::AcquireLock(const int timeout_ms)
+  {
+   m_lock_handle = INVALID_HANDLE;
+   int waited = 0;
+   // Do not specify share flags to request exclusive access on the lock file
+   while(waited < timeout_ms && m_lock_handle==INVALID_HANDLE)
+     {
+      m_lock_handle = FileOpen(m_lock_path, FILE_WRITE|FILE_COMMON);
+      if(m_lock_handle==INVALID_HANDLE)
+        {
+         Sleep(25);
+         waited += 25;
+        }
+     }
+   if(m_lock_handle==INVALID_HANDLE)
+     {
+      PrintFormat("KnowledgeBase: lock acquire timeout for %s (err=%d)", m_lock_path, GetLastError());
+      return false;
+     }
+   // Optional: write small token so file exists for observers
+   FileWriteString(m_lock_handle, "lock\n");
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Release the lock                                                  |
+//+------------------------------------------------------------------+
+void CKnowledgeBase::ReleaseLock()
+  {
+   if(m_lock_handle!=INVALID_HANDLE)
+     {
+      FileClose(m_lock_handle);
+      m_lock_handle = INVALID_HANDLE;
+      // Best-effort delete to avoid stale locks
+      FileDelete(m_lock_path, FILE_COMMON);
+     }
   }
