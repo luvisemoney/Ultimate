@@ -56,10 +56,10 @@ class CFeaturesKB
       {
        // Ensure folder exists and header is present
        FolderCreate("DualEA", FILE_COMMON);
-       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_COMMON);
+       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
        if(h==INVALID_HANDLE)
          {
-          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
           if(h!=INVALID_HANDLE)
             {
              FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
@@ -71,7 +71,7 @@ class CFeaturesKB
           if(FileSize(h)==0)
             {
              FileClose(h);
-             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
              if(h!=INVALID_HANDLE)
                 FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
             }
@@ -91,7 +91,13 @@ class CFeaturesKB
                   ~CFeaturesKB() {}
     bool          WriteKV(const datetime ts, const string symbol, const string strategy, const string feature, const double value)
                     {
-                     int h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_WRITE|FILE_COMMON);
+                     int h = INVALID_HANDLE;
+                     // Retry open to mitigate transient locks from readers/writers
+                     for(int attempt=0; attempt<10 && h==INVALID_HANDLE; ++attempt)
+                       {
+                        h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
+                        if(h==INVALID_HANDLE) Sleep(25);
+                       }
                      if(h==INVALID_HANDLE)
                        {
                         PrintFormat("Error opening features file '%s'. Error: %d", m_file_path, GetLastError());
@@ -228,7 +234,7 @@ class CInsightsBuilder
                     {
                     // Build insights from features.csv using r_multiple rows
                     // Open features.csv with explicit comma delimiter
-                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_COMMON, (ushort)',' );
+                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON, (ushort)',');
                     if(hf==INVALID_HANDLE)
                       {
                        PrintFormat("InsightsBuilder: cannot open features '%s'. Err=%d", m_features_path, GetLastError());
@@ -332,7 +338,7 @@ class CInsightsBuilder
                     if(total==0)
                       {
                        // Secondary fallback: parse features.csv as raw text lines and split by comma
-                       int ht = FileOpen(m_features_path, FILE_READ|FILE_COMMON|FILE_ANSI);
+                       int ht = FileOpen(m_features_path, FILE_READ|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
                        if(ht!=INVALID_HANDLE)
                          {
                           int added=0; bool header_seen=false;

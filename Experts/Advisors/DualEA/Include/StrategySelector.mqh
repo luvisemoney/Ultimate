@@ -55,7 +55,7 @@ public:
 
    bool Load()
      {
-      int h = FileOpen("DualEA\\insights.json", FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
+      int h = FileOpen("DualEA\\insights.json", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
       if(h==INVALID_HANDLE) return false;
       ArrayResize(m_strat,0); ArrayResize(m_sym,0); ArrayResize(m_tf,0);
       ArrayResize(m_cnt,0); ArrayResize(m_wr,0); ArrayResize(m_avgR,0); ArrayResize(m_pf,0); ArrayResize(m_dd,0);
@@ -97,7 +97,7 @@ public:
    bool LoadRecent()
      {
       if(!use_recency) return false;
-      int h = FileOpen("DualEA\\features.csv", FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
+      int h = FileOpen("DualEA\\features.csv", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
       if(h==INVALID_HANDLE) return false;
       datetime now = TimeCurrent();
       datetime cutoff = now - recent_days*24*60*60;
