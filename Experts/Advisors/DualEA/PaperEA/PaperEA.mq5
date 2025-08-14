@@ -986,7 +986,7 @@ bool Insights_Load()
       if(p>=0)
         {
          int q = StringFind(line, ",", p+1); string seg = (q>p? StringSubstr(line, p, q-p) : StringSubstr(line, p));
-         int c1=StringFind(seg, "\"", 0); c1 = StringFind(seg, "\"", c1+1); int c2=StringFind(seg, "\"", c1+1); int c3=StringFind(seg, "\"", c2+1); int c4=StringFind(seg, "\"", c3+1);
+         int c1=StringFind(seg, "\"", 0); int c2=StringFind(seg, "\"", c1+1); int c3=StringFind(seg, "\"", c2+1); int c4=StringFind(seg, "\"", c3+1);
          if(c3>0 && c4>c3) sname = StringSubstr(seg, c3+1, c4-c3-1);
         }
       p = StringFind(line, "\"symbol\":", 0);
