@@ -26,39 +26,91 @@ Practical procedures for managing DualEA runtime, knowledge base, policy reloads
 ## System Flow
 ```mermaid
 flowchart LR
+  %% PaperEA orchestration
   subgraph Paper
     PEA[PaperEA]
     STR[Strategies (IStrategy)]
+    SEL[Selector (insights + recency)]
     TM[TradeManager (SL/TP/Trailing)]
+    TEL[Telemetry]
   end
 
+  %% Common Files runtime artifacts
   subgraph KB["Knowledge Base (Common\\Files\\DualEA)"]
     FEAT[features.csv]
     TRD[knowledge_base.csv]
     EVT[knowledge_base_events.csv]
+    TLM[telemetry\\*.jsonl]
     INS[insights.json]
     POL[policy.json]
+    EXPW[explore_counts.csv]
+    EXPD[explore_counts_day.csv]
+    RLDI[insights.reload]
+    RLDP[policy.reload]
+    VREP[insights_validation.txt]
   end
 
-  subgraph ML["Trainer (Python LSTM/GRU)"]
-    TRN[train.py]
+  %% Insights builder (can be called by EA or script)
+  subgraph Builder[Insights Builder]
+    IB[CInsightsBuilder.Build()]
   end
 
+  %% Scripts and CI helpers
+  subgraph Scripts_CI[Scripts / CI]
+    IRB[Scripts/InsightsRebuild.mq5]
+    VAL[Scripts/ValidateInsights.mq5]
+    KBC[kb_check.bat]
+  end
+
+  %% ML trainer
+  subgraph ML[Trainer]
+    TRN[train.py / policy_export.py]
+  end
+
+  %% LiveEA consumer
   subgraph Live
     LEA[LiveEA]
   end
 
+  %% Paper data flows
+  PEA --> STR
+  STR -->|ExportFeatures| FEAT
   PEA --> TM
   PEA -->|logs| TRD
   PEA -->|events| EVT
-  PEA -->|features| FEAT
-  FEAT --> TRN
-  TRN -->|writes| POL
-  POL --> PEA
+  PEA -->|telemetry| TLM
+  PEA <--> |caps read/write| EXPW
+  PEA <--> |caps read/write| EXPD
 
+  %% Insights lifecycle
+  FEAT --> IB
+  TRD --> IB
+  RLDI -->|On-demand rebuild| IB
+  PEA -. OnInit/OnTimer stale? .-> IB
+  IB -->|write| INS
+  INS -->|load| SEL
+  SEL -->|gate decisions (bypassed by NoConstraintsMode)| PEA
+
+  %% Policy lifecycle
+  FEAT --> TRN
+  TRD --> TRN
+  TRN -->|write| POL
+  RLDP -->|reload trigger| PEA
+  POL -->|load & scale| PEA
+
+  %% Scripts / CI
+  IRB -->|run builder| IB
+  VAL -->|validate| VREP
+  KBC -->|build & validate| IRB
+  KBC -->|invoke| VAL
+  KBC -->|report| VREP
+
+  %% LiveEA consumption and feedback
+  INS --> LEA
   POL --> LEA
   LEA -->|results| TRD
   LEA -->|events| EVT
+  LEA -->|telemetry| TLM
 ```
 
 ## Policy Lifecycle
