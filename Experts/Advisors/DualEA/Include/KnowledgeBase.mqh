@@ -752,7 +752,8 @@ CKnowledgeBase::~CKnowledgeBase()
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
   {
-   if(!OpenFile(FILE_WRITE|FILE_CSV|FILE_SHARE_WRITE))
+   // IMPORTANT: use FILE_READ|FILE_WRITE to avoid truncation (FILE_WRITE alone clears the file)
+   if(!OpenFile(FILE_READ|FILE_WRITE|FILE_CSV))
       return(false);
 
    FileSeek(m_file_handle, 0, SEEK_END);
