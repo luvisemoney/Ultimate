@@ -13,6 +13,12 @@ private:
    double  m_pf[];
    double  m_dd[];
 
+   // Data presence flag (for cold-start pass-through)
+   bool    m_has_data;
+
+   // Selector strictness: when true, apply hard thresholds inside Score(); otherwise gate in Insights_Allow only
+   bool    strict_thresholds;
+
    // Thresholds
    int     th_min_trades;
    double  th_min_wr;
@@ -36,6 +42,8 @@ public:
       th_min_trades = 20; th_min_wr = 0.50; th_min_exp = 0.0; th_min_pf = 2.0; th_max_dd = 6.0;
       w_pf = 1.0; w_exp = 1.0; w_wr = 0.5; w_dd = 0.3;
       use_recency=false; recent_days=14; rec_alpha=0.5;
+      m_has_data=false;
+      strict_thresholds=false;
      }
 
    void ConfigureThresholds(const int min_trades, const double min_wr, const double min_exp, const double min_pf, const double max_dd)
@@ -78,6 +86,7 @@ public:
       FileClose(h);
       // initialize recent arrays to defaults
       int n=ArraySize(m_strat);
+      m_has_data = (n>0);
       ArrayResize(m_rc_cnt,n); ArrayInitialize(m_rc_cnt,0);
       ArrayResize(m_rc_wr,n);  ArrayInitialize(m_rc_wr,0.0);
       ArrayResize(m_rc_avgR,n);ArrayInitialize(m_rc_avgR,0.0);
@@ -145,15 +154,23 @@ public:
 
    double Score(const string symbol, const int timeframe, const string strategy)
      {
+      // Cold-start: if no insights slices loaded, allow pass-through to generate data
+      if(ArraySize(m_strat)==0 || !m_has_data)
+        {
+         return 1.0; // neutral positive score; no thresholds applied
+        }
       for(int i=0;i<ArraySize(m_strat);++i)
         {
          if(m_strat[i]==strategy && m_sym[i]==symbol && m_tf[i]==timeframe)
            {
-            if(m_cnt[i] < th_min_trades) return 0.0;
-            if(m_wr[i]  < th_min_wr)     return 0.0;
-            if(m_avgR[i]< th_min_exp)    return 0.0;
-            if(m_pf[i]  < th_min_pf)     return 0.0;
-            if(m_dd[i]  > th_max_dd)     return 0.0;
+            if(strict_thresholds)
+              {
+               if(m_cnt[i] < th_min_trades) return 0.0;
+               if(m_wr[i]  < th_min_wr)     return 0.0;
+               if(m_avgR[i]< th_min_exp)    return 0.0;
+               if(m_pf[i]  < th_min_pf)     return 0.0;
+               if(m_dd[i]  > th_max_dd)     return 0.0;
+              }
             double pf   = m_pf[i];
             double avgR = m_avgR[i];
             double wr   = m_wr[i];
@@ -167,9 +184,87 @@ public:
                  }
               }
             double s = w_pf*pf + w_exp*avgR + w_wr*wr - w_dd*m_dd[i];
+            if(!strict_thresholds && m_cnt[i] < th_min_trades)
+              {
+               double scale = (double)m_cnt[i] / (double)MathMax(1, th_min_trades);
+               s *= scale;
+              }
             return s;
            }
         }
+      // Fallback 1: aggregate by strategy+symbol across all timeframes
+      int total=0; double sumR=0.0, wins=0.0, gp=0.0, gl=0.0; double dd_series[];
+      for(int j=0;j<ArraySize(m_strat);++j)
+        if(m_strat[j]==strategy && m_sym[j]==symbol)
+          {
+           total += m_cnt[j];
+           sumR  += m_avgR[j]*m_cnt[j];
+           wins  += m_wr[j]*m_cnt[j];
+           if(m_pf[j]>0 && m_pf[j]<9999){ // approximate gp/gl from pf and avgR if possible
+             // Not exact; use pf as weighting only in final score. For thresholds use aggregated avg/wr only.
+           }
+           int k = ArraySize(dd_series); ArrayResize(dd_series,k+1); dd_series[k]=m_avgR[j]; // proxy for series; conservative
+          }
+      if(total>0)
+        {
+         double wr = wins/total;
+         double avgR = sumR/total;
+         double pf = 0.0; // unknown reliably from aggregates; approximate via weighted mean of pf
+         double pf_sum=0.0; int pf_cnt=0; for(int q=0;q<ArraySize(m_strat);++q){ if(m_strat[q]==strategy && m_sym[q]==symbol){ pf_sum+=m_pf[q]; pf_cnt++; } }
+         if(pf_cnt>0) pf = pf_sum/pf_cnt;
+         double dd = 0.0; // drawdown proxy not reliable without series; use worst of slices
+         for(int q=0;q<ArraySize(m_strat);++q){ if(m_strat[q]==strategy && m_sym[q]==symbol && m_dd[q]>dd) dd=m_dd[q]; }
+         if(strict_thresholds)
+           {
+            if(total < th_min_trades) return 0.0;
+            if(wr  < th_min_wr)       return 0.0;
+            if(avgR< th_min_exp)      return 0.0;
+            if(pf  < th_min_pf)       return 0.0;
+            if(dd  > th_max_dd)       return 0.0;
+           }
+         double s = w_pf*pf + w_exp*avgR + w_wr*wr - w_dd*dd;
+         if(!strict_thresholds && total < th_min_trades)
+           {
+            double scale = (double)total / (double)MathMax(1, th_min_trades);
+            s *= scale;
+           }
+         return s;
+        }
+
+      // Fallback 2: aggregate by strategy across all symbols/timeframes
+      total=0; sumR=0.0; wins=0.0; double pf_sum2=0.0; int pf_cnt2=0; double worst_dd=0.0;
+      for(int j=0;j<ArraySize(m_strat);++j)
+        if(m_strat[j]==strategy)
+          {
+           total += m_cnt[j];
+           sumR  += m_avgR[j]*m_cnt[j];
+           wins  += m_wr[j]*m_cnt[j];
+           pf_sum2 += m_pf[j]; pf_cnt2++;
+           if(m_dd[j]>worst_dd) worst_dd=m_dd[j];
+          }
+      if(total>0)
+        {
+         double wr = wins/total;
+         double avgR = sumR/total;
+         double pf = (pf_cnt2>0? pf_sum2/pf_cnt2 : 0.0);
+         double dd = worst_dd;
+         if(strict_thresholds)
+           {
+            if(total < th_min_trades) return 0.0;
+            if(wr  < th_min_wr)       return 0.0;
+            if(avgR< th_min_exp)      return 0.0;
+            if(pf  < th_min_pf)       return 0.0;
+            if(dd  > th_max_dd)       return 0.0;
+           }
+         double s = w_pf*pf + w_exp*avgR + w_wr*wr - w_dd*dd;
+         if(!strict_thresholds && total < th_min_trades)
+           {
+            double scale = (double)total / (double)MathMax(1, th_min_trades);
+            s *= scale;
+           }
+         return s;
+        }
+
       return 0.0; // unknown slice
      }
 

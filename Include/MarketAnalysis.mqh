@@ -35,36 +35,36 @@ CMarketAnalysis::~CMarketAnalysis()
 //--- Get current market trend
 ENUM_MA_TREND_STATE CMarketAnalysis::GetTrendState() const
 {
-   double ma_fast[3] = {0.0, 0.0, 0.0};
+   double local_ma_fast[3] = {0.0, 0.0, 0.0};
    double ma_slow[3] = {0.0, 0.0, 0.0};
    
    // Get MA values for the last 3 bars
-   if(CopyBuffer(m_ma_fast_handle, 0, 0, 3, ma_fast) != 3 ||
+   if(CopyBuffer(m_ma_fast_handle, 0, 0, 3, local_ma_fast) != 3 ||
       CopyBuffer(m_ma_slow_handle, 0, 0, 3, ma_slow) != 3)
    {
       return MA_TREND_NEUTRAL;
    }
    
    // Check for strong uptrend (both MAs rising and fast above slow)
-   if(ma_fast[0] > ma_slow[0] && ma_fast[1] > ma_slow[1] && 
-      ma_fast[0] > ma_fast[1] && ma_slow[0] > ma_slow[1])
+   if(local_ma_fast[0] > ma_slow[0] && local_ma_fast[1] > ma_slow[1] && 
+      local_ma_fast[0] > local_ma_fast[1] && ma_slow[0] > ma_slow[1])
    {
       return MA_TREND_UP;
    }
    
    // Check for strong downtrend (both MAs falling and fast below slow)
-   if(ma_fast[0] < ma_slow[0] && ma_fast[1] < ma_slow[1] && 
-      ma_fast[0] < ma_fast[1] && ma_slow[0] < ma_slow[1])
+   if(local_ma_fast[0] < ma_slow[0] && local_ma_fast[1] < ma_slow[1] && 
+      local_ma_fast[0] < local_ma_fast[1] && ma_slow[0] < ma_slow[1])
    {
       return MA_TREND_DOWN;
    }
    
    // Check for weak uptrend (fast above slow but not both rising)
-   if(ma_fast[0] > ma_slow[0])
+   if(local_ma_fast[0] > ma_slow[0])
       return MA_TREND_UP;  // Treat weak uptrend as regular uptrend
       
    // Check for weak downtrend (fast below slow but not both falling)
-   if(ma_fast[0] < ma_slow[0])
+   if(local_ma_fast[0] < ma_slow[0])
       return MA_TREND_DOWN;  // Treat weak downtrend as regular downtrend
       
    return MA_TREND_NEUTRAL;
@@ -130,8 +130,8 @@ bool CMarketAnalysis::ValidateTradeSetup(ENUM_ORDER_TYPE order_type, double entr
       
    double ratio = take_distance / stop_distance;
    
-   // Require at least 1:1.5 risk:reward ratio
-   if(ratio < 1.5)
+   // Require at least 0.8:1 risk:reward ratio
+   if(ratio < 0.8)
       return false;
       
    // Validate stop loss and take profit based on order type
