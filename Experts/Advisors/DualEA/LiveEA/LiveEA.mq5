@@ -1095,8 +1095,10 @@ void LogHeartbeat()
          IStrategy *st = (IStrategy*)g_strategies.At(i);
          if(CheckPointer(st)==POINTER_INVALID) continue;
          string nm = st.Name();
-         double p = (UsePolicyGating ? GetPolicyProb(nm, _Symbol, tf) : -1.0);
-         string ps = (p<0.0?"-":DoubleToString(p,3));
+         double wr = -1.0;
+         if(CheckPointer(g_selector)!=POINTER_INVALID)
+           wr = (*g_selector).GetWinRate(_Symbol, tf, nm, true);
+         string ps = (wr<0.0?"-":DoubleToString(wr,3));
          if(ShouldLog(LOG_INFO)) PrintFormat("[STRAT] %s p_win=%s", nm, ps);
         }
      }
