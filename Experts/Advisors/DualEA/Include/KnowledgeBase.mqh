@@ -6,7 +6,7 @@
 
 #include <Files\File.mqh>
 // Centralized default strategy names
-#include <Strategies\Registry.mqh>
+#include "Strategies\Registry.mqh"
 
 // --- Defines the structure for a single trade record
 struct TradeRecord
