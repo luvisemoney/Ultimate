@@ -57,6 +57,10 @@ input double GateMinWinRate       = 0.00;     // loosened for bootstrap
 input double GateMinExpectancyR   = -10.0;    // loosened for bootstrap
 input double GateMaxDrawdownR     = 1000000.0;// loosened for bootstrap
 input double GateMinProfitFactor  = 0.00;     // loosened for bootstrap
+// --- Insights auto-build & staleness
+input bool   InsightsAutoBuild    = true;     // auto-build insights.json when missing or stale
+input int    InsightsStaleHours   = 6;        // rebuild if older than N hours (0=disable age check)
+input bool   InsightsCheckOnTimer = true;     // also check on timer events
 // --- Exploration Mode (bootstrap unseen slices)
 input bool   ExploreOnNoSlice     = true;    // allow limited trades when slice has no data
 input int    ExploreMaxPerSlice   = 100;     // loosened for bootstrap
@@ -135,7 +139,7 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
       }
    }
  
- // Load policy.json from Common Files and cache min_confidence and slice_probs
+  // Load policy.json from Common Files and cache min_confidence and slice_probs
  bool Policy_Load()
    {
     g_policy_loaded = false;
@@ -360,6 +364,57 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
        PrintFormat("[POLICY] scales applied %s/%s tf=%d p=%.3f sl=%.2f tp=%.2f tr=%.2f",
                    order.strategy_name, symbol, timeframe, ppol, sls, tps, trs);
     }
+
+// Determine if insights.json is missing or stale vs features/knowledge_base or by age
+bool Insights_IsStale(const int stale_hours)
+  {
+   string ip = "DualEA\\insights.json";
+   long ex_i = FileGetInteger(ip, FILE_EXISTS, true);
+   if(ex_i==0) return true; // missing insights
+   datetime ti = (datetime)FileGetInteger(ip, FILE_MODIFY_DATE, true);
+   if(stale_hours>0)
+     {
+      if((TimeCurrent() - ti) > (stale_hours*60*60))
+         return true;
+     }
+   // Rebuild if source CSVs are newer
+   string fp = "DualEA\\features.csv";
+   if(FileGetInteger(fp, FILE_EXISTS, true)>0)
+     {
+      datetime tf = (datetime)FileGetInteger(fp, FILE_MODIFY_DATE, true);
+      if(tf>ti) return true;
+     }
+   string kp = "DualEA\\knowledge_base.csv";
+   if(FileGetInteger(kp, FILE_EXISTS, true)>0)
+     {
+      datetime tk = (datetime)FileGetInteger(kp, FILE_MODIFY_DATE, true);
+      if(tk>ti) return true;
+     }
+   return false;
+  }
+
+// Rebuild insights.json and reload gating/selector caches
+bool Insights_RebuildAndReload(const string reason)
+  {
+   if(ShouldLog(LOG_INFO)) PrintFormat("Insights auto-build triggered (%s)", reason);
+   CInsightsBuilder b;
+   bool ok = b.Build();
+   if(!ok)
+     {
+      PrintFormat("Insights auto-build FAILED (%s). Err=%d", reason, GetLastError());
+      return false;
+     }
+   // Reload insights gating cache
+   bool gate_loaded = Insights_Load();
+   if(ShouldLog(LOG_INFO)) PrintFormat("Insights gating cache reload after build: %s", (gate_loaded?"ok":"fail"));
+   // Reload selector insights if available
+   if(CheckPointer(g_selector)!=POINTER_INVALID)
+     {
+      bool sel_ok = (*g_selector).Load();
+      if(ShouldLog(LOG_INFO)) PrintFormat("Selector insights reload after build: %s", (sel_ok?"ok":"fail"));
+     }
+   return true;
+  }
 
 // --- String trim helper (returns a trimmed copy)
 string TrimCopy(string s)
@@ -1012,6 +1067,14 @@ int OnInit()
       if(ShouldLog(LOG_INFO)) PrintFormat("Policy gating cache load: %s", (pol_ok?"ok":"fail"));
      }
 
+   // Auto-build insights if missing or stale
+   if(InsightsAutoBuild)
+     {
+      bool stale = Insights_IsStale(InsightsStaleHours);
+      if(stale)
+        Insights_RebuildAndReload("OnInit-stale-or-missing");
+     }
+
    // Load persistent exploration counters (weekly and daily)
    bool wk_ok = LoadExploreCounts();
    bool dy_ok = LoadExploreCountsDay();
@@ -1089,10 +1152,16 @@ void OnTimer()
        else   { Print("[INSIGHTS] rebuild failed"); }
        FileDelete(reload, FILE_COMMON);
       }
-   }
-   // Flush telemetry periodically regardless of heartbeat setting
-   if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-       (*g_telemetry).Flush();
+     }
+    // Periodic staleness check and auto-rebuild
+    if(InsightsAutoBuild && InsightsCheckOnTimer)
+      {
+       if(Insights_IsStale(InsightsStaleHours))
+        Insights_RebuildAndReload("OnTimer-stale");
+      }
+    // Flush telemetry periodically regardless of heartbeat setting
+    if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+        (*g_telemetry).Flush();
    if(!HeartbeatEnabled || HeartbeatMinutes<=0) return;
    LogHeartbeat();
   }
