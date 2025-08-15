@@ -150,15 +150,10 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 // --- Standard Libraries
 #include <Arrays/ArrayObj.mqh> // Include for CArrayObj
 #include <Files/File.mqh>
-
-// --- Strategy Implementations
-#include "..\Include\Strategies\BollAveragesStrategy.mqh"
-#include "..\\Include\\Strategies\\MeanReversionBBStrategy.mqh"
-// New advanced strategy
-#include "..\\Include\\Strategies\\SuperTrendADXKamaStrategy.mqh"
-// Additional strategies
-#include "..\\Include\\Strategies\\RSI2BBReversionStrategy.mqh"
-#include "..\\Include\\Strategies\\DonchianATRBreakoutStrategy.mqh"
+ 
+ // --- Strategy Implementations
+// Per-asset registry (internally includes concrete strategy headers)
+#include "..\\Include\\Strategies\\AssetRegistry.mqh"
 // Strategy selector
 #include "..\\Include\\StrategySelector.mqh"
 
@@ -1271,12 +1266,8 @@ int OnInit()
    // Add verified strategies (for _Symbol/_Period)
    if(CheckPointer(g_strategies)!=POINTER_INVALID)
      {
-      CObject* s1 = (CObject*)new CSuperTrendADXKamaStrategy(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      g_strategies.Add(s1);
-      CObject* s2 = (CObject*)new CRSI2BBReversionStrategy(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      g_strategies.Add(s2);
-      CObject* s3 = (CObject*)new CDonchianATRBreakoutStrategy(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      g_strategies.Add(s3);
+      // Register strategies dynamically per asset class for this symbol/timeframe
+      RegisterStrategiesForSymbol(g_strategies, _Symbol, (ENUM_TIMEFRAMES)_Period);
      }
 
    // Load insights gating cache for Insights_Allow()/HasSlice()
