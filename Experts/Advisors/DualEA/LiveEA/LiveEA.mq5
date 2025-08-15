@@ -19,12 +19,8 @@
 #include <Files/File.mqh>
 
 // --- Strategy Implementations
-#include "..\Include\Strategies\BollAveragesStrategy.mqh"
-#include "..\\Include\\Strategies\\MeanReversionBBStrategy.mqh"
-// Advanced/verified strategies
-#include "..\\Include\\Strategies\\SuperTrendADXKamaStrategy.mqh"
-#include "..\\Include\\Strategies\\RSI2BBReversionStrategy.mqh"
-#include "..\\Include\\Strategies\\DonchianATRBreakoutStrategy.mqh"
+// Per-asset registry (internally includes concrete strategy headers)
+#include "..\\Include\\Strategies\\AssetRegistry.mqh"
 // Strategy selector
 #include "..\\Include\\StrategySelector.mqh"
 // Shared insights loader (DRY parsing across EAs)
@@ -118,90 +114,16 @@ input bool   HeartbeatVerbose = true; // print [STRAT] lines per strategy
 // --- Risk/Position limits
 input int    MaxOpenPositions = 0; // 0=unlimited; total simultaneous positions across account
 
-// --- Helper: compute R multiple strictly in price units
-double ComputeRMultiple(const double entry_price, const double close_price, const double init_risk_price, const int pos_type)
-  {
-   if(init_risk_price<=0.0 || entry_price<=0.0 || close_price<=0.0)
-      return 0.0;
-   double move = (pos_type==POSITION_TYPE_SELL ? (entry_price - close_price) : (close_price - entry_price));
-   double r = move / init_risk_price;
-   if(MathAbs(r) > 100.0)
-     {
-      if(ShouldLog(LOG_DEBUG))
-         PrintFormat("[R-MULT ALERT] abs(R)=%.2f entry=%.5f close=%.5f initR=%.8f type=%s", r, entry_price, close_price, init_risk_price, (pos_type==POSITION_TYPE_SELL?"SELL":"BUY"));
-     }
-   return r;
-  }
+// --- Spread and Session caps
+input double SpreadMaxPoints   = 0.0; // 0=disabled, block when current spread (points) > this cap
+input int    SessionStartHour  = 0;   // session/day boundary hour [0..23] for daily caps and baselines
+input int    SessionMaxTrades  = 0;   // 0=unlimited; max new trades per session/day (per symbol/timeframe for this EA instance)
 
-// --- String trim helper (returns a trimmed copy)
-string TrimCopy(string s)
-  {
-   StringTrimLeft(s);
-   StringTrimRight(s);
-   return s;
-  }
-
-// --- Explore-cap logging dedupe state ---
-datetime g_ecap_bar_time = 0;
-string   g_ecap_keys[];
-int      g_ecap_counts[];
-int      g_ecap_printed_once[]; // 0/1 whether we logged the first occurrence for this key this bar
-
-int ECapFindKeyIndex(const string key)
-{
-  for(int i=0;i<ArraySize(g_ecap_keys);++i)
-    if(g_ecap_keys[i]==key) return i;
-  return -1;
-}
-
-// Returns true if this is the first occurrence for the key in the current bar
-bool ECapIncrement(const string key)
-{
-  datetime bar = iTime(_Symbol,_Period,0);
-  if(g_ecap_bar_time==0)
-    g_ecap_bar_time = bar;
-  if(bar!=g_ecap_bar_time)
-  {
-    // caller should have flushed before incrementing for a new bar; still reset defensively
-    ArrayResize(g_ecap_keys,0); ArrayResize(g_ecap_counts,0); ArrayResize(g_ecap_printed_once,0);
-    g_ecap_bar_time = bar;
-  }
-  int idx = ECapFindKeyIndex(key);
-  if(idx<0)
-  {
-    int n = ArraySize(g_ecap_keys);
-    ArrayResize(g_ecap_keys,n+1); ArrayResize(g_ecap_counts,n+1); ArrayResize(g_ecap_printed_once,n+1);
-    g_ecap_keys[n] = key; g_ecap_counts[n] = 1; g_ecap_printed_once[n] = 0;
-    return true;
-  }
-  g_ecap_counts[idx]++;
-  return (g_ecap_printed_once[idx]==0);
-}
-
-void ECapMarkPrinted(const string key)
-{
-  int idx = ECapFindKeyIndex(key);
-  if(idx>=0) g_ecap_printed_once[idx] = 1;
-}
-
-void ECapFlushSummaryIfNewBar()
-{
-  if(g_ecap_bar_time==0) return;
-  datetime bar = iTime(_Symbol,_Period,0);
-  if(bar==g_ecap_bar_time) return; // same bar, nothing to do
-  // Emit one summary per key for the previous bar
-  string bar_ts = TimeToString(g_ecap_bar_time, TIME_DATE|TIME_MINUTES);
-  for(int i=0;i<ArraySize(g_ecap_keys);++i)
-  {
-    int total = g_ecap_counts[i];
-    int suppressed = total - (g_ecap_printed_once[i]>0 ? 1 : 0);
-    if(ShouldLog(LOG_INFO))
-      PrintFormat("[GATE] explore_cap summary bar=%s key=%s occurrences=%d suppressed=%d", bar_ts, g_ecap_keys[i], total, (suppressed<0?0:suppressed));
-  }
-  // Reset for new bar
-  ArrayResize(g_ecap_keys,0); ArrayResize(g_ecap_counts,0); ArrayResize(g_ecap_printed_once,0);
-  g_ecap_bar_time = bar;
-}
+// --- Risk & circuit breakers (0=disabled)
+input double MaxDailyLossPct   = 0.0; // block new trades if equity drawdown from session baseline exceeds this percent
+input double MaxDrawdownPct    = 0.0; // block new trades if equity drawdown from session high-water exceeds this percent
+input double MinMarginLevel    = 0.0; // block if Account margin level (%) < this threshold
+input int    ConsecutiveLossLimit = 0; // block when consecutive losing closures >= this limit (magic-number scoped)
 
 // --- Globals
 CKnowledgeBase*         g_kb = NULL;
@@ -210,7 +132,7 @@ CArrayObj*              g_strategies; // Array to hold all strategy objects
 CFeaturesKB*            g_features = NULL; // Features logger
 CTelemetry*             g_telemetry = NULL; // Telemetry logger
 // Strategy selector
-CStrategySelector*       g_selector = NULL;
+CStrategySelector*      g_selector = NULL;
 // Insights gating cache
 string                  g_gate_strat[];
 string                  g_gate_sym[];
@@ -230,18 +152,15 @@ double                  g_pol_p[];
 double                  g_pol_sl[];
 double                  g_pol_tp[];
 double                  g_pol_trail[];
-
 // Exploration Mode tracking (weekly persistent)
 string                  g_exp_keys[];    // slice key: strategy|symbol|timeframe
 int                     g_exp_weeks[];   // week bucket id (Monday yyyymmdd)
 int                     g_exp_counts[];  // count within week
 string                  g_explore_pending_key = ""; // set by Insights_Allow when allowing explore
-
 // Daily exploration tracking (persistent)
 string                  g_exp_day_keys[];
 int                     g_exp_day_days[];   // yyyymmdd
 int                     g_exp_day_counts[];
-
 // Active position tracking for MFE/MAE and closure analytics
 ulong                   g_pos_ids[];           // POSITION_IDENTIFIER
 string                  g_pos_strats[];        // strategy attribution
@@ -251,7 +170,6 @@ datetime                g_pos_start_time[];    // entry time
 int                     g_pos_type[];          // POSITION_TYPE_*
 double                  g_pos_max_price[];     // MFE price
 double                  g_pos_min_price[];     // MAE price
-
 // Pending order/deal attribution (to map back strategy names on asynchronous trade events)
 ulong                   g_pending_orders[];
 string                  g_pending_orders_strat[];
@@ -922,24 +840,15 @@ bool Insights_RebuildAndReload(const string reason)
        // If delete failed, log once; it's non-fatal
        PrintFormat("Policy reload: cannot delete signal file %s (err=%d)", path, GetLastError());
       }
-   }
+  }
 
- // Check insights.reload signal from Common Files and trigger rebuild
- void CheckInsightsReload()
-   {
-    string path = "DualEA\\insights.reload";
-    int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
-    if(h==INVALID_HANDLE)
-      return;
-    FileClose(h);
-    bool ok = Insights_RebuildAndReload("reload");
-    PrintFormat("Insights reload signal detected: %s", (ok?"rebuilt":"failed"));
-    // best-effort delete
-    if(!FileDelete(path, FILE_COMMON))
-      {
-       PrintFormat("Insights reload: cannot delete signal file %s (err=%d)", path, GetLastError());
-      }
-   }
+// --- String trim helper (returns a trimmed copy)
+string TrimCopy(string s)
+  {
+   StringTrimLeft(s);
+   StringTrimRight(s);
+   return s;
+  }
 
 // Load policy.json from Common Files and cache min_confidence and slice_probs
 bool Policy_Load()
@@ -1032,6 +941,23 @@ bool Policy_Load()
    return g_policy_loaded;
   }
 
+ // Check insights.reload signal from Common Files and trigger rebuild
+ void CheckInsightsReload()
+   {
+    string path = "DualEA\\insights.reload";
+    int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+    if(h==INVALID_HANDLE)
+      return;
+    FileClose(h);
+    bool ok = Insights_RebuildAndReload("reload");
+    PrintFormat("Insights reload signal detected: %s", (ok?"rebuilt":"failed"));
+    // best-effort delete
+    if(!FileDelete(path, FILE_COMMON))
+      {
+       PrintFormat("Insights reload: cannot delete signal file %s (err=%d)", path, GetLastError());
+      }
+   }
+
 // Insights maintenance state
 datetime                g_last_insights_check = 0;
 
@@ -1064,20 +990,217 @@ void LogHeartbeat()
      }
 
    // GATE summary
-   string gsum = StringFormat("insights=%s policy=%s(min=%.3f) explore=%s caps(slice=%d/day=%d)",
+   string gsum = StringFormat(
+      "insights=%s policy=%s(min=%.3f) fallback(def=%s,demo_only=%s,no_policy=%s)",
       (UseInsightsGating?"on":"off"), (UsePolicyGating?"on":"off"), g_policy_min_conf,
-      (ExploreOnNoSlice?"on":"off"), ExploreMaxPerSlice, ExploreMaxPerSlicePerDay);
-   if(ShouldLog(LOG_INFO)) PrintFormat("[GATE] %s", gsum);
+      (DefaultPolicyFallback?"on":"off"), (FallbackDemoOnly?"on":"off"), (FallbackWhenNoPolicy?"on":"off")
+      );
 
-   // Panel
-   string panel = StringFormat("DualEA Heartbeat\n%s tf=%d\nstrats=%d spread_pts=%.1f\n%s",
-      _Symbol, tf, nstrats, spread_pts, gsum);
+   string panel = StringFormat(
+      "DualEA Heartbeat\n%s tf=%d\nstrats=%d spread_pts=%.1f\n%s",
+      _Symbol, tf, nstrats, spread_pts, gsum
+      );
    Comment(panel);
   }
 
-//+------------------------------------------------------------------+
-//| Expert initialization function                                   |
-//+------------------------------------------------------------------+
+ // --- Spread/Session/Risk gating helpers and session tracking
+ datetime g_session_start = 0;
+ int      g_session_day   = 0;
+ double   g_session_equity_start = 0.0;
+ double   g_equity_highwater     = 0.0;
+
+ double CurrentSpreadPoints()
+   {
+    double bid=0.0, ask=0.0;
+    SymbolInfoDouble(_Symbol, SYMBOL_BID, bid);
+    SymbolInfoDouble(_Symbol, SYMBOL_ASK, ask);
+    if(ask>0.0 && bid>0.0 && _Point>0.0) return (ask - bid)/_Point;
+    return 0.0;
+   }
+
+ datetime ComputeSessionBoundary(datetime now)
+   {
+    MqlDateTime dt; TimeToStruct(now, dt);
+    dt.hour = SessionStartHour;
+    dt.min  = 0;
+    dt.sec  = 0;
+    datetime today_boundary = StructToTime(dt);
+    if(now < today_boundary) return today_boundary - 86400;
+    return today_boundary;
+   }
+
+ void EnsureSessionRollover()
+   {
+    datetime b = ComputeSessionBoundary(TimeCurrent());
+    MqlDateTime dts; TimeToStruct(b, dts);
+    int day = dts.year*10000 + dts.mon*100 + dts.day;
+    if(g_session_start==0 || g_session_day!=day)
+      {
+       g_session_start = b;
+       g_session_day   = day;
+       g_session_equity_start = AccountInfoDouble(ACCOUNT_EQUITY);
+       g_equity_highwater     = g_session_equity_start;
+       if(ShouldLog(LOG_INFO)) PrintFormat("Session rollover: start=%s equity=%.2f",
+         TimeToString(g_session_start, TIME_DATE|TIME_MINUTES), g_session_equity_start);
+      }
+   }
+
+ int CountNewTradesSince(const datetime t0)
+   {
+    int count=0;
+    if(!HistorySelect(t0, TimeCurrent())) return 0;
+    int total = (int)HistoryDealsTotal();
+    for(int i=0;i<total;++i)
+      {
+       ulong ticket = HistoryDealGetTicket(i);
+       if(HistoryDealGetString(ticket, DEAL_SYMBOL)!=_Symbol) continue;
+       long  mag = (long)HistoryDealGetInteger(ticket, DEAL_MAGIC);
+       if(mag != MagicNumber) continue;
+       int entry = (int)HistoryDealGetInteger(ticket, DEAL_ENTRY);
+       if(entry==DEAL_ENTRY_IN) count++;
+      }
+    return count;
+   }
+
+ int CountConsecutiveLosses()
+   {
+    int consec=0;
+    datetime t0 = TimeCurrent() - 120*86400;
+    if(!HistorySelect(t0, TimeCurrent())) return 0;
+    for(int i=HistoryDealsTotal()-1; i>=0; --i)
+      {
+       ulong ticket = HistoryDealGetTicket(i);
+       if((int)HistoryDealGetInteger(ticket, DEAL_ENTRY)!=DEAL_ENTRY_OUT) continue;
+       long mag = (long)HistoryDealGetInteger(ticket, DEAL_MAGIC);
+       if(mag != MagicNumber) continue;
+       double profit = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+       if(profit < 0.0) consec++;
+       else break;
+      }
+    return consec;
+   }
+
+ bool SpreadAllowed(string &reason)
+   {
+    reason = "ok";
+    if(SpreadMaxPoints<=0.0) return true;
+    double spr = CurrentSpreadPoints();
+    if(spr <= SpreadMaxPoints) return true;
+    reason = "spread_cap";
+    return false;
+   }
+
+ bool SessionAllowed(string &reason)
+   {
+    reason = "ok";
+    if(SessionMaxTrades<=0) return true;
+    int used = CountNewTradesSince(g_session_start);
+    if(used < SessionMaxTrades) return true;
+    reason = "session_cap";
+    return false;
+   }
+
+ bool RiskAllowed(string &reason)
+   {
+    reason = "ok";
+    double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+    if(eq>g_equity_highwater) g_equity_highwater = eq;
+    if(MaxDailyLossPct>0.0 && g_session_equity_start>0.0)
+      {
+       double dd = 100.0*(g_session_equity_start - eq)/g_session_equity_start;
+       if(dd >= MaxDailyLossPct) { reason="max_daily_loss"; return false; }
+      }
+    if(MaxDrawdownPct>0.0 && g_equity_highwater>0.0)
+      {
+       double ddh = 100.0*(g_equity_highwater - eq)/g_equity_highwater;
+       if(ddh >= MaxDrawdownPct) { reason="max_drawdown"; return false; }
+      }
+    if(MinMarginLevel>0.0)
+      {
+       double ml = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+       if(ml>0.0 && ml < MinMarginLevel) { reason="min_margin_level"; return false; }
+      }
+    if(ConsecutiveLossLimit>0)
+      {
+       int cl = CountConsecutiveLosses();
+       if(cl >= ConsecutiveLossLimit) { reason="consec_losses"; return false; }
+      }
+    return true;
+   }
+
+ // --- Explore cap log throttling and per-bar counters
+  // Reset counters on a new bar and track first-occurrence logging per slice key
+  datetime g_ecap_bar_time = 0;
+  string   g_ecap_keys[];
+  int      g_ecap_counts[];
+  bool     g_ecap_printed[];
+
+  // Ensure per-bar state resets when a new bar starts
+  void ECapFlushSummaryIfNewBar()
+    {
+     datetime cur_bar = iTime(_Symbol, _Period, 0);
+     if(cur_bar != g_ecap_bar_time)
+       {
+        g_ecap_bar_time = cur_bar;
+        ArrayResize(g_ecap_keys, 0);
+        ArrayResize(g_ecap_counts, 0);
+        ArrayResize(g_ecap_printed, 0);
+       }
+    }
+
+  // Increment cap count for a key. Returns true if this is the first occurrence this bar
+  bool ECapIncrement(const string key)
+    {
+     int n = ArraySize(g_ecap_keys);
+     for(int i=0;i<n;++i)
+       {
+        if(g_ecap_keys[i] == key)
+          {
+           g_ecap_counts[i]++;
+           return (g_ecap_counts[i]==1);
+          }
+       }
+     ArrayResize(g_ecap_keys, n+1);
+     ArrayResize(g_ecap_counts, n+1);
+     ArrayResize(g_ecap_printed, n+1);
+     g_ecap_keys[n]     = key;
+     g_ecap_counts[n]   = 1;
+     g_ecap_printed[n]  = false;
+     return true;
+    }
+
+  // Mark that we've already printed a message for this key in the current bar
+  void ECapMarkPrinted(const string key)
+    {
+     int n = ArraySize(g_ecap_keys);
+     for(int i=0;i<n;++i)
+       {
+        if(g_ecap_keys[i] == key)
+          {
+           g_ecap_printed[i] = true;
+           return;
+          }
+       }
+    }
+
+ void ScanStrategies(const bool telemetry_only=false)
+   {
+    static int last_minute_id = -1;
+    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+    int minute_id = dt.year*100000000 + dt.mon*1000000 + dt.day*10000 + dt.hour*100 + dt.min;
+    if(minute_id == last_minute_id) return;
+    last_minute_id = minute_id;
+    if(telemetry_only && TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+      {
+       int nstrats = (CheckPointer(g_strategies)!=POINTER_INVALID ? (int)g_strategies.Total() : 0);
+       string details = StringFormat("n=%d spread=%.1f", nstrats, CurrentSpreadPoints());
+       (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "scan", details);
+      }
+   }
+  
+  //+------------------------------------------------------------------+
+  //| Expert initialization function                                   |
+  //+------------------------------------------------------------------+
 int OnInit()
   {
    // Core services
@@ -1087,6 +1210,9 @@ int OnInit()
       g_features = new CFeaturesKB();
    if(CheckPointer(g_trade_manager)==POINTER_INVALID)
       g_trade_manager = new CTradeManager(_Symbol, LotSize, MagicNumber);
+
+   // Initialize session/equity baselines
+   EnsureSessionRollover();
 
    // Telemetry
    if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
@@ -1133,15 +1259,10 @@ int OnInit()
         }
       g_strategies.Clear();
      }
-   // Add verified strategies (for _Symbol/_Period)
+   // Register per-asset strategies for this symbol/timeframe
    if(CheckPointer(g_strategies)!=POINTER_INVALID)
      {
-      CObject* s1 = (CObject*)new CSuperTrendADXKamaStrategy(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      g_strategies.Add(s1);
-      CObject* s2 = (CObject*)new CRSI2BBReversionStrategy(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      g_strategies.Add(s2);
-      CObject* s3 = (CObject*)new CDonchianATRBreakoutStrategy(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      g_strategies.Add(s3);
+      RegisterStrategiesForSymbol(g_strategies, _Symbol, (ENUM_TIMEFRAMES)_Period);
      }
 
    // Load insights gating cache for Insights_Allow()/HasSlice()
@@ -1237,6 +1358,8 @@ void OnDeinit(const int reason)
        }
      if(!HeartbeatEnabled || HeartbeatMinutes<=0) return;
      LogHeartbeat();
+     // Parity scan (telemetry only, per-minute dedup)
+     ScanStrategies(true);
     }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
@@ -1245,6 +1368,9 @@ void OnDeinit(const int reason)
    {
     // Runtime policy reload support
     CheckPolicyReload();
+    // Update session/equity trackers
+    EnsureSessionRollover();
+    double _eq = AccountInfoDouble(ACCOUNT_EQUITY); if(_eq>g_equity_highwater) g_equity_highwater=_eq;
     // Always update trailing stops for open positions managed by our magic number
     if(CheckPointer(g_trade_manager)!=POINTER_INVALID)
       {
@@ -1349,6 +1475,16 @@ void OnDeinit(const int reason)
                 string rshadow=""; bool allow_shadow = Insights_Allow(order.strategy_name, _Symbol, _Period, rshadow, true, true);
                 (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "insights", allow_shadow, rshadow, true);
                }
+             // Shadow spread/session/risk gates
+             if(NoConstraintsMode)
+               {
+                string rr=""; bool s_ok = SpreadAllowed(rr);
+                (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "spread", s_ok, (s_ok?"ok":rr), true);
+                bool ses_ok = SessionAllowed(rr);
+                (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "session", ses_ok, (ses_ok?"ok":rr), true);
+                string rr2=""; bool r_ok = RiskAllowed(rr2);
+                (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "risk", r_ok, (r_ok?"ok":rr2), true);
+               }
             }
           // Optional: selector gate using insights-based score
           if(!NoConstraintsMode && UseStrategySelector && CheckPointer(g_selector)!=POINTER_INVALID)
@@ -1399,6 +1535,33 @@ void OnDeinit(const int reason)
             {
              if(ShouldLog(LOG_INFO)) PrintFormat("EXEC: blocked %s on %s/%s due to MaxOpenPositions=%d (PositionsTotal=%d)", order.strategy_name, _Symbol, EnumToString(_Period), MaxOpenPositions, PositionsTotal());
              return;
+            }
+          // Spread cap
+          if(!NoConstraintsMode)
+            {
+             string rs=""; if(!SpreadAllowed(rs))
+               {
+                if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (spread=%.1f cap=%.1f)", order.strategy_name, _Symbol, EnumToString(_Period), rs, CurrentSpreadPoints(), SpreadMaxPoints);
+                if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                  (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "spread", false, rs);
+                return;
+               }
+             // Session cap
+             string rse=""; if(!SessionAllowed(rse))
+               {
+                if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (used=%d max=%d)", order.strategy_name, _Symbol, EnumToString(_Period), rse, CountNewTradesSince(g_session_start), SessionMaxTrades);
+                if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                  (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "session", false, rse);
+                return;
+               }
+             // Risk circuit breakers
+             string rr=""; if(!RiskAllowed(rr))
+               {
+                if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (eq=%.2f base=%.2f high=%.2f ml=%.2f)", order.strategy_name, _Symbol, EnumToString(_Period), rr, AccountInfoDouble(ACCOUNT_EQUITY), g_session_equity_start, g_equity_highwater, AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
+                if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                  (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk", false, rr);
+                return;
+               }
             }
           // If strategy did not provide trailing settings, apply defaults from inputs
           if(TrailEnabled && !order.trailing_enabled)
