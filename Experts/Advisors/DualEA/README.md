@@ -245,10 +245,12 @@ For detailed Phase 3 guidance (docs, hygiene, scoring, roadmap), see:
 - Completed:
   - Phase 1: Data & Insights Foundation (insights builder, headless rebuild, validator, CI flags, Common Files outputs)
   - Phase 2a: PaperEA Execution & Telemetry (baseline complete; timer-scan parity tracked under Phase 6)
+  - Phase 3 (core): LiveEA core loop with policy gating/fallbacks and scaling
+    - `LiveEA/LiveEA.mq5`: policy hot‑reload (tick+timer), `ApplyPolicyScaling()` incl. `trail_scale` and `trail_atr_mult`, fallback gating (`fallback_no_policy`, `fallback_policy_miss`, demo‑only by default), heartbeat with fallback flags
 - In Progress:
-  - Phase 2a → P1C1 (ACTIVE): Structural Audit for PaperEA (gating, exploration caps persistence, telemetry, KB writes, insights staleness, CI validators)
-  - Phase 3: LiveEA & Feedback Loop (timer scan, gating, insights staleness checks, telemetry/feature logging)
-  - Phase 6: Low‑Latency Minutely Scanner & Orchestration (OnTimer scanning, dedupe, parity work)
+  - Phase 3: LiveEA hardening (risk gates, stricter caps, optional shadow‑mode, per‑minute de‑dup)
+  - Phase 6: Low‑Latency Minutely Scanner & Orchestration (central `ScanStrategies`, minute de‑dup, parity with OnTick)
+  - Phase 2a → P1C1 (ACTIVE): Structural Audit for PaperEA (gating/caps persistence, telemetry, KB writes, insights staleness, CI validators)
   - Phase 4/7/8: Risk/Telemetry/Adversarial hardening — partial primitives present
 - Not Implemented:
   - Phase 2: ML/LSTM Pipeline (trainer + policy export)
@@ -307,7 +309,17 @@ Note (sequencing): after completing Phase 3 — Cycle 3 of the red‑team execut
 - Implement `LiveEA.mq5` with the same strategies but stricter gating (policy + risk limits).
 - LiveEA logs to the same KB; trainer merges Paper+Live data.
 - Feedback loop: Paper adapts based on Live outcomes via retrained policy.
-
+- Status:
+  - Implemented (in `Experts/Advisors/DualEA/LiveEA/LiveEA.mq5`):
+    - Policy load and hot‑reload on tick+timer; `g_policy_loaded` set by slice presence
+    - Gating with safe fallbacks (`DefaultPolicyFallback`, `FallbackWhenNoPolicy`, `FallbackDemoOnly`); neutral scaling on fallback
+    - `ApplyPolicyScaling()` including trailing scaling via `trail_scale` (fixed) and `trail_atr_mult` (ATR)
+    - Heartbeat GATE summary includes fallback flags for observability
+  - Remaining:
+    - Shadow‑mode and tighter gates vs PaperEA (min_conf, spread/news/session caps)
+    - Risk/circuit‑breaker enforcement inputs and guards
+    - One‑execution‑per‑slice‑per‑minute de‑dup; deterministic tie‑breakers
+    - Full timer‑scan parity (see Phase 6)
 - Suggestions:
   - Enable LiveEA shadow‑mode: log all candidate decisions; execute only top ML‑ranked passing min_conf and risk budget.
   - Tighten gates vs PaperEA: stricter min_conf, spread/news/session caps, lower exploration caps.
@@ -351,6 +363,7 @@ Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/L
   - Periodically re‑score strategies and disable underperformers; export strategy state to features.
 
 ### Phase 6: Low‑Latency Minutely Scanner & ML‑Enriched Orchestration
+- Status: Partial — OnTimer heartbeat/reload present; centralized `ScanStrategies` with minute de‑dup not yet implemented.
 - Guarantee both EAs "look" for trades at least every minute, independent of tick arrival.
   - Add inputs: `TimerScanEnabled` (bool, default `true`), `TimerScanSeconds` (int, default `60`).
   - `OnInit()`: configure `EventSetTimer(TimerScanSeconds)` when `TimerScanEnabled`.
@@ -360,7 +373,6 @@ Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/L
 - Performance & reliability hardening
   - Pre‑create and reuse indicator handles for all registered strategies/timeframes to avoid reallocation overhead per scan.
   - Cache policy and insights in memory; throttle file I/O to timer ticks; batch telemetry writes.
-  - Auto‑build `insights.json` at startup if missing/stale (compares against `features.csv`/`knowledge_base.csv`).
   - Optional: `EventSetMillisecondTimer(250–1000ms)` for ultra‑low‑latency scanning in LiveEA; gate by CPU budget.
 - LiveEA enrichment path
   - Consume trained ML outputs for per‑slice `min_conf`, expected‑R, and dynamic sizing; apply via `ApplyPolicyScaling()`.
