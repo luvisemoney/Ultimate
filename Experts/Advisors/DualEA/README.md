@@ -446,14 +446,101 @@ Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/L
 ---
 
 ## Next Milestones
-- Add features.csv export and insights.json aggregation.
-- Provide Python ML trainer and batch launcher (writes policy.json).
-- Add `policy.json` loader in PaperEA and gating/scaling application.
-- Skeleton `LiveEA.mq5` with circuit breaker checks.
+  - Add features.csv export and insights.json aggregation.
+  - Provide Python ML trainer and batch launcher (writes policy.json).
+  - Add `policy.json` loader in PaperEA and gating/scaling application.
+  - Skeleton `LiveEA.mq5` with circuit breaker checks.
 
 ## License
 Copyright 2025, Windsurf Engineering.
-you truly need low-latency sync later, we can explore:
 
-Named pipes/local TCP with a lightweight Python service, or
-A minimal REST loopback server. But these add failure modes and deployment friction; file-based is simpler and reliable.
+If you truly need low-latency sync later, consider:
+- Named pipes or local TCP with a lightweight Python service
+- A minimal REST loopback server
+
+Note: These add failure modes and deployment friction; file-based I/O is simpler and reliable for MT5. Prefer file-based until a concrete latency SLO requires otherwise.
+
+## Appendix A: Red‑Team Artifacts (Q&A, Rebuttals, Jailbreak Traces)
+
+To operationalize the 3×3 red‑team process, store artifacts in MT5 Common Files for both Tester and Live to access.
+
+- Base path: `Common\\Files\\DualEA\\jailbreak\\`
+- Run layout:
+  - `jailbreak\\runs\\YYYYMMDD_HHMMSS/`
+    - `qna.md` — Q&A log for the session
+    - `rebuttals.jsonl` — Expert rebuttals (JSONL)
+    - `traces.jsonl` — Jailbreak traces (JSONL)
+    - `summary.md` — Short session summary with outcomes and follow‑ups
+  - `jailbreak\\latest/` — optional symlink/copy of most recent run for dashboards
+
+### A.1 Q&A Log (Markdown)
+
+Minimal, structured template capturing prompts, answers, and references to code.
+
+```markdown
+# Red‑Team Q&A — <YYYY‑MM‑DD HH:MM:SS>
+
+## Q1: <question>
+- Context: <module(s) e.g., `Experts/Advisors/DualEA/PaperEA/PaperEA.mq5`>
+- Hypothesis: <expected behavior>
+- Answer: <observed behavior/decision>
+- Evidence: <file refs, line ranges, logs>
+- Outcome: pass | fail | needs‑followup
+
+## Q2: ...
+```
+
+### A.2 Expert Rebuttals (JSONL)
+
+One JSON per line with explicit links to files/modules and decisions.
+
+```json
+{"id":"rb_0001","claim":"Exploration bypass triggers with existing slice","rebuttal":"Bypass is no‑slice‑only; existing under‑threshold slices are gated","evidence_files":["Experts/Advisors/DualEA/PaperEA/PaperEA.mq5"],"decision_paths":["Gate->Insights->ExploreCaps"],"status":"resolved","timestamp":"2025-08-17T00:00:00Z"}
+```
+
+Fields:
+- `id`: stable id
+- `claim`: red‑team claim
+- `rebuttal`: concise counterargument
+- `evidence_files`: array of repository paths
+- `decision_paths`: e.g., `Scan->Selector->Gate->Execute`
+- `status`: open | resolved | needs‑work
+- `timestamp`: ISO8601
+
+### A.3 Jailbreak Traces (JSONL)
+
+Record adversarial tests, input mutations, expected vs observed behavior, and severity.
+
+```json
+{"ts":"2025-08-17T00:00:00Z","module":"PolicyLoader","file":"Experts/Advisors/DualEA/Include/StrategySelector.mqh","symbol":"EURUSD","timeframe":60,"case":"corrupt_policy_json","mutation":"truncated file","expected":"fallback to last‑known‑good policy with log and no crash","observed":"fallback engaged; neutral scaling applied","outcome":"safe","severity":"low","artifacts":["Common/Files/DualEA/policy.json","Common/Files/DualEA/policy.backup.json"],"notes":"Validated timer reload path and guardrails"}
+```
+
+Fields:
+- `ts`: timestamp
+- `module`, `file`: component and path under repo
+- `symbol`, `timeframe`: slice context when applicable
+- `case`, `mutation`: short names for cataloging
+- `expected`, `observed`: behaviors
+- `outcome`: safe | unsafe | inconclusive
+- `severity`: low | medium | high
+- `artifacts`: related files (Common Files paths allowed)
+- `notes`: free‑form
+
+### A.4 Traceability Rules
+
+- Always reference concrete files/paths (e.g., `Experts/Advisors/DualEA/LiveEA/LiveEA.mq5`).
+- Map each finding to a decision path: `OnTick()->ScanStrategies()->Gating()->TradeManager.Execute()`.
+- Prefer JSONL for machine‑readable aggregation; keep Markdown summaries for humans.
+- Attach log snippets (Journal) and KB rows when relevant.
+
+### A.5 CI Hooks
+
+- Copy the latest run into `jailbreak\\latest/` after each session.
+- Optional validator can assert that for each `case` seen in traces there is at least one `outcome=safe` or an open issue.
+- Include red‑team artifacts in reports alongside insights validation.
+
+### A.6 Operational Notes
+
+- PaperEA and LiveEA do not read from `jailbreak/`; it is a write‑only audit area.
+- Keep PII/broker identifiers out of logs; sanitize before sharing.
+- Large artifacts (CSV/JSON) should be rotated/compressed if size grows beyond operational limits.

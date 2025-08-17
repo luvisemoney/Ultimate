@@ -111,6 +111,11 @@ input bool   HeartbeatEnabled = true;
 input int    HeartbeatMinutes = 15;   // update every N minutes
 input bool   HeartbeatVerbose = true; // print [STRAT] lines per strategy
 
+// --- Timer-based evaluation scan
+input bool   TimerScanEnabled = false;   // enable periodic EvaluateAndMaybeExecute on timer
+input int    TimerScanMinutes = 5;       // run evaluation every N minutes on timer
+input bool   TimerScanVerbose = false;   // extra logs when timer scan triggers
+
 // --- Risk/Position limits
 input int    MaxOpenPositions = 0; // 0=unlimited; total simultaneous positions across account
 
@@ -175,6 +180,11 @@ ulong                   g_pending_orders[];
 string                  g_pending_orders_strat[];
 ulong                   g_pending_deals[];
 string                  g_pending_deals_strat[];
+
+// Re-entrancy guard and cadence trackers
+bool                    g_eval_busy = false;      // protects evaluation from overlapping runs
+datetime                g_last_timer_scan = 0;    // last time Evaluate ran via timer-scan
+datetime                g_last_heartbeat = 0;     // last time heartbeat was logged
 
 // --- Helpers: tracking lookup and robust closure logging/removal
 int FindTrackedIndexByPid(ulong pid)
@@ -956,7 +966,7 @@ bool Policy_Load()
       {
        PrintFormat("Insights reload: cannot delete signal file %s (err=%d)", path, GetLastError());
       }
-   }
+  }
 
 // Insights maintenance state
 datetime                g_last_insights_check = 0;
@@ -1183,264 +1193,20 @@ void LogHeartbeat()
        }
     }
 
- void ScanStrategies(const bool telemetry_only=false)
+ // Core evaluation loop with re-entrancy guard
+ void EvaluateAndMaybeExecute(const bool from_timer=false)
    {
-    static int last_minute_id = -1;
-    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
-    int minute_id = dt.year*100000000 + dt.mon*1000000 + dt.day*10000 + dt.hour*100 + dt.min;
-    if(minute_id == last_minute_id) return;
-    last_minute_id = minute_id;
-    if(telemetry_only && TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+    if(g_eval_busy)
       {
-       int nstrats = (CheckPointer(g_strategies)!=POINTER_INVALID ? (int)g_strategies.Total() : 0);
-       string details = StringFormat("n=%d spread=%.1f", nstrats, CurrentSpreadPoints());
-       (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "scan", details);
+       if(ShouldLog(LOG_DEBUG)) Print("Evaluate skipped: already running");
+       return;
       }
-   }
-  
-  //+------------------------------------------------------------------+
-  //| Expert initialization function                                   |
-  //+------------------------------------------------------------------+
-int OnInit()
-  {
-   // Core services
-   if(CheckPointer(g_kb)==POINTER_INVALID)
-      g_kb = new CKnowledgeBase();
-   if(CheckPointer(g_features)==POINTER_INVALID)
-      g_features = new CFeaturesKB();
-   if(CheckPointer(g_trade_manager)==POINTER_INVALID)
-      g_trade_manager = new CTradeManager(_Symbol, LotSize, MagicNumber);
-
-   // Initialize session/equity baselines
-   EnsureSessionRollover();
-
-   // Telemetry
-   if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
-     {
-      g_telemetry = new CTelemetry(TelemetryDir, TelemetryExperiment, TelemetryLevel, TelemetryBufferMax);
-      if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-        (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "init", StringFormat("NoConstraints=%s", (NoConstraintsMode?"true":"false")));
-     }
-
-   // Insights auto-build before selector/gating loads
-   if(InsightsAutoBuild)
-     {
-      bool stale = Insights_IsStale(InsightsStaleHours);
-      if(stale)
-        {
-         Insights_RebuildAndReload("init");
-        }
-     }
-
-   // Strategy selector
-   if(CheckPointer(g_selector)==POINTER_INVALID)
-     {
-      g_selector = new CStrategySelector();
-      (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
-      (*g_selector).ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
-      // Align thresholds with gating inputs
-      (*g_selector).ConfigureThresholds(GateMinTrades, GateMinWinRate, GateMinExpectancyR, GateMinProfitFactor, GateMaxDrawdownR);
-      // Load insights and recent overlays
-      bool ok_ins = (*g_selector).Load();
-      bool ok_rec = (*g_selector).LoadRecent();
-      PrintFormat("Selector init: insights=%s recent=%s", (ok_ins?"ok":"fail"), (ok_rec?"ok":"skip/fail"));
-     }
-
-   // Initialize strategies container and register strategies for current symbol/timeframe
-   if(CheckPointer(g_strategies)==POINTER_INVALID)
-      g_strategies = new CArrayObj();
-   // Clear any existing to avoid duplicates across re-inits
-   if(CheckPointer(g_strategies)!=POINTER_INVALID && g_strategies.Total()>0)
-     {
-      for(int i=0;i<g_strategies.Total();++i)
-        {
-         CObject* obj = (CObject*)g_strategies.At(i);
-         if(CheckPointer(obj)!=POINTER_INVALID) delete obj;
-        }
-      g_strategies.Clear();
-     }
-   // Register per-asset strategies for this symbol/timeframe
-   if(CheckPointer(g_strategies)!=POINTER_INVALID)
-     {
-      RegisterStrategiesForSymbol(g_strategies, _Symbol, (ENUM_TIMEFRAMES)_Period);
-     }
-
-   // Load insights gating cache for Insights_Allow()/HasSlice()
-   bool gate_loaded = Insights_Load();
-   if(ShouldLog(LOG_INFO)) PrintFormat("Insights gating cache load: %s", (gate_loaded?"ok":"fail"));
-   // Load policy gating cache
-   if(UsePolicyGating)
-     {
-      bool pol_ok = Policy_Load();
-      if(ShouldLog(LOG_INFO)) PrintFormat("Policy gating cache load: %s", (pol_ok?"ok":"fail"));
-     }
-
-   // Load persistent exploration counters (weekly and daily)
-   bool wk_ok = LoadExploreCounts();
-   bool dy_ok = LoadExploreCountsDay();
-   if(ShouldLog(LOG_INFO)) PrintFormat("Explore counters loaded: week=%s day=%s", (wk_ok?"ok":"fail"), (dy_ok?"ok":"fail"));
-
-   // Heartbeat timer
-    if(HeartbeatEnabled && HeartbeatMinutes>0)
-      {
-       int sec = HeartbeatMinutes*60; if(sec<1) sec=1;
-       EventSetTimer(sec);
-       // emit an immediate heartbeat so user sees status without waiting
-       LogHeartbeat();
-      }
-   // Mode banner: NoConstraintsMode disables all gating and caps
-   if(NoConstraintsMode)
-     {
-      if(ShouldLog(LOG_INFO)) Print("Mode: NoConstraintsMode=true -> bypass trading hours, selector gating, insights gating, exploration caps (0=unlimited), and MaxOpenPositions");
-     }
-   return(INIT_SUCCEEDED);
-  }
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                  |
-//+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-  {
-   // Persist exploration counters
-   SaveExploreCounts();
-   SaveExploreCountsDay();
-
-   // Telemetry flush & dispose
-   if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-     {
-      // session end marker
-      if(TelemetryEnabled)
-        (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "deinit", StringFormat("reason=%d", reason));
-      (*g_telemetry).Flush();
-      delete g_telemetry; g_telemetry=NULL;
-     }
-
-   // Dispose strategies
-   if(CheckPointer(g_strategies)!=POINTER_INVALID)
-     {
-      for(int i=0;i<g_strategies.Total();++i)
-        {
-         CObject* obj = (CObject*)g_strategies.At(i);
-         if(CheckPointer(obj)!=POINTER_INVALID) delete obj;
-        }
-      g_strategies.Clear();
-      delete g_strategies; g_strategies=NULL;
-     }
-   // Dispose services
-   if(CheckPointer(g_selector)!=POINTER_INVALID){ delete g_selector; g_selector=NULL; }
-   if(CheckPointer(g_trade_manager)!=POINTER_INVALID){ delete g_trade_manager; g_trade_manager=NULL; }
-   if(CheckPointer(g_features)!=POINTER_INVALID){ delete g_features; g_features=NULL; }
-   if(CheckPointer(g_kb)!=POINTER_INVALID){ delete g_kb; g_kb=NULL; }
-   if(HeartbeatEnabled) { EventKillTimer(); Comment(""); }
-  }
-//+------------------------------------------------------------------+
-//| Timer event                                                       |
-//+------------------------------------------------------------------+
-  void OnTimer()
-    {
-     // Always allow policy reload checks on timer
-     CheckPolicyReload();
-     // Allow manual insights rebuild via signal file
-     CheckInsightsReload();
-     // Flush telemetry periodically regardless of heartbeat setting
-     if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-        (*g_telemetry).Flush();
-     // Optionally check insights staleness on timer (throttled)
-     if(InsightsAutoBuild && InsightsCheckOnTimer)
-       {
-        if(g_last_insights_check==0 || (TimeCurrent()-g_last_insights_check)>=300)
-          {
-           g_last_insights_check = TimeCurrent();
-           if(Insights_IsStale(InsightsStaleHours))
-             {
-              Insights_RebuildAndReload("timer");
-             }
-          }
-       }
-     if(!HeartbeatEnabled || HeartbeatMinutes<=0) return;
-     LogHeartbeat();
-     // Parity scan (telemetry only, per-minute dedup)
-     ScanStrategies(true);
-    }
-//+------------------------------------------------------------------+
-//| Expert tick function                                             |
-//+------------------------------------------------------------------+
- void OnTick()
-   {
-    // Runtime policy reload support
-    CheckPolicyReload();
-    // Update session/equity trackers
-    EnsureSessionRollover();
-    double _eq = AccountInfoDouble(ACCOUNT_EQUITY); if(_eq>g_equity_highwater) g_equity_highwater=_eq;
-    // Always update trailing stops for open positions managed by our magic number
-    if(CheckPointer(g_trade_manager)!=POINTER_INVALID)
-      {
-       (*g_trade_manager).UpdateTrailingStops();
-      }
-    // Optional time-of-day trading hours gate
-    if(!NoConstraintsMode && UseTradingHours)
-      {
-       MqlDateTime _tm; TimeToStruct(TimeCurrent(), _tm); int hr = _tm.hour;
-       bool within=false;
-       if(TradingStartHour<=TradingEndHour)
-         within = (hr>=TradingStartHour && hr<TradingEndHour);
-       else
-         within = (hr>=TradingStartHour || hr<TradingEndHour); // overnight window
-       if(!within)
-         {
-          // Outside trading hours: do not open new trades (still manage trailing above)
-          return;
-         }
-      }
-    // Update MFE/MAE extremes for active positions
-    int pos_total = PositionsTotal();
-    for(int i=0; i<pos_total; ++i)
-      {
-       string psym = PositionGetSymbol(i);
-       if(psym==NULL || psym=="") continue;
-       long   pmag = PositionGetInteger(POSITION_MAGIC);
-       if(psym!=_Symbol || pmag!=MagicNumber) continue;
-       ulong  pid  = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
-       double pcur = PositionGetDouble(POSITION_PRICE_CURRENT);
-       // find index in tracking arrays
-       int idx = -1;
-       for(int t=0; t<ArraySize(g_pos_ids); ++t) { if(g_pos_ids[t]==pid) { idx=t; break; } }
-       if(idx<0) continue;
-       if(pcur>g_pos_max_price[idx]) g_pos_max_price[idx]=pcur;
-       if(pcur<g_pos_min_price[idx]) g_pos_min_price[idx]=pcur;
-      }
-    // Detect closed positions and log outcomes
-    for(int i=0; i<ArraySize(g_pos_ids); )
-      {
-       ulong pid = g_pos_ids[i];
-       // If position is no longer open, attempt to log its closure
-       if(!IsPositionOpenByIdentifier(pid))
-         {
-          // Search recent history for the closing deal of this position
-          datetime t0 = (g_pos_start_time[i]>0? g_pos_start_time[i] - 3600 : TimeCurrent() - 7*86400);
-          HistorySelect(t0, TimeCurrent());
-          ulong close_deal = 0;
-          for(int d = HistoryDealsTotal()-1; d>=0; --d)
-            {
-             ulong deal_ticket = HistoryDealGetTicket(d);
-             if((ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID)==pid)
-               {
-                int entry_flag = (int)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
-                if(entry_flag==DEAL_ENTRY_OUT)
-                  { close_deal = deal_ticket; break; }
-               }
-            }
-          if(close_deal>0)
-            {
-             HandlePositionClosed(i, close_deal);
-             continue; // do not increment i, array was compacted
-            }
-         }
-       ++i;
-      }
+    g_eval_busy = true;
     // Iterate through each strategy
     if(CheckPointer(g_strategies)==POINTER_INVALID)
       {
-       Print("Error: g_strategies not initialized; skipping tick.");
+       Print("Error: g_strategies not initialized; skipping evaluation.");
+       g_eval_busy = false;
        return;
       }
     for(int i = 0; i < g_strategies.Total(); i++)
@@ -1534,6 +1300,7 @@ void OnDeinit(const int reason)
           if(MaxOpenPositions > 0 && PositionsTotal() >= MaxOpenPositions)
             {
              if(ShouldLog(LOG_INFO)) PrintFormat("EXEC: blocked %s on %s/%s due to MaxOpenPositions=%d (PositionsTotal=%d)", order.strategy_name, _Symbol, EnumToString(_Period), MaxOpenPositions, PositionsTotal());
+             g_eval_busy = false;
              return;
             }
           // Spread cap
@@ -1544,6 +1311,7 @@ void OnDeinit(const int reason)
                 if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (spread=%.1f cap=%.1f)", order.strategy_name, _Symbol, EnumToString(_Period), rs, CurrentSpreadPoints(), SpreadMaxPoints);
                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "spread", false, rs);
+                g_eval_busy = false;
                 return;
                }
              // Session cap
@@ -1552,6 +1320,7 @@ void OnDeinit(const int reason)
                 if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (used=%d max=%d)", order.strategy_name, _Symbol, EnumToString(_Period), rse, CountNewTradesSince(g_session_start), SessionMaxTrades);
                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "session", false, rse);
+                g_eval_busy = false;
                 return;
                }
              // Risk circuit breakers
@@ -1560,6 +1329,7 @@ void OnDeinit(const int reason)
                 if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (eq=%.2f base=%.2f high=%.2f ml=%.2f)", order.strategy_name, _Symbol, EnumToString(_Period), rr, AccountInfoDouble(ACCOUNT_EQUITY), g_session_equity_start, g_equity_highwater, AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk", false, rr);
+                g_eval_busy = false;
                 return;
                }
             }
@@ -1609,6 +1379,7 @@ void OnDeinit(const int reason)
                       ECapMarkPrinted(ecap_key_gate);
                       if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
                         (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "insights", false, "explore_cap");
+                      g_eval_busy = false;
                       return;
                      }
                   }
@@ -1633,6 +1404,7 @@ void OnDeinit(const int reason)
                       if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
                         (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "insights", false, gate_reason);
                      }
+                   g_eval_busy = false;
                    return;
                   }
                }
@@ -1847,6 +1619,7 @@ void OnDeinit(const int reason)
                 g_explore_pending_key = "";
                }
              PrintFormat("Trade executed by %s. Deal: %d, Order: %d", order.strategy_name, (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+             g_eval_busy = false;
              return; // Exit after processing one trade
             }
           else
@@ -1864,4 +1637,686 @@ void OnDeinit(const int reason)
             }
          }
       }
+    g_eval_busy = false;
    }
+
+ void ScanStrategies(const bool telemetry_only=false)
+  {
+    static int last_minute_id = -1;
+    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+    int minute_id = dt.year*100000000 + dt.mon*1000000 + dt.day*10000 + dt.hour*100 + dt.min;
+    if(minute_id == last_minute_id) return;
+    last_minute_id = minute_id;
+    if(telemetry_only && TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+      {
+       int nstrats = (CheckPointer(g_strategies)!=POINTER_INVALID ? (int)g_strategies.Total() : 0);
+       string details = StringFormat("n=%d spread=%.1f", nstrats, CurrentSpreadPoints());
+       (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "scan", details);
+      }
+   }
+  
+  //+------------------------------------------------------------------+
+  //| Expert initialization function                                   |
+  //+------------------------------------------------------------------+
+int OnInit()
+  {
+   // Core services
+   if(CheckPointer(g_kb)==POINTER_INVALID)
+      g_kb = new CKnowledgeBase();
+   if(CheckPointer(g_features)==POINTER_INVALID)
+      g_features = new CFeaturesKB();
+   if(CheckPointer(g_trade_manager)==POINTER_INVALID)
+      g_trade_manager = new CTradeManager(_Symbol, LotSize, MagicNumber);
+
+   // Initialize session/equity baselines
+   EnsureSessionRollover();
+
+   // Telemetry
+   if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
+     {
+      g_telemetry = new CTelemetry(TelemetryDir, TelemetryExperiment, TelemetryLevel, TelemetryBufferMax);
+      if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+        (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "init", StringFormat("NoConstraintsMode=%s", (NoConstraintsMode?"true":"false")));
+     }
+
+   // Insights auto-build before selector/gating loads
+   if(InsightsAutoBuild)
+     {
+      bool stale = Insights_IsStale(InsightsStaleHours);
+      if(stale)
+        {
+         Insights_RebuildAndReload("init");
+        }
+     }
+
+   // Strategy selector
+   if(CheckPointer(g_selector)==POINTER_INVALID)
+     {
+      g_selector = new CStrategySelector();
+      (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
+      (*g_selector).ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
+      // Align thresholds with gating inputs
+      (*g_selector).ConfigureThresholds(GateMinTrades, GateMinWinRate, GateMinExpectancyR, GateMinProfitFactor, GateMaxDrawdownR);
+      // Load insights and recent overlays
+      bool ok_ins = (*g_selector).Load();
+      bool ok_rec = (*g_selector).LoadRecent();
+      PrintFormat("Selector init: insights=%s recent=%s", (ok_ins?"ok":"fail"), (ok_rec?"ok":"skip/fail"));
+     }
+
+   // Initialize strategies container and register strategies for current symbol/timeframe
+   if(CheckPointer(g_strategies)==POINTER_INVALID)
+      g_strategies = new CArrayObj();
+   // Clear any existing to avoid duplicates across re-inits
+   if(CheckPointer(g_strategies)!=POINTER_INVALID && g_strategies.Total()>0)
+     {
+      for(int i=0;i<g_strategies.Total();++i)
+        {
+         CObject* obj = (CObject*)g_strategies.At(i);
+         if(CheckPointer(obj)!=POINTER_INVALID) delete obj;
+        }
+      g_strategies.Clear();
+     }
+   // Register per-asset strategies for this symbol/timeframe
+   if(CheckPointer(g_strategies)!=POINTER_INVALID)
+     {
+      RegisterStrategiesForSymbol(g_strategies, _Symbol, (ENUM_TIMEFRAMES)_Period);
+     }
+
+   // Load insights gating cache for Insights_Allow()/HasSlice()
+   bool gate_loaded = Insights_Load();
+   if(ShouldLog(LOG_INFO)) PrintFormat("Insights gating cache load: %s", (gate_loaded?"ok":"fail"));
+   // Load policy gating cache
+   if(UsePolicyGating)
+     {
+      bool pol_ok = Policy_Load();
+      if(ShouldLog(LOG_INFO)) PrintFormat("Policy gating cache load: %s", (pol_ok?"ok":"fail"));
+     }
+
+   // Load persistent exploration counters (weekly and daily)
+   bool wk_ok = LoadExploreCounts();
+   bool dy_ok = LoadExploreCountsDay();
+   if(ShouldLog(LOG_INFO)) PrintFormat("Explore counters loaded: week=%s day=%s", (wk_ok?"ok":"fail"), (dy_ok?"ok":"fail"));
+
+   // Timer: unify heartbeat and timer-scan
+   {
+    int sec = 0;
+    if(HeartbeatEnabled && HeartbeatMinutes>0)
+      {
+       int hb = HeartbeatMinutes*60; if(hb<1) hb=1;
+       sec = (sec==0? hb : MathMin(sec, hb));
+      }
+    if(TimerScanEnabled && TimerScanMinutes>0)
+      {
+       int ts = TimerScanMinutes*60; if(ts<1) ts=1;
+       sec = (sec==0? ts : MathMin(sec, ts));
+      }
+    if(sec>0)
+      {
+       EventSetTimer(sec);
+       if(HeartbeatEnabled)
+         {
+          LogHeartbeat();
+          g_last_heartbeat = TimeCurrent();
+         }
+      }
+   }
+   // Mode banner: NoConstraintsMode disables all gating and caps
+   if(NoConstraintsMode)
+     {
+      if(ShouldLog(LOG_INFO)) Print("Mode: NoConstraintsMode=true -> bypass trading hours, selector gating, insights gating, exploration caps (0=unlimited), and MaxOpenPositions");
+     }
+   return(INIT_SUCCEEDED);
+  }
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                  |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   // Persist exploration counters
+   SaveExploreCounts();
+   SaveExploreCountsDay();
+
+   // Telemetry flush & dispose
+   if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+     {
+      // session end marker
+      if(TelemetryEnabled)
+        (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "deinit", StringFormat("reason=%d", reason));
+      (*g_telemetry).Flush();
+      delete g_telemetry; g_telemetry=NULL;
+     }
+
+   // Dispose strategies
+   if(CheckPointer(g_strategies)!=POINTER_INVALID)
+     {
+      for(int i=0;i<g_strategies.Total();++i)
+        {
+         CObject* obj = (CObject*)g_strategies.At(i);
+         if(CheckPointer(obj)!=POINTER_INVALID) delete obj;
+        }
+      g_strategies.Clear();
+      delete g_strategies; g_strategies=NULL;
+     }
+   // Dispose services
+   if(CheckPointer(g_selector)!=POINTER_INVALID){ delete g_selector; g_selector=NULL; }
+   if(CheckPointer(g_trade_manager)!=POINTER_INVALID){ delete g_trade_manager; g_trade_manager=NULL; }
+   if(CheckPointer(g_features)!=POINTER_INVALID){ delete g_features; g_features=NULL; }
+   if(CheckPointer(g_kb)!=POINTER_INVALID){ delete g_kb; g_kb=NULL; }
+   if(HeartbeatEnabled || TimerScanEnabled) { EventKillTimer(); Comment(""); }
+  }
+//+------------------------------------------------------------------+
+//| Timer event                                                       |
+//+------------------------------------------------------------------+
+  void OnTimer()
+    {
+     // Always allow policy reload checks on timer
+     CheckPolicyReload();
+     // Allow manual insights rebuild via signal file
+     CheckInsightsReload();
+     // Flush telemetry periodically regardless of heartbeat setting
+     if(CheckPointer(g_telemetry)!=POINTER_INVALID)
+        (*g_telemetry).Flush();
+     // Optionally check insights staleness on timer (throttled)
+     if(InsightsAutoBuild && InsightsCheckOnTimer)
+       {
+        if(g_last_insights_check==0 || (TimeCurrent()-g_last_insights_check)>=300)
+          {
+           g_last_insights_check = TimeCurrent();
+           if(Insights_IsStale(InsightsStaleHours))
+             {
+              Insights_RebuildAndReload("timer");
+             }
+          }
+       }
+    // Heartbeat cadence (non-blocking)
+    if(HeartbeatEnabled && HeartbeatMinutes>0)
+      {
+       if(g_last_heartbeat==0 || (TimeCurrent()-g_last_heartbeat) >= (HeartbeatMinutes*60))
+         {
+          LogHeartbeat();
+          g_last_heartbeat = TimeCurrent();
+         }
+      }
+    // Parity scan (telemetry only, per-minute dedup)
+    ScanStrategies(true);
+    // Timer-based evaluation scan cadence
+    if(TimerScanEnabled && TimerScanMinutes>0)
+      {
+       if(g_last_timer_scan==0 || (TimeCurrent()-g_last_timer_scan) >= (TimerScanMinutes*60))
+         {
+          if(TimerScanVerbose && ShouldLog(LOG_INFO)) Print("TimerScan: triggering EvaluateAndMaybeExecute()");
+          EvaluateAndMaybeExecute(true);
+          g_last_timer_scan = TimeCurrent();
+         }
+      }
+    }
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+ void OnTick()
+   {
+    // Runtime policy reload support
+    CheckPolicyReload();
+    // Update session/equity trackers
+    EnsureSessionRollover();
+    double _eq = AccountInfoDouble(ACCOUNT_EQUITY); if(_eq>g_equity_highwater) g_equity_highwater=_eq;
+    // Always update trailing stops for open positions managed by our magic number
+    if(CheckPointer(g_trade_manager)!=POINTER_INVALID)
+      {
+       (*g_trade_manager).UpdateTrailingStops();
+      }
+    // Optional time-of-day trading hours gate
+    if(!NoConstraintsMode && UseTradingHours)
+      {
+       MqlDateTime _tm; TimeToStruct(TimeCurrent(), _tm); int hr = _tm.hour;
+       bool within=false;
+       if(TradingStartHour<=TradingEndHour)
+         within = (hr>=TradingStartHour && hr<TradingEndHour);
+       else
+         within = (hr>=TradingStartHour || hr<TradingEndHour); // overnight window
+       if(!within)
+         {
+          // Outside trading hours: do not open new trades (still manage trailing above)
+          return;
+         }
+      }
+    // Update MFE/MAE extremes for active positions
+    int pos_total = PositionsTotal();
+    for(int i=0; i<pos_total; ++i)
+      {
+       string psym = PositionGetSymbol(i);
+       if(psym==NULL || psym=="") continue;
+       long   pmag = PositionGetInteger(POSITION_MAGIC);
+       if(psym!=_Symbol || pmag!=MagicNumber) continue;
+       ulong  pid  = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+       double pcur = PositionGetDouble(POSITION_PRICE_CURRENT);
+       // find index in tracking arrays
+       int idx = -1;
+       for(int t=0; t<ArraySize(g_pos_ids); ++t) { if(g_pos_ids[t]==pid) { idx=t; break; } }
+       if(idx<0) continue;
+       if(pcur>g_pos_max_price[idx]) g_pos_max_price[idx]=pcur;
+       if(pcur<g_pos_min_price[idx]) g_pos_min_price[idx]=pcur;
+      }
+    // Detect closed positions and log outcomes
+    for(int i=0; i<ArraySize(g_pos_ids); )
+      {
+       ulong pid = g_pos_ids[i];
+       // If position is no longer open, attempt to log its closure
+       if(!IsPositionOpenByIdentifier(pid))
+         {
+          // Search recent history for the closing deal of this position
+          datetime t0 = (g_pos_start_time[i]>0? g_pos_start_time[i] - 3600 : TimeCurrent() - 7*86400);
+          HistorySelect(t0, TimeCurrent());
+          ulong close_deal = 0;
+          for(int d = HistoryDealsTotal()-1; d>=0; --d)
+            {
+             ulong deal_ticket = HistoryDealGetTicket(d);
+             if((ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID)==pid)
+               {
+                int entry_flag = (int)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+                if(entry_flag==DEAL_ENTRY_OUT)
+                  { close_deal = deal_ticket; break; }
+               }
+            }
+          if(close_deal>0)
+            {
+             HandlePositionClosed(i, close_deal);
+             continue; // do not increment i, array was compacted
+            }
+         }
+       ++i;
+      }
+    // Strategy evaluation (guarded)
+   if(CheckPointer(g_strategies)==POINTER_INVALID)
+     {
+      Print("Error: g_strategies not initialized; skipping tick.");
+      return;
+     }
+   // Evaluate strategies centrally (re-entrancy guarded)
+   EvaluateAndMaybeExecute(false);
+  }
+//+------------------------------------------------------------------+
+//| EvaluateAndMaybeExecute() function                                |
+//+------------------------------------------------------------------+
+void EvaluateAndMaybeExecute_DUP_REMOVED(const bool from_timer=false)
+  {
+   if(g_eval_busy) return;
+   g_eval_busy = true;
+   // Iterate through each strategy
+   for(int i = 0; i < g_strategies.Total(); i++)
+     {
+      // Safely cast to the interface pointer
+      IStrategy* strategy = (IStrategy*)g_strategies.At(i);
+      if(CheckPointer(strategy) == POINTER_INVALID)
+        {
+         Print("Error: Could not cast strategy at index ", i);
+         continue;
+        }
+      // Refresh strategy data (e.g., update indicator values)
+      (*strategy).Refresh();
+      // Check for a trade signal
+      TradeOrder order = (*strategy).CheckSignal();
+      // If a signal is returned, process it
+      if(order.action != ACTION_NONE)
+        {
+         // Telemetry: shadow gating when NoConstraintsMode bypasses real gates
+         if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+           {
+            // Shadow selector gating
+            if(NoConstraintsMode && UseStrategySelector && CheckPointer(g_selector)!=POINTER_INVALID)
+              {
+               double s_shadow = (*g_selector).Score(_Symbol, _Period, (*strategy).Name());
+               string rsel = (s_shadow>0.0? "score>0" : "score<=0");
+               (*g_telemetry).LogGatingShadow((*strategy).Name(), _Symbol, (int)_Period, "selector", (s_shadow>0.0), rsel, true);
+              }
+            // Shadow insights gating (no side effects, ignore NoConstraints bypass)
+            if(NoConstraintsMode && UseInsightsGating)
+              {
+               string rshadow=""; bool allow_shadow = Insights_Allow(order.strategy_name, _Symbol, _Period, rshadow, true, true);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "insights", allow_shadow, rshadow, true);
+              }
+            // Shadow spread/session/risk gates
+            if(NoConstraintsMode)
+              {
+               string rr=""; bool s_ok = SpreadAllowed(rr);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "spread", s_ok, (s_ok?"ok":rr), true);
+               bool ses_ok = SessionAllowed(rr);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "session", ses_ok, (ses_ok?"ok":rr), true);
+               string rr2=""; bool r_ok = RiskAllowed(rr2);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "risk", r_ok, (r_ok?"ok":rr2), true);
+              }
+           }
+         // Optional: selector gate using insights-based score
+         if(!NoConstraintsMode && UseStrategySelector && CheckPointer(g_selector)!=POINTER_INVALID)
+           {
+            double s = (*g_selector).Score(_Symbol, _Period, (*strategy).Name());
+            if(s<=0.0)
+              {
+               // If exploration quota remains for this slice, bypass selector during bootstrap
+               if(ExploreOnNoSlice)
+                 {
+                  string ekey = SliceKey((*strategy).Name(), _Symbol, _Period);
+                  bool has_slice = HasSlice((*strategy).Name(), _Symbol, _Period);
+                  int used_w = GetExploreCount(ekey);
+                  int used_d = GetExploreCountDay(ekey);
+                  // Relaxed: allow exploration even if a slice exists, as long as caps permit
+                  bool day_ok = (ExploreMaxPerSlicePerDay==0 || used_d < ExploreMaxPerSlicePerDay);
+                  bool week_ok = (ExploreMaxPerSlice==0 || used_w < ExploreMaxPerSlice);
+                  if(day_ok && week_ok)
+                   {
+                    if(ShouldLog(LOG_INFO)) PrintFormat("Selector gate: exploration allow %s on %s/%d (score=%.3f) (day=%d/%d, week=%d/%d) slice_exists=%s", (*strategy).Name(), _Symbol, (int)_Period, s, used_d, ExploreMaxPerSlicePerDay, used_w, ExploreMaxPerSlice, (has_slice?"true":"false"));
+                    g_explore_pending_key = ekey;
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, (*strategy).Name(), "selector", true, "explore_selector");
+                   }
+                  else
+                   {
+                    ECapFlushSummaryIfNewBar();
+                    string ecap_key_sel = StringFormat("%s|%s|%d", (*strategy).Name(), _Symbol, (int)_Period);
+                    bool first_sel = ECapIncrement(ecap_key_sel);
+                    if(first_sel && ShouldLog(LOG_DEBUG)) PrintFormat("Selector gate: blocked %s on %s/%d reason=%s (day=%d/%d, week=%d/%d) slice_exists=%s", (*strategy).Name(), _Symbol, (int)_Period, "explore_cap", used_d, ExploreMaxPerSlicePerDay, used_w, ExploreMaxPerSlice, (has_slice?"true":"false"));
+                    ECapMarkPrinted(ecap_key_sel);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, (*strategy).Name(), "selector", false, "explore_cap");
+                    continue;
+                   }
+                 }
+               else
+                 {
+                  if(ShouldLog(LOG_INFO)) PrintFormat("Selector gate: blocked %s on %s/%d (score=%.3f)", (*strategy).Name(), _Symbol, (int)_Period, s);
+                  if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                    (*g_telemetry).LogGating(_Symbol, (int)_Period, (*strategy).Name(), "selector", false, "score<=0");
+                  continue;
+                 }
+              }
+           }
+         // Position guard: block when total open positions reach limit
+         if(MaxOpenPositions > 0 && PositionsTotal() >= MaxOpenPositions)
+           {
+            if(ShouldLog(LOG_INFO)) PrintFormat("EXEC: blocked %s on %s/%s due to MaxOpenPositions=%d (PositionsTotal=%d)", order.strategy_name, _Symbol, EnumToString(_Period), MaxOpenPositions, PositionsTotal());
+            g_eval_busy = false;
+            return;
+           }
+         // Spread cap
+         if(!NoConstraintsMode)
+           {
+            string rs=""; if(!SpreadAllowed(rs))
+              {
+               if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (spread=%.1f cap=%.1f)", order.strategy_name, _Symbol, EnumToString(_Period), rs, CurrentSpreadPoints(), SpreadMaxPoints);
+               if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                 (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "spread", false, rs);
+               g_eval_busy = false;
+               return;
+              }
+            // Session cap
+            string rse=""; if(!SessionAllowed(rse))
+              {
+               if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (used=%d max=%d)", order.strategy_name, _Symbol, EnumToString(_Period), rse, CountNewTradesSince(g_session_start), SessionMaxTrades);
+               if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                 (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "session", false, rse);
+               g_eval_busy = false;
+               return;
+              }
+            // Risk circuit breakers
+            string rr=""; if(!RiskAllowed(rr))
+              {
+               if(ShouldLog(LOG_INFO)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (eq=%.2f base=%.2f high=%.2f ml=%.2f)", order.strategy_name, _Symbol, EnumToString(_Period), rr, AccountInfoDouble(ACCOUNT_EQUITY), g_session_equity_start, g_equity_highwater, AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
+               if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                 (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk", false, rr);
+               g_eval_busy = false;
+               return;
+              }
+           }
+         // If strategy did not provide trailing settings, apply defaults from inputs
+         if(TrailEnabled && !order.trailing_enabled)
+           {
+            order.trailing_enabled          = true;
+            order.trailing_type             = (TrailingType)TrailType;
+            order.trail_activation_points   = TrailActivationPoints;
+            order.trail_distance_points     = TrailDistancePoints;
+            order.trail_step_points         = TrailStepPoints;
+            // ATR params always set so strategies can opt-in by setting trailing_type=TRAIL_ATR
+            order.atr_period                = TrailATRPeriod;
+            order.atr_multiplier            = TrailATRMultiplier;
+           }
+         // Insights-based gating before execution
+         if(!NoConstraintsMode && UseInsightsGating)
+           {
+            string gate_reason="";
+            if(!Insights_Allow(order.strategy_name, _Symbol, _Period, gate_reason))
+              {
+               if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                 (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "insights", false, gate_reason);
+               // If selector granted exploration for this exact slice, bypass insights thresholds when caps allow
+               string ekeyB = SliceKey(order.strategy_name, _Symbol, _Period);
+               if(g_explore_pending_key == ekeyB)
+                 {
+                  int used_d2 = GetExploreCountDay(ekeyB);
+                  int used_w2 = GetExploreCount(ekeyB);
+                  bool day_ok2 = (ExploreMaxPerSlicePerDay==0 || used_d2 < ExploreMaxPerSlicePerDay);
+                  bool week_ok2 = (ExploreMaxPerSlice==0 || used_w2 < ExploreMaxPerSlice);
+                  if(day_ok2 && week_ok2)
+                    {
+                     bool has_slice = HasSlice(order.strategy_name, _Symbol, _Period);
+                     PrintFormat("GATE: explore allow %s on %s/%s reason=%s->explore_selector (day=%d/%d, week=%d/%d) slice_exists=%s", order.strategy_name, _Symbol, EnumToString(_Period), gate_reason, used_d2, ExploreMaxPerSlicePerDay, used_w2, ExploreMaxPerSlice, (has_slice?"true":"false"));
+                     if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                       (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "insights", true, "explore_selector");
+                     // fall through to execution
+                    }
+                   else
+                     {
+                      bool has_slice = HasSlice(order.strategy_name, _Symbol, _Period);
+                      ECapFlushSummaryIfNewBar();
+                      string ecap_key_gate = StringFormat("%s|%s|%d", order.strategy_name, _Symbol, (int)_Period);
+                      bool first_gate = ECapIncrement(ecap_key_gate);
+                      if(first_gate && ShouldLog(LOG_DEBUG)) PrintFormat("GATE: blocked %s on %s/%s reason=%s (day=%d/%d, week=%d/%d) slice_exists=%s", order.strategy_name, _Symbol, EnumToString(_Period), "explore_cap", used_d2, ExploreMaxPerSlicePerDay, used_w2, ExploreMaxPerSlice, (has_slice?"true":"false"));
+                      ECapMarkPrinted(ecap_key_gate);
+                      if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                        (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "insights", false, "explore_cap");
+                      g_eval_busy = false;
+                      return;
+                     }
+                  }
+               }
+            }
+          // Execute the trade
+          // Apply policy-driven scaling if available
+          if(UsePolicyGating && g_policy_loaded)
+            {
+             double ppol_exec = GetPolicyProb(order.strategy_name, _Symbol, _Period);
+             if(ppol_exec>=0.0) ApplyPolicyScaling(order, _Symbol, _Period, ppol_exec);
+            }
+          bool result = (*g_trade_manager).ExecuteOrder(order);
+          if(result)
+            {
+             // Configure trailing on successful execution
+             if(TrailEnabled)
+               {
+                // Configure trailing according to the strategy's order policy
+                (*g_trade_manager).ConfigureTrailing(order);
+               }
+             // Event log
+             (*g_kb).LogTrade(order.strategy_name, (int)(*g_trade_manager).ResultRetcode(), (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+             // Telemetry: trade executed
+             if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+               (*g_telemetry).LogTradeExecuted(order.strategy_name, _Symbol, (int)_Period, (int)(*g_trade_manager).ResultRetcode(), (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+             // Feature logging (Phase 1)
+             if(CheckPointer(g_features)!=POINTER_INVALID)
+               {
+                datetime ts = TimeCurrent();
+                // ATR current
+                int atr_period = (order.trailing_type==TRAIL_ATR)? order.atr_period : TrailATRPeriod;
+                int atr_h = iATR(_Symbol, _Period, atr_period);
+                if(atr_h!=INVALID_HANDLE)
+                  {
+                   double b[]; if(CopyBuffer(atr_h,0,0,1,b)==1)
+                     {
+                      double atr = b[0];
+                      (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "atr", atr);
+                      // Regime proxy: atr/price
+                      double mid=0; double bid=0,ask=0; SymbolInfoDouble(_Symbol,SYMBOL_BID,bid); SymbolInfoDouble(_Symbol,SYMBOL_ASK,ask); mid=(bid+ask)/2.0;
+                      if(mid>0) (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "atr_over_price", atr/mid);
+                     }
+                   IndicatorRelease(atr_h);
+                  }
+                // Spread (compute from bid/ask to avoid integer property)
+                double spr_points = 0.0;
+                double _b=0.0,_a=0.0; SymbolInfoDouble(_Symbol,SYMBOL_BID,_b); SymbolInfoDouble(_Symbol,SYMBOL_ASK,_a);
+                if(_a>0 && _b>0) spr_points = (_a - _b) / _Point;
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "spread_points", spr_points);
+                // Timeframe feature for insights (binds r_multiple to TF)
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "timeframe", (double)_Period);
+                // Trailing params
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "trail_type", (double)order.trailing_type);
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "trail_activation_points", (double)order.trail_activation_points);
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "trail_distance_points", (double)order.trail_distance_points);
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "trail_step_points", (double)order.trail_step_points);
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "trail_atr_period", (double)order.atr_period);
+                (*g_features).WriteKV(ts, _Symbol, order.strategy_name, "trail_atr_multiplier", (double)order.atr_multiplier);
+                // Ask strategy to export its own indicator/context features
+                if(CheckPointer(strategy)!=POINTER_INVALID)
+                  {
+                   (*strategy).ExportFeatures(g_features, ts);
+                  }
+               }
+             // Full record log
+             TradeRecord rec;
+             rec.timestamp    = TimeCurrent();
+             rec.symbol       = _Symbol;
+             rec.type         = order.order_type;
+             rec.entry_price  = (*g_trade_manager).ResultPrice();
+             rec.stop_loss    = order.stop_loss;
+             rec.take_profit  = order.take_profit;
+             rec.close_price  = 0.0;
+             rec.profit       = 0.0;
+             rec.strategy_id  = order.strategy_name;
+             (*g_kb).WriteRecord(rec);
+             // Stash pending mapping so we can attribute when the entry deal arrives
+             ulong ord = (*g_trade_manager).ResultOrder();
+             if(ord>0)
+               {
+                int n = ArraySize(g_pending_orders);
+                ArrayResize(g_pending_orders, n+1); ArrayResize(g_pending_orders_strat, n+1);
+                g_pending_orders[n] = ord; g_pending_orders_strat[n] = order.strategy_name;
+               }
+             ulong dl = (*g_trade_manager).ResultDeal();
+             if(dl>0)
+               {
+                int m = ArraySize(g_pending_deals);
+                ArrayResize(g_pending_deals, m+1); ArrayResize(g_pending_deals_strat, m+1);
+                g_pending_deals[m] = dl; g_pending_deals_strat[m] = order.strategy_name;
+               }
+             // Immediate tracking of the opened position to ensure OnTimer/closures work even if transaction mapping is missed
+             {
+              ulong pos_id_immediate = 0;
+              if(dl>0)
+                pos_id_immediate = (ulong)HistoryDealGetInteger(dl, DEAL_POSITION_ID);
+              // fallback: select by symbol if position id not resolved yet
+              if(pos_id_immediate==0)
+                {
+                 if(PositionSelect(_Symbol))
+                   pos_id_immediate = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+                }
+              if(pos_id_immediate>0)
+                {
+                 // prevent duplicates if OnTradeTransaction already added
+                 bool exists=false;
+                 for(int t=0;t<ArraySize(g_pos_ids);++t){ if(g_pos_ids[t]==pos_id_immediate){ exists=true; break; } }
+                 if(!exists)
+                 {
+                  int k = ArraySize(g_pos_ids);
+                  ArrayResize(g_pos_ids,k+1);
+                  ArrayResize(g_pos_strats,k+1);
+                  ArrayResize(g_pos_entry_price,k+1);
+                  ArrayResize(g_pos_initial_risk,k+1);
+                  ArrayResize(g_pos_start_time,k+1);
+                  ArrayResize(g_pos_type,k+1);
+                  ArrayResize(g_pos_max_price,k+1);
+                  ArrayResize(g_pos_min_price,k+1);
+                  g_pos_ids[k]=pos_id_immediate; g_pos_strats[k]=(order.strategy_name==""?"unknown":order.strategy_name);
+                  double entry_p = (*g_trade_manager).ResultPrice();
+                  if(entry_p<=0)
+                    {
+                     // Fallback: resolve entry price by matching POSITION_IDENTIFIER among open positions
+                     for(int pi=0; pi<PositionsTotal(); ++pi)
+                       {
+                        string _sym = PositionGetSymbol(pi);
+                        if(_sym==NULL || _sym=="") continue;
+                        if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==pos_id_immediate)
+                          {
+                           entry_p = PositionGetDouble(POSITION_PRICE_OPEN);
+                           break;
+                          }
+                       }
+                    }
+                  g_pos_entry_price[k]=entry_p;
+                  g_pos_max_price[k]=entry_p; g_pos_min_price[k]=entry_p;
+                  int ptype = POSITION_TYPE_BUY;
+                  {
+                   // Fallback: resolve position type by identifier
+                   for(int pi=0; pi<PositionsTotal(); ++pi)
+                     {
+                      string _sym = PositionGetSymbol(pi);
+                      if(_sym==NULL || _sym=="") continue;
+                      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==pos_id_immediate)
+                        {
+                         ptype = (int)PositionGetInteger(POSITION_TYPE);
+                         break;
+                        }
+                     }
+                  }
+                  g_pos_type[k]=ptype;
+                  double init_risk = 0.0;
+                  if(order.stop_loss>0 && entry_p>0)
+                    init_risk = MathAbs((ptype==POSITION_TYPE_BUY? entry_p - order.stop_loss : order.stop_loss - entry_p));
+                  if(init_risk<=0.0)
+                    {
+                     // Fallback: compute risk using current position SL/open by identifier
+                     for(int pi=0; pi<PositionsTotal(); ++pi)
+                       {
+                        string _sym = PositionGetSymbol(pi);
+                        if(_sym==NULL || _sym=="") continue;
+                        if((ulong)PositionGetInteger(POSITION_IDENTIFIER)==pos_id_immediate)
+                          {
+                           double slc = PositionGetDouble(POSITION_SL);
+                           double eop = PositionGetDouble(POSITION_PRICE_OPEN);
+                           if(slc>0 && eop>0) init_risk = MathAbs((ptype==POSITION_TYPE_BUY? eop - slc : slc - eop));
+                           break;
+                          }
+                       }
+                    }
+                  g_pos_initial_risk[k]=init_risk;
+                  g_pos_start_time[k]=TimeCurrent();
+                  PrintFormat("Tracked pos immediately: ticket=%I64u strat=%s entry=%.5f initR=%.5f", pos_id_immediate, g_pos_strats[k], entry_p, init_risk);
+                 }
+                }
+             }
+             // Exploration accounting: count only on successful execution
+             if(g_explore_pending_key!="")
+               {
+                IncExploreCount(g_explore_pending_key);
+                PrintFormat("Exploration used for %s -> %d/%d", g_explore_pending_key, GetExploreCount(g_explore_pending_key), ExploreMaxPerSlice);
+                g_explore_pending_key = "";
+               }
+             PrintFormat("Trade executed by %s. Deal: %d, Order: %d", order.strategy_name, (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+             g_eval_busy = false;
+             return; // Exit after processing one trade
+            }
+          else
+            {
+             // Ensure exploration pending key does not leak across failed executions
+             if(g_explore_pending_key!="")
+               {
+                PrintFormat("Exploration not used due to failed execution for %s", g_explore_pending_key);
+                g_explore_pending_key = "";
+               }
+             PrintFormat("Trade failed for %s. Error: %d", order.strategy_name, GetLastError());
+             // Telemetry: trade failed
+             if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+               (*g_telemetry).LogTradeFailed(order.strategy_name, _Symbol, (int)_Period, GetLastError());
+             g_eval_busy = false;
+            }
+         }
+      }
+    g_eval_busy = false;
+    }
