@@ -17,7 +17,7 @@ flowchart LR
     PEA[PaperEA]
     REG[Strategy Registry]
     STR[Strategies via IStrategy]
-    SEL[Selector & Gates (insights + policy + caps)]
+    SEL[Selector and Gates: insights, policy, caps]
     TM[TradeManager (SL/TP/Trailing)]
     PM[PositionManager (optional)]
     EXP[Explore Caps]
