@@ -15,81 +15,131 @@ flowchart LR
   %% Paper side orchestration
   subgraph Paper
     PEA[PaperEA]
-    REG[Strategy Registry default names]
+    REG[Strategy Registry]
     STR[Strategies via IStrategy]
-    SEL[Selector gating]
-    TM[TradeManager SL TP Trailing]
-    TEL[Telemetry JSONL]
-    IB[InsightsBuilder]
+    SEL[Selector & Gates (insights + policy + caps)]
+    TM[TradeManager (SL/TP/Trailing)]
+    PM[PositionManager (optional)]
+    EXP[Explore Caps]
+    TLP[Telemetry JSONL]
   end
 
   %% Knowledge Base in Common Files
-  subgraph KB[Knowledge Base Common\\Files\\DualEA]
+  subgraph KB[Common\\Files\\DualEA]
     FEAT[features.csv]
     TRD[knowledge_base.csv]
     EVT[knowledge_base_events.csv]
-    TLM[telemetry\\paper_*.jsonl]
+    EC[explore_counts.csv]
+    ECD[explore_counts_day.csv]
+    TLM_P[telemetry\\paper_*.jsonl]
+    TLM_L[telemetry\\live_*.jsonl]
     INS[insights.json]
     POL[policy.json]
-    RLD[insights.reload]
+    IRL[insights.reload]
+    PRL[policy.reload]
   end
 
   %% ML trainer
-  subgraph ML[Trainer Python LSTM or GRU]
+  subgraph ML[Trainer (Python LSTM/GRU)]
     TRN[train.py]
+    PEXP[policy_export.py]
   end
 
   %% Live EA
   subgraph Live
     LEA[LiveEA]
+    TLL[Telemetry JSONL]
   end
 
   %% Data flows from PaperEA
   PEA --> REG
   PEA --> STR
   PEA --> TM
-  PEA --> TEL
-  TEL --> TLM
+  PEA --> PM
+  PEA --> SEL
+  PEA --> TLP
+  TLP --> TLM_P
   PEA -->|logs| TRD
   PEA -->|events| EVT
   STR -->|export features| FEAT
   PEA -->|features| FEAT
 
+  %% Exploration caps
+  SEL --> EXP
+  EXP --> EC
+  EXP --> ECD
+
   %% Insights build and gating
-  RLD -->|OnTimer trigger| IB
-  FEAT -->|read| IB
-  TRD -->|read| IB
-  IB -->|write| INS
+  IBD[InsightsBuilder/Rebuild]
+  IRL -->|OnTimer trigger| IBD
+  FEAT -->|read| IBD
+  TRD -->|read| IBD
+  IBD -->|write| INS
   INS -->|load| SEL
-  SEL -->|gate decisions| PEA
 
   %% ML policy training
   FEAT --> TRN
   TRD --> TRN
-  TRN -->|write| POL
+  TRN --> PEXP
+  PEXP -->|write| POL
+  PEXP -->|touch| PRL
 
   %% Consumption in Paper and Live
   POL --> PEA
+  PRL --> PEA
   INS --> LEA
   POL --> LEA
+  PRL --> LEA
+  LEA --> PM
   LEA -->|results| TRD
   LEA -->|events| EVT
+  LEA --> TLL
+  TLL --> TLM_L
 ```
 
 ## Project Structure
 ```
 MQL5/
 ├── Experts/
+│   └── Advisors/
+│       └── DualEA/
+│           ├── PaperEA/
+│           │   ├── PaperEA.mq5
+│           │   └── build_paperea.bat
+│           ├── LiveEA/
+│           │   ├── LiveEA.mq5
+│           │   └── build_liveea.bat
+│           ├── Include/
+│           │   ├── IStrategy.mqh
+│           │   ├── StrategySelector.mqh
+│           │   ├── TradeManager.mqh
+│           │   ├── PositionManager.mqh
+│           │   ├── KnowledgeBase.mqh
+│           │   ├── Telemetry.mqh
+│           │   ├── InsightsLoader.mqh
+│           │   ├── Strategies/
+│           │   │   └── ... (8 strategy files)
+│           │   └── Indicators/
+│           ├── ML/                      # Python trainer + policy export
+│           │   ├── train.py
+│           │   ├── policy_export.py
+│           │   ├── features.py, model.py, dataset.py
+│           │   ├── artifacts/
+│           │   └── run_train_and_export.bat
+│           └── docs/
+│               ├── DualEA_Action_Framework.md
+│               ├── DualEA_Handbook.md
+│               ├── DualEA_Lifecycle_Handbook.md
+│               ├── PolicySchema.md
+│               ├── PositionManager_Guide.md
+│               └── ...
+├── Scripts/
 │   └── DualEA/
-│       ├── PaperEA/                # Orchestrator EA (PaperEA.mq5)
-│       └── Include/
-│           ├── IStrategy.mqh       # Base class and TradeOrder struct
-│           ├── TradeManager.mqh    # Order execution, SL/TP, trailing
-│           ├── KnowledgeBase.mqh   # CSV logging (Common Files)
-│           └── Strategies/
-│               ├── BollAveragesStrategy.mqh
-│               └── MeanReversionBBStrategy.mqh
-└── Files/ (unused now; we write to Common\Files)
+│       ├── InsightsRebuild.mq5
+│       ├── PolicyReload.mq5
+│       ├── ValidateInsights.mq5
+│       └── KBAppendSmoke.mq5
+└── Files/ (repo-local; runtime writes go to MT5 Common\Files\DualEA)
 ```
 
 ## Current Capabilities (PaperEA)
@@ -233,22 +283,73 @@ Files produced:
   - Example:
     ```powershell
     kb_check.bat --build-insights --attempt-run-script --run-validate --fail-on-stale --fail-on-empty-slices --require-symbols=USDCNH --require-timeframes=60 --require-strategies=BollAverages,DonchianATRBreakout,RSI2BBReversion --fail-on-missing-required --show-report
-    ```
-
 ## Roadmap (Phased)
 This roadmap aligns with the implementation plan.
 
-For detailed Phase 3 guidance (docs, hygiene, scoring, roadmap), see:
-- `docs/Phase3.md`
+ For detailed Phase 3 guidance (docs, hygiene, scoring, roadmap), see:
+ - `docs/Phase3.md`
 
-### Status Dashboard
-- Completed:
-  - Phase 1: Data & Insights Foundation (insights builder, headless rebuild, validator, CI flags, Common Files outputs)
+### Action Framework — 3 Phases × 3 Cycles (Merged)
+ - Source: `docs/DualEA_Action_Framework.md` (full details and templates)
+ 
+ - Phase 1 — Codebase & Requirements Deep Dive
+   - Cycle 1: Structural Audit (jailbreak permitted)
+     - Inventory gating paths (strategy → policy → insights → execution)
+     - Trace file I/O and timers: `CheckPolicyReload()`, `CheckInsightsReload()`, staleness checks
+     - Identify insertion points: circuit breakers, session/news filters, PositionManager, correlation, vol sizing, regime
+     - Deliverables: audit map + risk log
+   - Cycle 2: Requirements Mapping
+     - Spec one‑pagers per feature with inputs, data flow, telemetry, failure/rollback
+   - Cycle 3: Risk & Gaps Closure
+     - Threat model: file races, stale artifacts, partial reloads; decide LiveEA fail‑safe defaults
+     - Deliverables: mitigations + rollback levers; updated lifecycle gates
+ 
+ - Phase 2 — Design, Build, Validate
+   - Cycle 1: Task Decomposition
+     - Backlog with effort/risk/owner/sequence for FR‑01..FR‑10
+   - Cycle 2: Code + Peer Review
+     - Definition of Ready: inputs defined, telemetry standardized, rollback behavior set
+     - Guidelines: feature flags (`Use*`), shared includes under `Include/`
+   - Cycle 3: QA + Fuzzing
+     - Unit‑like stubs, deterministic sims, log assertions; fuzz missing files/reload storms/high‑tick
+ 
+ - Phase 3 — Polish, Lockdown, Final Scoring
+   - Cycle 1: Docs & architecture alignment (README + lifecycle + operator runbooks)
+   - Cycle 2: Code hygiene & consistency (inputs/enums/log tags; dead‑code purge)
+   - Cycle 3: Final scoring (correctness/safety/observability/perf) + next roadmap
+ 
+ #### Action Backlog (Pre‑Implementation Specs)
+ - FR‑01 Circuit Breakers — Inputs: `UseCircuitBreakers`, `DailyLossLimit`, `DailyDrawdownLimit`, `CooldownMinutes`; block entries, allow exits; telemetry `cb:*`; DoD: day rollover sims
+ - FR‑02 Session/Window Filter — Inputs: `UseSessionFilter`, `SessionTZ`, `SessionWindows`; pre‑gate block; DoD: DST/tz edges
+ - FR‑03 News Filter — Inputs: `UseNewsFilter`, `ImpactLevelMin`, `PreLockoutMin`, `PostLockoutMin`; offline‑safe fallback; DoD: replay test
+ - FR‑04 Position Manager (v1) — Inputs: `UsePositionManager`, `ExitProfile`, `ClusterMinPts`, `PerSymbolMax`; centralized exits/scaling hooks; DoD: backtest diffs
+ - FR‑05 Correlation Exposure Caps — Inputs: `UseCorrelationCaps`, `CorrLookbackDays`, `MaxGroupExposure`; cap grouped exposure; DoD: deterministic calc
+ - FR‑06 Volatility Position Sizing — Inputs: `UseVolSizing`, `ATRPeriod`, `RiskPerTrade`; ATR‑adaptive lots; DoD: regime consistency, caps respected
+ - FR‑07 Regime Detector Stub — Inputs: `UseRegime`, `RegimeMethod`; tag regime; optional gating modifier; DoD: stable tags
+ - FR‑08 Promotion Gate & Evaluator — Inputs: min trades/hit‑rate/expectancy/DD/Sharpe; artifact: `Scripts/DualEA/AssessPromotion.mq5`; DoD: reproducible
+ - FR‑09 Telemetry Standardization & Ops Views — Event schema/fields/severity; rotate/size bounds; optional ops notebooks
+ - FR‑10 Performance — Event batching, log throttling, timer cadence review; DoD: CPU/mem profile under stress
+ 
+ #### Control Gates (Before Coding)
+ - Gate A: Specs complete (inputs, flow, telemetry, rollback) for FR‑01..FR‑10
+ - Gate B: Test plans defined; simulators/log assertions ready
+ - Gate C: Security + fail‑safe review; LiveEA defaults conservative
+ 
+ #### Ownership & Sequencing (Draft)
+ - Wave 1 (risk first): FR‑01, FR‑02, FR‑08
+ - Wave 2 (exposure/positioning): FR‑04, FR‑05, FR‑06
+ - Wave 3 (context/perf): FR‑03, FR‑07, FR‑09, FR‑10
+ - Note: Features default‑off in LiveEA until validated in PaperEA
+ 
+  ### Status Dashboard
+  - Completed:
+    - Phase 1: Data & Insights Foundation (insights builder, headless rebuild, validator, CI flags, Common Files outputs)
   - Phase 2a: PaperEA Execution & Telemetry (baseline complete; timer-scan parity tracked under Phase 6)
   - Phase 3 (core): LiveEA core loop with policy gating/fallbacks and scaling
     - `LiveEA/LiveEA.mq5`: policy hot‑reload (tick+timer), `ApplyPolicyScaling()` incl. `trail_scale` and `trail_atr_mult`, fallback gating (`fallback_no_policy`, `fallback_policy_miss`, demo‑only by default), heartbeat with fallback flags
 - In Progress:
   - Phase 3: LiveEA hardening (risk gates, stricter caps, optional shadow‑mode, per‑minute de‑dup)
+  - Phase 6: Low‑Latency Minutely Scanner & ML‑Enriched Orchestration
   - Phase 6: Low‑Latency Minutely Scanner & Orchestration (central `ScanStrategies`, minute de‑dup, parity with OnTick)
   - Phase 2a → P1C1 (ACTIVE): Structural Audit for PaperEA (gating/caps persistence, telemetry, KB writes, insights staleness, CI validators)
   - Phase 4/7/8: Risk/Telemetry/Adversarial hardening — partial primitives present
