@@ -21,7 +21,7 @@ input group "=== General Settings ==="
 input double InpLotSize = 0.1;              // Lot size
 input int InpStopLoss = 100;                // Stop Loss in points
 input int InpTakeProfit = 200;              // Take Profit in points
-input bool InpUseTrailingStop = false;      // Use Trailing Stop
+input bool InpUseTrailingStop = true;      // Use Trailing Stop
 input int InpTrailingStop = 50;             // Trailing Stop in points
 input int InpTrailingStep = 10;             // Trailing Step in points
 input int InpMagicNumber = 123456;          // Magic Number
@@ -1383,6 +1383,8 @@ private:
    double m_overbought;
    double m_oversold;
    int m_maHandle;
+   // Shared throttle for RSI readiness/error logs to avoid duplicate messages from long/short checks
+   datetime m_lastRSIReadinessLog;
    int m_atrHandle;
    
    bool CheckDivergence(bool isBullish)
@@ -1430,6 +1432,7 @@ public:
       m_overbought(overbought),
       m_oversold(oversold),
       m_maHandle(INVALID_HANDLE),
+      m_lastRSIReadinessLog(0),
       m_atrHandle(INVALID_HANDLE) {}
       
    ~CRSIStrategy()
@@ -1501,12 +1504,50 @@ public:
          return false;
       }
       
-      // Get RSI values with error checking
+      // Ensure series is synchronized and enough data is available
+      long synchronized = 0;
+      if(!SeriesInfoInteger(_Symbol, _Period, SERIES_SYNCHRONIZED, synchronized) || synchronized == 0)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("RSI read skipped: series not synchronized yet");
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
+         return false;
+      }
+      int totalBars = Bars(_Symbol, _Period);
+      int neededBars = m_rsiPeriod + 3;
+      if(totalBars < neededBars)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("RSI read skipped: not enough bars. Required: ", neededBars, ", Available: ", totalBars);
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
+         return false;
+      }
+      int calcBars = BarsCalculated(m_rsiHandle);
+      if(calcBars < neededBars)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("RSI read skipped: indicator not fully calculated. BarsCalculated=", calcBars, ", Needed=", neededBars);
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
+         return false;
+      }
+
+      // Get RSI values using closed bars (shift=1) and rate-limit error logs
       double rsi[3] = {0};
-      int copied = CopyBuffer(m_rsiHandle, 0, 0, 3, rsi);
+      ResetLastError();
+      int copied = CopyBuffer(m_rsiHandle, 0, 1, 3, rsi);
       if(copied != 3)
       {
-         Print("Error getting RSI values. Copied: ", copied, ", Error: ", GetLastError());
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("Error getting RSI values (long). Copied: ", copied, ", Error: ", GetLastError());
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
          return false;
       }
       
@@ -1539,12 +1580,50 @@ public:
          return false;
       }
       
-      // Get RSI values with error checking
+      // Ensure series is synchronized and enough data is available
+      long synchronized = 0;
+      if(!SeriesInfoInteger(_Symbol, _Period, SERIES_SYNCHRONIZED, synchronized) || synchronized == 0)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("RSI read skipped: series not synchronized yet");
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
+         return false;
+      }
+      int totalBars = Bars(_Symbol, _Period);
+      int neededBars = m_rsiPeriod + 3;
+      if(totalBars < neededBars)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("RSI read skipped: not enough bars. Required: ", neededBars, ", Available: ", totalBars);
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
+         return false;
+      }
+      int calcBars = BarsCalculated(m_rsiHandle);
+      if(calcBars < neededBars)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("RSI read skipped: indicator not fully calculated. BarsCalculated=", calcBars, ", Needed=", neededBars);
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
+         return false;
+      }
+
+      // Get RSI values using closed bars (shift=1) and rate-limit error logs
       double rsi[3] = {0};
-      int copied = CopyBuffer(m_rsiHandle, 0, 0, 3, rsi);
+      ResetLastError();
+      int copied = CopyBuffer(m_rsiHandle, 0, 1, 3, rsi);
       if(copied != 3)
       {
-         Print("Error getting RSI values. Copied: ", copied, ", Error: ", GetLastError());
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            Print("Error getting RSI values (short). Copied: ", copied, ", Error: ", GetLastError());
+            m_lastRSIReadinessLog = TimeCurrent();
+         }
          return false;
       }
       
