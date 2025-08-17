@@ -16,39 +16,39 @@ flowchart LR
   subgraph Paper
     PEA[PaperEA]
     REG[Strategy Registry]
-    STR[Strategies via IStrategy]
-    SEL[Selector and Gates: insights, policy, caps]
-    TM[TradeManager (SL/TP/Trailing)]
-    PM[PositionManager (optional)]
+    STR[Strategies]
+    SEL[Selector and Gates]
+    TM[Trade Manager]
+    PM[Position Manager]
     EXP[Explore Caps]
-    TLP[Telemetry JSONL]
+    TLP[Telemetry Paper]
   end
 
   %% Knowledge Base in Common Files
-  subgraph KB[Common\\Files\\DualEA]
-    FEAT[features.csv]
-    TRD[knowledge_base.csv]
-    EVT[knowledge_base_events.csv]
-    EC[explore_counts.csv]
-    ECD[explore_counts_day.csv]
-    TLM_P[telemetry\\paper_*.jsonl]
-    TLM_L[telemetry\\live_*.jsonl]
-    INS[insights.json]
-    POL[policy.json]
-    IRL[insights.reload]
-    PRL[policy.reload]
+  subgraph KB[Common Files DualEA]
+    FEAT[features csv]
+    TRD[knowledge base csv]
+    EVT[knowledge base events csv]
+    EC[explore counts csv]
+    ECD[explore counts day csv]
+    TLM_P[telemetry paper logs]
+    TLM_L[telemetry live logs]
+    INS[insights json]
+    POL[policy json]
+    IRL[insights reload]
+    PRL[policy reload]
   end
 
   %% ML trainer
-  subgraph ML[Trainer (Python LSTM/GRU)]
-    TRN[train.py]
-    PEXP[policy_export.py]
+  subgraph ML[Trainer Python]
+    TRN[train]
+    PEXP[policy export]
   end
 
   %% Live EA
   subgraph Live
     LEA[LiveEA]
-    TLL[Telemetry JSONL]
+    TLL[Telemetry Live]
   end
 
   %% Data flows from PaperEA
@@ -70,7 +70,7 @@ flowchart LR
   EXP --> ECD
 
   %% Insights build and gating
-  IBD[InsightsBuilder/Rebuild]
+  IBD[Insights Builder]
   IRL -->|OnTimer trigger| IBD
   FEAT -->|read| IBD
   TRD -->|read| IBD
