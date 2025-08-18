@@ -152,11 +152,15 @@ MQL5/
   - Trade execution events → `knowledge_base_events.csv`
   - Full trade records → `knowledge_base.csv`
   - Both files stored under MT5 Common Files: `Common\Files\DualEA\...`
+- Features export for ML via `ExportFeatures()` → `features.csv` (schema in `docs/KB-Schemas.md`)
 - Inputs (PaperEA):
   - Position and risk: `LotSize`, `MagicNumber`, `StopLossPips`, `TakeProfitPips`, `MaxOpenPositions` (0=unlimited)
   - Trailing defaults (used if a strategy doesn’t set them): `TrailEnabled`, `TrailType=0(fixed)`, `TrailActivationPoints`, `TrailDistancePoints`, `TrailStepPoints`
   - Mode toggles: `NoConstraintsMode` (bool, default true) — disables all gating and caps for maximum data collection (trading hours, selector gating, insights gating, exploration caps, and open-position limit)
   - Logging: `KBDebugInit` (writes INIT line), `DebugTrailing` (reserved)
+  
+- Modules available (planned integration):
+  - `PositionManager` (see `Include/PositionManager.mqh`) — implemented module providing scaling/exits/brackets; integration into PaperEA/LiveEA is planned behind a `UsePositionManager` feature flag (off by default).
 
 ### Exploration Mode & Insights Gating
 - Purpose: allow limited trades to bootstrap insights for unseen slices (strategy|symbol|timeframe).
@@ -206,9 +210,11 @@ We target the MT5 Common Files area so Strategy Tester, Demo/Paper, and Live sha
 Files produced:
 - `knowledge_base.csv` (header created at init)
 - `knowledge_base_events.csv`
+ - `features.csv` (per-trade feature rows for ML)
  - `explore_counts.csv` (weekly exploration usage)
  - `explore_counts_day.csv` (daily exploration usage)
  - `insights.json` (aggregated performance by strategy/symbol/timeframe)
+ - `policy.json` (exported by trainer) and `policy.reload` (touch file to trigger hot-reload)
 
 ## Documentation
 - [Phase 3 Plan](docs/Phase3.md)
@@ -223,10 +229,10 @@ Files produced:
   - Columns: `timestamp,strategy,retcode,deal,order`
 
 ## How To Build
-- Use the provided batch script:
-  - Open a terminal in `MQL5/Experts/DualEA/`
-  - Run: `compile.bat`
-- Or compile `PaperEA.mq5` from MetaEditor.
+- Use the provided batch scripts:
+  - PaperEA: open a terminal in `MQL5/Experts/Advisors/DualEA/PaperEA/` and run `build_paperea.bat`
+  - LiveEA: open a terminal in `MQL5/Experts/Advisors/DualEA/LiveEA/` and run `build_liveea.bat`
+- Or compile from MetaEditor (`PaperEA.mq5` / `LiveEA.mq5`).
 
 ## How To Run (Strategy Tester)
 1. Open Strategy Tester and select `PaperEA`.
@@ -283,6 +289,7 @@ Files produced:
   - Example:
     ```powershell
     kb_check.bat --build-insights --attempt-run-script --run-validate --fail-on-stale --fail-on-empty-slices --require-symbols=USDCNH --require-timeframes=60 --require-strategies=BollAverages,DonchianATRBreakout,RSI2BBReversion --fail-on-missing-required --show-report
+    ```
 ## Roadmap (Phased)
 This roadmap aligns with the implementation plan.
 
@@ -322,7 +329,7 @@ This roadmap aligns with the implementation plan.
  - FR‑01 Circuit Breakers — Inputs: `UseCircuitBreakers`, `DailyLossLimit`, `DailyDrawdownLimit`, `CooldownMinutes`; block entries, allow exits; telemetry `cb:*`; DoD: day rollover sims
  - FR‑02 Session/Window Filter — Inputs: `UseSessionFilter`, `SessionTZ`, `SessionWindows`; pre‑gate block; DoD: DST/tz edges
  - FR‑03 News Filter — Inputs: `UseNewsFilter`, `ImpactLevelMin`, `PreLockoutMin`, `PostLockoutMin`; offline‑safe fallback; DoD: replay test
- - FR‑04 Position Manager (v1) — Inputs: `UsePositionManager`, `ExitProfile`, `ClusterMinPts`, `PerSymbolMax`; centralized exits/scaling hooks; DoD: backtest diffs
+ - FR‑04 Position Manager (v1) — Inputs: `UsePositionManager`, `ExitProfile`, `ClusterMinPts`, `PerSymbolMax`; centralized exits/scaling hooks; DoD: backtest diffs. (Core module implemented in `Include/PositionManager.mqh`; integration behind flag pending.)
  - FR‑05 Correlation Exposure Caps — Inputs: `UseCorrelationCaps`, `CorrLookbackDays`, `MaxGroupExposure`; cap grouped exposure; DoD: deterministic calc
  - FR‑06 Volatility Position Sizing — Inputs: `UseVolSizing`, `ATRPeriod`, `RiskPerTrade`; ATR‑adaptive lots; DoD: regime consistency, caps respected
  - FR‑07 Regime Detector Stub — Inputs: `UseRegime`, `RegimeMethod`; tag regime; optional gating modifier; DoD: stable tags
@@ -344,37 +351,44 @@ This roadmap aligns with the implementation plan.
   ### Status Dashboard
   - Completed:
     - Phase 1: Data & Insights Foundation (insights builder, headless rebuild, validator, CI flags, Common Files outputs)
+    - Phase 2: ML/LSTM Pipeline (trainer + policy export + batch runner; PaperEA policy hot‑reload integrated)
   - Phase 2a: PaperEA Execution & Telemetry (baseline complete; timer-scan parity tracked under Phase 6)
   - Phase 3 (core): LiveEA core loop with policy gating/fallbacks and scaling
-    - `LiveEA/LiveEA.mq5`: policy hot‑reload (tick+timer), `ApplyPolicyScaling()` incl. `trail_scale` and `trail_atr_mult`, fallback gating (`fallback_no_policy`, `fallback_policy_miss`, demo‑only by default), heartbeat with fallback flags
+    - `LiveEA/LiveEA.mq5`: policy hot‑reload (tick+timer), `ApplyPolicyScaling()` incl. trailing scaling via `trail_atr_mult` (applies to ATR and fixed trailing), fallback gating (`fallback_no_policy`, `fallback_policy_miss`, demo‑only by default), heartbeat with fallback flags
 - In Progress:
   - Phase 3: LiveEA hardening (risk gates, stricter caps, optional shadow‑mode, per‑minute de‑dup)
   - Phase 6: Low‑Latency Minutely Scanner & ML‑Enriched Orchestration
   - Phase 6: Low‑Latency Minutely Scanner & Orchestration (central `ScanStrategies`, minute de‑dup, parity with OnTick)
   - Phase 2a → P1C1 (ACTIVE): Structural Audit for PaperEA (gating/caps persistence, telemetry, KB writes, insights staleness, CI validators)
   - Phase 4/7/8: Risk/Telemetry/Adversarial hardening — partial primitives present
-- Not Implemented:
-  - Phase 2: ML/LSTM Pipeline (trainer + policy export)
-  - Phase 5, 9, 10, 11
+  - Ops/CI TODOs (remaining):
+    - Add `kb_check.bat` for headless insights rebuild+validate and wire into CI (fail on stale/coverage).
+    - Add `scripts/RunInsightsValidation.ps1` and `ScheduleInsightsValidation.ps1` for scheduled validation.
+    - Optional CI trainer job: run `ML/run_train_and_export.bat` on schedule/data‑change; publish `policy.json` and touch `policy.reload`.
+    - Operator runbook: KB rebuild/validate flows and artifact paths under `Common\\Files\\DualEA`.
+    - Telemetry: concise summaries for insights rebuild/validation outcomes.
+ - Not Implemented:
+   - Phase 5, 9, 10, 11
 
 ### Phase 1: Data & Insights Foundation
-- Extend KB: record per‑trade features (indicator values, ATR, spread, session, regime, signal strength) and labels (R multiple, MFE/MAE, duration).
-- Add `InsightsBuilder` to compute win‑rate, average R, PF, “top signals”, write `insights.json` to `Common\Files\DualEA`.
-- Export `features.csv` for ML training.
-
-- Suggestions:
-  - Auto‑build `insights.json` at startup if missing/stale (compare mtime vs `features.csv`/`knowledge_base.csv`) via `CInsightsBuilder.Build()` in `OnInit()`.
-  - Add `Scripts/ValidateInsights.mq5` to CI: assert schema, required slices, and non‑empty metrics.
-  - Ensure `FolderCreate("DualEA", FILE_COMMON)` before all writers; handle first‑run creation gracefully.
-  - Use robust readers (`FILE_TXT|FILE_ANSI`), skip malformed rows; log and continue.
-  - Version `insights.json` schema and add compatibility checks in `Include/StrategySelector.mqh`.
+- TODOs (hardening and ops):
+  - CI integration: add `kb_check.bat` and wire `Scripts/ValidateInsights.mq5` to CI to fail on stale `insights.json`, empty/missing slices, and unmet required coverage (symbols/TFs/strategies).
+  - Headless rebuild wrapper: provide a batch/PowerShell entry point to run `Scripts/InsightsRebuild.mq5` non‑interactively (for CI/scheduled tasks).
+  - Schema versioning: version `insights.json` and add compatibility checks in `Include/StrategySelector.mqh`; document version in `docs/KB-Schemas.md`.
+  - I/O hardening: ensure `FolderCreate("DualEA", FILE_COMMON)` is called by all writers; prefer robust readers (`FILE_TXT|FILE_ANSI`), skip malformed rows, and log/continue.
+  - Validator enhancements: expand `ValidateInsights` to assert non‑empty required metrics per slice and configurable thresholds; surface a concise report.
+  - Ops scheduling: optionally add `scripts/RunInsightsValidation.ps1` and `ScheduleInsightsValidation.ps1` to run validation on a cadence.
 
 ### Phase 2: ML/LSTM Pipeline
-- Build Python trainer (PyTorch/TensorFlow) that reads `features.csv`, trains an LSTM/GRU to predict Prob(win) or Expected R.
-- Export `policy.json` with per‑symbol/timeframe thresholds, strategy weights, and SL/TP/trailing scaling.
-- PaperEA: load `policy.json` on a timer; gate trades by min‑confidence and adapt order parameters.
+- TODOs (ops/hardening):
+  - CI trainer job: run `ML/run_train_and_export.bat` on schedule or data‑change; publish `policy.json` to Common Files and touch `policy.reload`.
+  - Provenance & signing: include model hash, train window, metrics in `policy.json`; sign/hash for integrity; keep last‑known‑good for rollback.
+  - Shadow eval & A/B: support dual policies in PaperEA (shadow mode) prior to promotion to LiveEA.
+  - Calibration & thresholds: reliability diagrams, Brier, per‑slice min_conf calibration; document acceptance bands.
+  - Monitoring: log SHAP/feature importance drift signals; alert on material drift.
+  - Rollback guardrails: auto‑rollback to last‑known‑good on parse/plausibility failure during hot‑reload.
 
-Note (sequencing): after completing Phase 3 — Cycle 3 of the red‑team execution plan, we will start Phase 2 — Cycle 1 (structural audit) here.
+ Note (sequencing): core ML training/export and PaperEA policy load are implemented. The structured 3×3 audit for Phase 2 will begin after Phase 3 — Cycle 3.
 
 - Suggestions:
   - Use walk‑forward splits; track ROC‑AUC, Brier, Expected‑R; calibrate probabilities and thresholds per slice.
@@ -383,53 +397,32 @@ Note (sequencing): after completing Phase 3 — Cycle 3 of the red‑team execut
   - Log SHAP/feature importance to monitor drift and potential leakage.
 
 ### Phase 2a: PaperEA Execution & Telemetry
-- Implement and refine `PaperEA` as the primary data‑collection execution engine before LiveEA.
-- Key deliverables:
-  - Modular strategies via `IStrategy` with `ExportFeatures()`; telemetry and features logged to the Knowledge Base.
-  - Exploration caps and gating, `NoConstraintsMode` for unrestricted exploration, policy hot‑reload and safe fallbacks.
-  - Persistence to MT5 Common Files; insights rebuild/validation CI hooks via `Scripts/InsightsRebuild.mq5`, `Scripts/ValidateInsights.mq5`, and `kb_check.bat`.
- - Status:
-  - Baseline complete (see top‑level “PaperEA” section above).
+- TODOs (remaining):
+  - CI wiring: integrate `Scripts/ValidateInsights.mq5` into CI and add `kb_check.bat` to fail on stale `insights.json`, empty/missing slices, and missing required coverage.
+  - Headless operations: add `scripts/RunInsightsValidation.ps1` and `ScheduleInsightsValidation.ps1` for scheduled rebuild/validation.
+  - Ops docs: add a short operator runbook covering rebuild/validate flows and artifact locations in `Common\\Files\\DualEA`.
+  - Explore caps ops: provide a lightweight reset helper and a smoke test that verifies daily/weekly counters persist and increment as expected.
+  - Telemetry polish: emit concise summaries for insights rebuild/validation outcomes.
+- Status:
+  - Baseline implemented (modular strategies, exploration caps/gating, `NoConstraintsMode`, policy hot‑reload/fallbacks, Common Files persistence).
   - Timer‑based scanning parity with LiveEA is tracked under Phase 6.
-
- #### Red‑Team Execution Plan (3×3) — Phase 2a
- - Phase 1: Codebase & Requirements Deep Dive
-   - Cycle 1 (ACTIVE): Structural Audit for PaperEA (gating/caps, telemetry and features logging, KB persistence to Common Files, insights builder/staleness, CI validators: `Scripts/ValidateInsights.mq5`, `Scripts/InsightsRebuild.mq5`, `kb_check.bat`, `scripts/RunInsightsValidation.ps1`, `ScheduleInsightsValidation.ps1`)
-   - Cycle 2: Requirements Mapping → trace inputs/outputs, CSV schemas, file paths, logs, rebuild/validate flows to code locations
-   - Cycle 3: Risk & Gaps Closure → harden fallbacks, file I/O sharing, staleness triggers, and timer parity
- - Phase 2: Design, Build, Validate
-   - Cycle 1: Task decomposition and acceptance criteria for PaperEA improvements
-   - Cycle 2: Implement fixes; peer review; adversarial edge‑case tests
-   - Cycle 3: QA + fuzzing; enforce CI gates (fail‑on‑stale, fail‑on‑empty‑slices, required coverage)
- - Phase 3: Polish, Lockdown, Final Scoring
-   - Cycle 1: Docs & architecture alignment (PaperEA section + ops)
-   - Cycle 2: Code hygiene & consistency
-   - Cycle 3: Final scoring + roadmap
 
  ### Phase 3: LiveEA & Feedback Loop
 - Implement `LiveEA.mq5` with the same strategies but stricter gating (policy + risk limits).
 - LiveEA logs to the same KB; trainer merges Paper+Live data.
 - Feedback loop: Paper adapts based on Live outcomes via retrained policy.
-- Status:
-  - Implemented (in `Experts/Advisors/DualEA/LiveEA/LiveEA.mq5`):
-    - Policy load and hot‑reload on tick+timer; `g_policy_loaded` set by slice presence
-    - Gating with safe fallbacks (`DefaultPolicyFallback`, `FallbackWhenNoPolicy`, `FallbackDemoOnly`); neutral scaling on fallback
-    - `ApplyPolicyScaling()` including trailing scaling via `trail_scale` (fixed) and `trail_atr_mult` (ATR)
-    - Heartbeat GATE summary includes fallback flags for observability
-  - Remaining:
-    - Shadow‑mode and tighter gates vs PaperEA (min_conf, spread/news/session caps)
-    - Risk/circuit‑breaker enforcement inputs and guards
-    - One‑execution‑per‑slice‑per‑minute de‑dup; deterministic tie‑breakers
-    - Full timer‑scan parity (see Phase 6)
-- Suggestions:
-  - Enable LiveEA shadow‑mode: log all candidate decisions; execute only top ML‑ranked passing min_conf and risk budget.
-  - Tighten gates vs PaperEA: stricter min_conf, spread/news/session caps, lower exploration caps.
-  - Policy hot‑reload with guardrails; rollback to last‑known‑good on parse/plausibility failure.
-  - Deterministic tie‑breakers across strategies; enforce one execution per slice per minute.
-
-#### Red‑Team Execution Plan (3×3) — Current focus
+- TODOs (remaining):
+    - LiveEA shadow‑mode: log candidate decisions; execute only top ML‑ranked passing min_conf and risk budget.
+    - Tighter gates vs PaperEA: stricter min_conf, spread/news/session caps, lower exploration caps.
+    - Enforce risk/circuit‑breakers: max daily loss, session drawdown, stricter spread/news/session caps.
+    - One‑execution‑per‑slice‑per‑minute de‑dup; deterministic tie‑breakers.
+    - Full timer‑scan parity (Phase 6): centralize ScanStrategies; consistent OnTick/Timer paths.
+    - Policy hot‑reload guardrails with rollback to last‑known‑good on parse/plausibility failure.
+    - Integrate `Include/PositionManager.mqh` behind `UsePositionManager`; route sizing/exits through it.
+    - Prep hooks for Phase 6 parity: shared scanner entrypoints and per‑minute dedup state.
+  #### Red‑Team Execution Plan (3×3) — Current focus
 - Phase 1: Codebase & Requirements Deep Dive
-  - Cycle 1 (ACTIVE): Structural Audit for LiveEA (gating, timer scanning, selector, insights staleness, telemetry)
+  - Cycle 1  Structural Audit for LiveEA 
   - Cycle 2: Requirements Mapping to concrete code paths and artifacts; close gaps
   - Cycle 3: Risk & Gaps Closure; redesign fragile modules as needed
 - Phase 2: Design, Build, Validate
@@ -444,25 +437,31 @@ Note (sequencing): after completing Phase 3 — Cycle 3 of the red‑team execut
 Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/LSTM Pipeline) as the next 3×3 plan.
 
 ### Phase 4: Risk & Safety Systems
-- Circuit breaker: `MaxDailyLossPct`, `MaxDrawdownPct`, `MinMarginLevel`, `MaxOpenPositions`, `ConsecutiveLossLimit`.
-- Optional VaR: estimate risk from recent PnL distribution; block trading if risk exceeds limits.
-- Audit logging and hard enforcement in OnTick before execution.
+ ##### Phase 4 TODO checklist
+ - [ ] Run Strategy Tester to trigger each Phase 4 gate and confirm risk4_* telemetry + margin_level reason
 
-- Suggestions:
-  - Add news blackout windows; dynamic spread/ATR caps per symbol/timeframe; configurable.
-  - Slippage guard and liquidity failure handling; cool‑down after repeated execution failures.
-  - Persist daily and consecutive loss counters in `FILE_COMMON` for robustness across restarts.
-  - Optional VaR budget gating; circuit‑breaker resume schedule and manual override.
+ #### Phase 4 Telemetry: risk4_* events and reason strings
+
+- `risk4_spread`: spread cap gating.
+  - Shadow (NoConstraintsMode=true): `LogGatingShadow(strategy, symbol, tf, "risk4_spread", ok, reason, true)`
+  - Enforced: `[RISK4] blocked <strategy> on <symbol>/<tf> reason=<spread_reason>` and `LogGating(symbol, tf, strategy, "risk4_spread", allow, reason)`
+- `risk4_session`: session/day trade cap gating (`reason="session_cap"`).
+  - Shadow: `LogGatingShadow(..., "risk4_session", ok, reason, true)`
+  - Enforced: `[RISK4] ... (session)` and `LogGating(..., "risk4_session", allow, reason)`
+- `risk4`: account risk circuit breakers via `RiskAllowed()` — shadow only.
+  - Reasons: `max_daily_loss`, `max_drawdown`, `margin_level`, `consec_losses`
+  - Shadow: `LogGatingShadow(..., "risk4", ok, reason, true)`
+  - Enforcement: uses telemetry key `"risk"` and `GATE: blocked ...` logs (not `risk4`). Example: `LogGating(symbol, tf, strategy, "risk", false, reason)`
+- Reason normalization: the minimum margin gate uses `reason="margin_level"` (standardized across PaperEA and LiveEA).
 
 ### Phase 5: Dynamic Strategy/Indicator Selection
-- Discover strategies/indicators dynamically, score by stability, PF, correlation, and regime fitness.
-- Policy selects and weights a subset per symbol/timeframe.
+  - Let the ea discover new strategies and possibilities on its own and dynamically score them by stability, PF, correlation, and regime fitness. Indicators are also dynamically selected based on the same criteria.
+  - Policy selects and weights a subset per symbol/timeframe.
 
 - Suggestions:
   - Maintain a strategy registry per symbol/timeframe with IDs and dependencies; prune highly correlated pairs.
   - Add multi‑timeframe confirmations; define parameter stability ranges and bounds.
   - Periodically re‑score strategies and disable underperformers; export strategy state to features.
-
 ### Phase 6: Low‑Latency Minutely Scanner & ML‑Enriched Orchestration
 - Status: Partial — OnTimer heartbeat/reload present; centralized `ScanStrategies` with minute de‑dup not yet implemented.
 - Guarantee both EAs "look" for trades at least every minute, independent of tick arrival.
