@@ -445,23 +445,20 @@ Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/L
 - `risk4_spread`: spread cap gating.
   - Shadow (NoConstraintsMode=true): `LogGatingShadow(strategy, symbol, tf, "risk4_spread", ok, reason, true)`
   - Enforced: `[RISK4] blocked <strategy> on <symbol>/<tf> reason=<spread_reason>` and `LogGating(symbol, tf, strategy, "risk4_spread", allow, reason)`
-- `risk4_session`: session/day trade cap gating (`reason="session_cap"`).
-  - Shadow: `LogGatingShadow(..., "risk4_session", ok, reason, true)`
-  - Enforced: `[RISK4] ... (session)` and `LogGating(..., "risk4_session", allow, reason)`
-- `risk4`: account risk circuit breakers via `RiskAllowed()` — shadow only.
-  - Reasons: `max_daily_loss`, `max_drawdown`, `margin_level`, `consec_losses`
-  - Shadow: `LogGatingShadow(..., "risk4", ok, reason, true)`
-  - Enforcement: uses telemetry key `"risk"` and `GATE: blocked ...` logs (not `risk4`). Example: `LogGating(symbol, tf, strategy, "risk", false, reason)`
-- Reason normalization: the minimum margin gate uses `reason="margin_level"` (standardized across PaperEA and LiveEA).
-
 ### Phase 5: Dynamic Strategy/Indicator Selection
-  - Let the ea discover new strategies and possibilities on its own and dynamically score them by stability, PF, correlation, and regime fitness. Indicators are also dynamically selected based on the same criteria.
-  - Policy selects and weights a subset per symbol/timeframe.
-
-- Suggestions:
-  - Maintain a strategy registry per symbol/timeframe with IDs and dependencies; prune highly correlated pairs.
-  - Add multi‑timeframe confirmations; define parameter stability ranges and bounds.
-  - Periodically re‑score strategies and disable underperformers; export strategy state to features.
+  - Status: In progress — merged into LiveEA: cooldown + auto re-enable + dynamic auto‑tuning with telemetry (`underperf_auto_disabled`, `p5_cooldown`, `p5_auto_reenabled`, `p5_auto_tune`).
+    - New (LiveEA): Phase 5 telemetry completed for `p5_refresh`, `p5_rescore`, and `p5_selector_cfg`.
+  - TODO (prioritized)
+    1. Selector wiring parity in both EAs (OnInit): thresholds, recency overlay, strict thresholds, and per‑symbol/timeframe strategy registration.
+       - Acceptance: strategies register per symbol/TF; logs/telemetry confirm thresholds/recency overlays applied.
+    2. Correlation‑aware pruning within selector/gating to retain a diversified subset per symbol/timeframe.
+       - Emit `p5_corr` telemetry; cap per symbol/TF.
+    3. Multi‑timeframe confirmations in selector/gating with inputs (e.g., `EnableMTFConfirmations`, `MTFConfirmTF`, `MTFConfirmMinScore`) and telemetry (`p5_mtf`).
+    4. Parameter stability tracking in selector; compute stability score and gate via (`P5_StabilityGateEnable`, `P5_StabilityWindowDays`, `P5_StabilityMaxStdR`) with telemetry (`p5_stability`).
+    5. Policy integration for subset selection/weighting from ML policy (beyond neutral scaling); document and gate safely.
+    6. Feature/telemetry export parity after exec in both EAs (ATR, spread, TF, trailing params, strategy features).
+    7. Telemetry consistency across both EAs: standardize remaining `p5_*` event keys and shadow logging under `NoConstraintsMode` (PaperEA parity).
+    8. Test plan: backtests (walk‑forward), forward/demo runs, and monitoring to validate selector and gating behavior.
 ### Phase 6: Low‑Latency Minutely Scanner & ML‑Enriched Orchestration
 - Status: Partial — OnTimer heartbeat/reload present; centralized `ScanStrategies` with minute de‑dup not yet implemented.
 - Guarantee both EAs "look" for trades at least every minute, independent of tick arrival.
@@ -493,6 +490,7 @@ Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/L
 - Emit telemetry CSV/JSON (tick latency, SL moves, trades/sec, error rates).
 - Optional lightweight dashboard (HTML/JS) or notebook to visualize metrics.
 
+ 
 - Suggestions:
   - Define SLOs: scan→gate latency, missed‑opportunity rate, per‑reason gating counts.
   - Alerts for policy/insights read failures and staleness; log rotation and retention policy.
@@ -550,6 +548,40 @@ Next: Upon completing Phase 3 — Cycle 3 above, begin Phase 2 — Cycle 1 (ML/L
   - Provide Python ML trainer and batch launcher (writes policy.json).
   - Add `policy.json` loader in PaperEA and gating/scaling application.
   - Skeleton `LiveEA.mq5` with circuit breaker checks.
+
+## LiveEA: PositionManager — Correlation Sizing + Dynamic Risk Caps
+
+This section documents the LiveEA wiring of `Include/PositionManager.mqh` for correlation‑aware sizing and dynamic risk caps. All features are behind `UsePositionManager` and new PM inputs.
+
+### Inputs (LiveEA)
+- PositionManager switches
+  - `UsePositionManager` (bool)
+  - `PM_EnableCorrelationSizing` (bool, default true)
+  - `PM_EnableAdaptiveSizing` (bool), `PM_MinSizeMult` (double), `PM_MaxSizeMult` (double)
+  - `PM_ScalingProfile` (int: 0=Aggressive, 1=Moderate, 2=Conservative)
+  - `PM_EnableVolatilityExit` (bool), `PM_VolatilityExitATRMult` (double)
+- Dynamic risk caps (optional)
+  - `PM_EnableDynamicRiskCaps` (bool)
+  - `PM_MaxDailyDDPct` (double), `PM_MaxPosRiskPct` (double), `PM_MaxPortfolioRiskPct` (double), `PM_RiskDecay` (double 0..1)
+- Correlation sizing floors
+  - `PM_CorrMinMult` (double) — minimum fraction of base lots allowed after correlation dampening
+  - `PM_CorrMinLots` (double) — absolute minimum lots floor after dampening
+
+### Behavior
+- New entries: after policy scaling (`ApplyPolicyScaling`), LiveEA applies correlation‑adjusted sizing via `CPositionManager.CalculateCorrelationAdjustedVolume(symbol, base_lots)`.
+  - Floors: `PM_CorrMinMult * base_lots` and `PM_CorrMinLots` are enforced to avoid over‑dampening.
+- Scale‑ins: when PositionManager proposes `vol_scaled`, LiveEA applies the same correlation dampening and floors before overriding `order.lots`.
+- Dynamic risk caps: configured in `OnInit()` via `CPositionManager.SetDynamicRisk(...)`. Internally caps additional size growth (implementation advisory, subject to future expansion).
+
+### Telemetry & Logs
+- Events: `pm_corr_sizing`, `pm_corr_floor`, `pm_corr_scale_in`, `pm_corr_floor_scale_in` with correlation value and before/after lots.
+- Init log: `[PM] Initialized (...)` includes adaptive, profile, volatility exit, and dynamic risk params.
+
+### Validation
+1) Enable `UsePositionManager=true`, `PM_EnableCorrelationSizing=true`.
+2) Open a correlated position (e.g., EURUSD) and then trade a related pair (e.g., GBPUSD). Expect reduced lots and `pm_corr_sizing` event.
+3) Trigger a scale‑in via PositionManager; expect `pm_corr_scale_in` and floor events if dampening is severe.
+4) Toggle `PM_CorrMinMult` / `PM_CorrMinLots` to observe floors applying (logs show before/after + floor values).
 
 ## License
 Copyright 2025, Windsurf Engineering.

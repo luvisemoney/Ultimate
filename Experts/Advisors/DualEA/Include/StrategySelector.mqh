@@ -34,6 +34,12 @@ private:
    // Recent overlays (parallel arrays to main slices)
    int     m_rc_cnt[]; double m_rc_wr[]; double m_rc_avgR[]; double m_rc_pf[];
 
+   // Correlation cache (per symbol+timeframe, across strategies)
+   // Stores pairwise Pearson correlations of recent daily-aggregated r_multiple between strategies
+   string  m_corr_sym_key; int m_corr_tf_key; datetime m_corr_built_ts;
+   string  m_corr_a[]; string m_corr_b[]; double m_corr_val[]; int m_corr_n[];
+   bool    m_corr_ready;
+
    string TrimCopy(string s){ StringTrimLeft(s); StringTrimRight(s); return s; }
 
 public:
@@ -44,6 +50,7 @@ public:
       use_recency=false; recent_days=14; rec_alpha=0.5;
       m_has_data=false;
       strict_thresholds=false;
+      m_corr_sym_key=""; m_corr_tf_key=0; m_corr_built_ts=0; m_corr_ready=false;
      }
 
    void ConfigureThresholds(const int min_trades, const double min_wr, const double min_exp, const double min_pf, const double max_dd)
@@ -52,6 +59,12 @@ public:
      { w_pf=wp; w_exp=we; w_wr=ww; w_dd=wd; }
    void ConfigureRecency(const bool useRecency, const int lookbackDays, const double alpha)
       { use_recency=useRecency; recent_days=lookbackDays; rec_alpha=alpha; }
+
+   // Toggle whether hard thresholds are enforced inside Score() vs deferred to EA-level gating
+   void SetStrictThresholds(const bool strict)
+     {
+      strict_thresholds = strict;
+     }
 
    bool Load()
      {
@@ -345,5 +358,69 @@ public:
         return wins/(double)total;
 
       return -1.0;
+     }
+
+   // Ensure recent overlays are loaded for a given lookback window.
+   // Returns true if overlays are available after the call (may still be empty for some slices).
+   bool EnsureRecentLoaded(const int lookbackDays)
+     {
+      // enable recency and set window if different
+      use_recency = true;
+      recent_days = lookbackDays;
+      return LoadRecent();
+     }
+
+   // Get recent overlay metrics for an exact slice. Returns true when overlay exists (m_rc_cnt>0).
+   bool GetRecentMetrics(const string symbol, const int timeframe, const string strategy,
+                         int &out_cnt, double &out_wr, double &out_avgR, double &out_pf)
+     {
+      out_cnt = 0; out_wr = 0.0; out_avgR = 0.0; out_pf = 0.0;
+      if(ArraySize(m_strat)==0 || !m_has_data)
+         return false;
+      int i = FindIndex(symbol, timeframe, strategy);
+      if(i<0) return false;
+      if(i>=ArraySize(m_rc_cnt)) return false;
+      if(m_rc_cnt[i]<=0) return false;
+      out_cnt  = m_rc_cnt[i];
+      out_wr   = m_rc_wr[i];
+      out_avgR = m_rc_avgR[i];
+      out_pf   = m_rc_pf[i];
+      return true;
+     }
+
+   // Get baseline (insights slice) metrics for an exact slice. Returns true if exact slice found.
+   bool GetBaselineMetrics(const string symbol, const int timeframe, const string strategy,
+                           int &out_cnt, double &out_wr, double &out_avgR, double &out_pf)
+     {
+      out_cnt = 0; out_wr = 0.0; out_avgR = 0.0; out_pf = 0.0;
+      if(ArraySize(m_strat)==0 || !m_has_data)
+         return false;
+      int i = FindIndex(symbol, timeframe, strategy);
+      if(i<0) return false;
+      out_cnt  = m_cnt[i];
+      out_wr   = m_wr[i];
+      out_avgR = m_avgR[i];
+      out_pf   = m_pf[i];
+      return true;
+     }
+
+   // Underperformance check: true when recent overlay fails any threshold; falls back to baseline when overlay missing.
+   bool IsUnderperforming(const string symbol, const int timeframe, const string strategy,
+                          const double minPF, const double minWR, const double minExpR)
+     {
+      int cnt=0; double wr=0.0, avgR=0.0, pf=0.0;
+      bool have_recent = GetRecentMetrics(symbol, timeframe, strategy, cnt, wr, avgR, pf);
+      if(!have_recent)
+        {
+         // fallback to baseline slice metrics; if missing entirely, do not block
+         if(!GetBaselineMetrics(symbol, timeframe, strategy, cnt, wr, avgR, pf))
+            return false;
+        }
+      // treat missing/zero PF as 0.0
+      double pf_eff = (pf>0? pf : 0.0);
+      if(pf_eff < minPF) return true;
+      if(wr     < minWR) return true;
+      if(avgR   < minExpR) return true;
+      return false;
      }
   };

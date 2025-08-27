@@ -55,6 +55,18 @@ graph TD
 - Auto-rebuild of insights when stale via `Insights_IsStale()` + `Insights_RebuildAndReload()`
 - Neutral fallback when slices are missing if enabled by inputs
 
+## Telemetry (Phase 5)
+- `p5_refresh` — emitted after successful insights rebuild+reload in `Insights_RebuildAndReload()`. Details: `reason=<init|timer|reload> gate=<ok|fail> selector=<ok|fail|skipped>`.
+- `p5_rescore` — emitted at start of timer-triggered rescoring in `EvaluateAndMaybeExecute(true)`. Details: `n=<strategy_count> spread=<points>`.
+- `p5_selector_cfg` — emitted in `OnInit()` after selector is configured and loaded. Captures weights, recency, strict thresholds and load statuses: `w_pf,w_exp,w_wr,w_dd,recency,days,alpha,strict,th_min_trades,th_min_wr,th_min_exp,th_min_pf,th_max_dd,insights,recent`.
+
+Standardized Phase 5 gating keys:
+- `p5_mtf` — multi-timeframe confirmation gate
+- `p5_underperf` — recent underperformance gate
+  
+Existing Phase 5 keys used elsewhere:
+- `p5_corr`, `p5_stability`, `p5_auto_reenabled`, `p5_auto_tune`
+
 ## Quick Start
 1. Compile `LiveEA.mq5` in MetaEditor.
 2. Attach to a live/demo chart with file operations allowed.

@@ -321,8 +321,11 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
       PrintFormat("[SYMBOL] Not ready for trading: %s. Skipping order %s", m_symbol, EnumToString(order.order_type));
       return false;
      }
+   // Determine requested lots: per-order override takes precedence
+   double vol_in = (order.lots>0.0 ? order.lots : m_lot_size);
+   bool   lots_overridden = (order.lots>0.0);
    // Normalize volume for this symbol to avoid ERR_INVALID_VOLUME
-   double vol = NormalizeVolume(m_lot_size);
+   double vol = NormalizeVolume(vol_in);
    if(vol<=0.0)
      {
       double vmin=0,vmax=0,vstep=0; SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_MIN,vmin); SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_MAX,vmax); SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP,vstep);
@@ -377,8 +380,8 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
    ulong deal = m_trade.ResultDeal();
    ulong ord  = m_trade.ResultOrder();
    double px  = m_trade.ResultPrice();
-   PrintFormat("OrderSend: type=%s symbol=%s lots=%.4f retcode=%u deal=%I64u order=%I64u price=%.5f ok=%s",
-               EnumToString(order.order_type), m_symbol, vol, rc, deal, ord, px, (ok?"true":"false"));
+   PrintFormat("OrderSend: type=%s symbol=%s lots_req=%.4f lots_used=%.4f override=%s retcode=%u deal=%I64u order=%I64u price=%.5f ok=%s",
+               EnumToString(order.order_type), m_symbol, vol_in, vol, (lots_overridden?"true":"false"), rc, deal, ord, px, (ok?"true":"false"));
 
    return ok;
   }
@@ -435,10 +438,11 @@ void CTradeManager::UpdateTrailingStops()
    int total = PositionsTotal();
    for(int i=0;i<total;++i)
      {
-      string sym = PositionGetSymbol(i);
-      if(sym=="")
+      ulong tk = PositionGetTicket(i);
+      if(tk==0)
          continue;
-      if(!PositionSelect(sym))
+      string sym = PositionGetString(POSITION_SYMBOL);
+      if(sym=="")
          continue;
       long pos_magic = (long)PositionGetInteger(POSITION_MAGIC);
       if(pos_magic != m_magic_number)

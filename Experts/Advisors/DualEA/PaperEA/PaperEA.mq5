@@ -150,6 +150,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 // --- Standard Libraries
 #include <Arrays/ArrayObj.mqh> // Include for CArrayObj
 #include <Files/File.mqh>
+ // Position management
+ #include "..\\Include\\PositionManager.mqh"
  
  // --- Strategy Implementations
 // Per-asset registry (internally includes concrete strategy headers)
@@ -172,6 +174,16 @@ input int    TrailStepPoints       = 5;
 // ATR defaults (used when TrailType==2 or a strategy selects ATR)
 input int    TrailATRPeriod       = 14;
 input double TrailATRMultiplier   = 2.0;
+  // Use PositionManager for order placement and bracket handling
+  input bool   UsePositionManager   = true;
+ // --- Execution guards (spread, ATR regime, sessions)
+ input bool   GuardsEnabled         = true;    // master switch for execution guards
+ input double GuardMaxSpreadPoints  = 0.0;     // 0=disabled; skip entries if spread (points) exceeds this
+ input bool   ATRRegimeEnable       = false;   // gate by ATR percentile regime
+ input int    ATRRegimePeriod       = 14;      // ATR period for regime calc
+ input int    ATRRegimeLookback     = 500;     // number of bars to build empirical distribution
+ input double ATRMinPercentile      = 0.0;     // 0..100 inclusive
+ input double ATRMaxPercentile      = 100.0;   // 0..100 inclusive
 
 // --- No-Constraints mode (paper data collection)
 input bool   NoConstraintsMode    = true;     // bypass selector/insights/time gates and exploration caps
@@ -197,11 +209,44 @@ input double SelW_PF               = 1.0;
 input double SelW_Exp              = 1.0;
 input double SelW_WR               = 0.5;
 input double SelW_DD               = 0.3;
+input bool   SelStrictThresholds   = false;  // enforce hard thresholds inside selector
 
 // --- Selector recency weighting
 input bool   SelUseRecency         = true;   // blend recent performance
 input int    SelRecentDays         = 14;     // lookback days from features.csv
 input double SelRecAlpha           = 0.5;    // 0..1 weight towards recent
+
+// --- Phase 5: Advanced gating and tuning
+input bool   P5_AutoDisableEnable    = true;    // auto-disable underperforming strategies
+input double P5_MinPF                = 1.20;    // minimum recent/baseline profit factor
+input double P5_MinWR                = 0.45;    // minimum win rate
+input double P5_MinExpR              = -0.05;   // minimum expectancy (R multiple)
+input int    P5_AutoDisableCooldownM = 1440;    // minutes to keep disabled before re-evaluate
+input bool   P5_AutoReenable         = true;    // automatically re-enable after cooldown
+
+input bool   P5_AutoTuneEnable       = true;    // enable dynamic indicator auto-tuning
+input int    P5_AutoTuneEveryMin     = 60;      // run auto-tune every N minutes
+
+input bool   P5_TimerRescoreEnable   = true;    // refresh recent overlays on a timer
+input int    P5_TimerRescoreEveryMin = 60;      // rescore/lookback refresh interval (minutes)
+
+// Placeholders for correlation pruning, MTF confirmation, and stability gating
+// Wire-ups are logged and skipped if the required selector/strategy helpers are unavailable
+input bool   P5_CorrPruneEnable      = false;   // prune highly correlated strategies (across open positions)
+input double P5_CorrMax              = 0.80;    // max allowed correlation before pruning
+input int    P5_CorrLookbackDays     = 30;      // lookback window for correlation build
+
+input bool   P5_MTFConfirmEnable     = false;   // require higher-TF confirmation (if available)
+input string P5_MTFHigherTFs         = "H1,H4";  // comma-separated higher TFs to consider
+input int    P5_MTFMinAgree          = 1;       // minimum agreeing TF count
+
+input bool   P5_StabilityGateEnable  = false;   // gate on parameter stability (if available)
+input int    P5_StabilityWindowDays  = 14;      // window for stability tracking
+input double P5_StabilityMaxStdR     = 1.00;    // max allowed std-dev of R in window
+
+// Persistence and execution mode
+input bool   P5_PersistLossCounters  = false;   // persist consecutive loss counters per symbol+magic (FILE_COMMON)
+input bool   P5_PickBestEnable       = false;   // execute only the best-scoring strategy (selector) per tick
 
 // --- Policy gating (async from ml/policy.json)
 input bool   UsePolicyGating       = true;
@@ -229,6 +274,17 @@ bool ShouldLog(const int level){ return Verbosity >= level; }
 
 // --- Risk/Position limits
 input int    MaxOpenPositions = 0; // 0=unlimited; total simultaneous positions across account
+
+// --- Spread and Session caps
+input double SpreadMaxPoints   = 0.0; // 0=disabled, block when current spread (points) > this cap
+input int    SessionStartHour  = 0;   // session/day boundary hour [0..23] for daily caps and baselines
+input int    SessionMaxTrades  = 0;   // 0=unlimited; max new trades per session/day (per symbol/timeframe for this EA instance)
+
+// --- Risk & circuit breakers (0=disabled)
+input double MaxDailyLossPct   = 0.0; // block new trades if equity drawdown from session baseline exceeds this percent
+input double MaxDrawdownPct    = 0.0; // block new trades if equity drawdown from session high-water exceeds this percent
+input double MinMarginLevel    = 0.0; // block if Account margin level (%) < this threshold
+input int    ConsecutiveLossLimit = 0; // block when consecutive losing closures >= this limit (magic-number scoped)
 
 // --- Helper: compute R multiple strictly in price units
 double ComputeRMultiple(const double entry_price, const double close_price, const double init_risk_price, const int pos_type)
@@ -264,6 +320,23 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
        PrintFormat("Policy reload: cannot delete signal file %s (err=%d)", path, GetLastError());
       }
    }
+
+ // Check insights.reload signal from Common Files and trigger rebuild
+ void CheckInsightsReload()
+  {
+   string path = "DualEA\\insights.reload";
+   int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+   if(h==INVALID_HANDLE)
+     return;
+   FileClose(h);
+   bool ok = Insights_RebuildAndReload("reload");
+   PrintFormat("Insights reload signal detected: %s", (ok?"rebuilt":"failed"));
+   // best-effort delete
+   if(!FileDelete(path, FILE_COMMON))
+     {
+      PrintFormat("Insights reload: cannot delete signal file %s (err=%d)", path, GetLastError());
+     }
+  }
  
   // Load policy.json from Common Files and cache min_confidence and slice_probs
  bool Policy_Load()
@@ -549,6 +622,49 @@ string TrimCopy(string s)
    StringTrimRight(s);
    return s;
   }
+// Identify likely crypto symbols (basic heuristic)
+bool IsLikelyCryptoSymbol(const string s)
+  {
+   string b = NormalizeSymbol(s);
+   StringToUpper(b);
+   string toks[] = {"BTC","ETH","XRP","LTC","BCH","BNB","ADA","DOGE","DOT","SOL","MATIC","TRX","SHIB","AVAX","TON"};
+   for(int i=0;i<ArraySize(toks);++i)
+     {
+      if(StringFind(b, toks[i], 0) == 0) return true; // prefix match
+     }
+   if(StringLen(b)>=6)
+     {
+      string base = StringSubstr(b, 0, StringLen(b)-3);
+      for(int j=0;j<ArraySize(toks);++j)
+        if(base==toks[j]) return true;
+     }
+   return false;
+  }
+
+// Compute ATR percentile (0..100) of current ATR vs last N bars; returns true on success
+bool GetATRPercentile(const string symbol, const ENUM_TIMEFRAMES tf, const int period, const int lookback, double &percentile_out)
+  {
+   percentile_out = -1.0;
+   if(period<=0 || lookback<=10) return false;
+   int h = iATR(symbol, tf, period);
+   if(h==INVALID_HANDLE) return false;
+   int need = MathMin(lookback+1, 2000);
+   double buf[];
+   int copied = CopyBuffer(h, 0, 0, need, buf);
+   IndicatorRelease(h);
+   if(copied<period+5 || copied<=1) return false;
+   double cur = buf[0];
+   if(cur<=0.0) return false;
+   int valid=0, below=0;
+   for(int i=1;i<copied;++i)
+     {
+      double v = buf[i];
+      if(v>0.0){ valid++; if(v<cur) below++; }
+     }
+   if(valid<=0) return false;
+   percentile_out = 100.0 * ((double)below / (double)valid);
+   return true;
+  }
 // Logging controls
 input bool   DebugTrailing = false;
 input bool   KBDebugInit   = true;
@@ -629,12 +745,19 @@ input bool   HeartbeatVerbose = true; // print [STRAT] lines per strategy
 // --- Globals
 CKnowledgeBase*         g_kb = NULL;
 CTradeManager*          g_trade_manager = NULL;
-CArrayObj*              g_strategies; // Array to hold all strategy objects
-CFeaturesKB*            g_features = NULL; // Features logger
-CTelemetry*             g_telemetry = NULL; // Telemetry logger
-// Strategy selector
-CStrategySelector*       g_selector = NULL;
-// Insights gating cache
+ CArrayObj*              g_strategies; // Array to hold all strategy objects
+ CFeaturesKB*            g_features = NULL; // Features logger
+ CTelemetry*             g_telemetry = NULL; // Telemetry logger
+ // --- Spread/Session/Risk state
+ datetime                g_session_start = 0;
+ int                     g_session_day   = 0;
+ double                  g_session_equity_start = 0.0;
+ double                  g_equity_highwater     = 0.0;
+ // Strategy selector
+ CStrategySelector*       g_selector = NULL;
+ // Position manager (optional)
+ CPositionManager*        g_position_manager = NULL;
+ // Insights gating cache
 string                  g_gate_strat[];
 string                  g_gate_sym[];
 int                     g_gate_tf[];
@@ -649,6 +772,9 @@ double                  g_policy_min_conf = 0.0;
 string                  g_pol_strat[];
 string                  g_pol_sym[];
 int                     g_pol_tf[];
+// --- Phase 5 housekeeping
+// Last timestamp we refreshed recent overlays for selector (optional; used to rate-limit rescoring)
+datetime               g_p5_last_rescore_ts = 0;
 double                  g_pol_p[];
 double                  g_pol_sl[];
 double                  g_pol_tp[];
@@ -674,6 +800,129 @@ datetime                g_pos_start_time[];    // entry time
 int                     g_pos_type[];          // POSITION_TYPE_*
 double                  g_pos_max_price[];     // MFE price
 double                  g_pos_min_price[];     // MAE price
+
+// Persistent consecutive loss counters (per symbol + magic)
+string                  g_loss_sym[];
+long                    g_loss_mag[];
+int                     g_loss_cnt[];
+
+// --- Persistent loss counters helpers (placed before first use)
+string LossCountersDirPath()
+  {
+   return "DualEA/"; // keep under common DualEA folder
+  }
+
+string SanitizeForFilename(const string s)
+  {
+   string r=s;
+   string bad = "\\/:*?\"<>|";
+   for(int i=0;i<StringLen(bad);++i)
+     StringReplace(r, StringSubstr(bad,i,1), "_");
+   return r;
+  }
+
+string LossKeyPath(const string sym, const long mag)
+  {
+   string dir = LossCountersDirPath();
+   string fname = "loss_" + SanitizeForFilename(sym) + "_" + IntegerToString(mag) + ".csv";
+   return dir + fname; // FILE_COMMON
+  }
+
+void SaveLossKey(const string sym, const long mag, const int consec)
+  {
+   string path = LossKeyPath(sym, mag);
+   int h = FileOpen(path, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
+   if(h==INVALID_HANDLE){ PrintFormat("Loss persist(key): cannot open %s for write. Err=%d", path, GetLastError()); return; }
+   FileWrite(h, "symbol,magic,consec");
+   FileWrite(h, sym, IntegerToString(mag), IntegerToString(consec));
+   FileClose(h);
+  }
+
+void SaveLossCounters()
+  {
+   for(int i=0;i<ArraySize(g_loss_sym);++i)
+     SaveLossKey(g_loss_sym[i], g_loss_mag[i], g_loss_cnt[i]);
+  }
+
+bool LoadLossCounters()
+  {
+   ArrayResize(g_loss_sym,0); ArrayResize(g_loss_mag,0); ArrayResize(g_loss_cnt,0);
+   string dir = LossCountersDirPath();
+   string name="";
+   long fh = FileFindFirst(dir+"loss_*.csv", name, FILE_COMMON);
+   if(fh==INVALID_HANDLE)
+     {
+      PrintFormat("Loss persist: no prior %sloss_*.csv (ok)", dir);
+      return true;
+     }
+   bool ok=true;
+   do
+     {
+      string path = dir + name;
+      int h = FileOpen(path, FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
+      if(h!=INVALID_HANDLE)
+        {
+         bool first=true;
+         while(!FileIsEnding(h))
+           {
+            string s = FileReadString(h); if(s=="" && FileIsEnding(h)) break;
+            string m = FileReadString(h);
+            string c = FileReadString(h);
+            if(first && (StringFind(s, "symbol", 0)==0)) { first=false; continue; }
+            first=false;
+            int n = ArraySize(g_loss_sym);
+            ArrayResize(g_loss_sym,n+1); ArrayResize(g_loss_mag,n+1); ArrayResize(g_loss_cnt,n+1);
+            g_loss_sym[n]=s; g_loss_mag[n]=(long)StringToInteger(m); g_loss_cnt[n]=(int)StringToInteger(c);
+           }
+         FileClose(h);
+        }
+      else
+        {
+         ok=false;
+         PrintFormat("Loss persist: cannot open %s for read. Err=%d", path, GetLastError());
+        }
+     }
+   while(FileFindNext(fh, name));
+   FileFindClose(fh);
+   return ok;
+  }
+
+int GetConsecLossPersist(const string sym, const long mag)
+  {
+   for(int i=0;i<ArraySize(g_loss_sym);++i)
+     if(g_loss_sym[i]==sym && g_loss_mag[i]==mag) return g_loss_cnt[i];
+   return 0;
+  }
+
+void SetConsecLossPersist(const string sym, const long mag, const int val)
+  {
+   for(int i=0;i<ArraySize(g_loss_sym);++i)
+     if(g_loss_sym[i]==sym && g_loss_mag[i]==mag)
+       {
+        g_loss_cnt[i] = (val<0?0:val);
+        SaveLossKey(sym, mag, g_loss_cnt[i]);
+        return;
+       }
+   int n = ArraySize(g_loss_sym);
+   ArrayResize(g_loss_sym,n+1); ArrayResize(g_loss_mag,n+1); ArrayResize(g_loss_cnt,n+1);
+   g_loss_sym[n]=sym; g_loss_mag[n]=mag; g_loss_cnt[n]=(val<0?0:val);
+   SaveLossKey(sym, mag, g_loss_cnt[n]);
+  }
+
+void IncConsecLossPersist(const string sym, const long mag)
+  {
+   for(int i=0;i<ArraySize(g_loss_sym);++i)
+     if(g_loss_sym[i]==sym && g_loss_mag[i]==mag)
+       {
+        g_loss_cnt[i] = g_loss_cnt[i] + 1;
+        SaveLossKey(sym, mag, g_loss_cnt[i]);
+        return;
+       }
+   int n = ArraySize(g_loss_sym);
+   ArrayResize(g_loss_sym,n+1); ArrayResize(g_loss_mag,n+1); ArrayResize(g_loss_cnt,n+1);
+   g_loss_sym[n]=sym; g_loss_mag[n]=mag; g_loss_cnt[n]=1;
+   SaveLossKey(sym, mag, 1);
+  }
 
 // --- Helpers: tracking lookup and robust closure logging/removal
 int FindTrackedIndexByPid(ulong pid)
@@ -762,6 +1011,15 @@ void HandlePositionClosed(int idx, ulong close_deal)
    if(ShouldLog(LOG_INFO))
      PrintFormat("[CLOSE] pid=%I64u strat=%s r=%.6f profit=%.2f hold=%.0fs mfe_pts=%.1f mae_pts=%.1f", pid, strat, r, profit_money, hold_secs, fav_pts, adv_pts);
 
+   // Update persistent consecutive loss counters if enabled
+   if(P5_PersistLossCounters)
+     {
+      if(profit_money < 0.0)
+        IncConsecLossPersist(_Symbol, MagicNumber);
+      else if(profit_money > 0.0)
+        SetConsecLossPersist(_Symbol, MagicNumber, 0);
+     }
+
    // Remove tracked position via swap-with-last to keep arrays compact
    int last = ArraySize(g_pos_ids)-1;
    g_pos_ids[idx] = g_pos_ids[last];
@@ -828,8 +1086,7 @@ bool LoadExploreCounts()
    bool first=true;
    while(!FileIsEnding(h))
      {
-      string k = FileReadString(h);
-      if(k=="" && FileIsEnding(h)) break;
+      string k = FileReadString(h); if(k=="" && FileIsEnding(h)) break;
       string wk_s = FileReadString(h);
       string cnt_s = FileReadString(h);
       // skip header if present
@@ -842,6 +1099,7 @@ bool LoadExploreCounts()
    FileClose(h);
    return true;
   }
+
 
 // Daily helpers
 int DayId(datetime t)
@@ -1154,6 +1412,332 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
    reason = "no_slice";
    return false;
   }
+ 
+// --- Spread/Session/Risk gating helpers and session tracking
+double CurrentSpreadPoints()
+  {
+   double bid=0.0, ask=0.0;
+   SymbolInfoDouble(_Symbol, SYMBOL_BID, bid);
+   SymbolInfoDouble(_Symbol, SYMBOL_ASK, ask);
+   if(ask>0.0 && bid>0.0) return (ask - bid) / _Point;
+   return 0.0;
+  }
+
+datetime ComputeSessionBoundary(datetime now)
+  {
+   MqlDateTime dt; TimeToStruct(now, dt);
+   dt.hour = SessionStartHour; dt.min=0; dt.sec=0;
+   datetime today_boundary = StructToTime(dt);
+   if(today_boundary > now) today_boundary -= 24*60*60; // yesterday if boundary in future
+   return today_boundary;
+  }
+
+void EnsureSessionRollover()
+  {
+   datetime b = ComputeSessionBoundary(TimeCurrent());
+   MqlDateTime dts; TimeToStruct(b, dts);
+   int day = dts.year*10000 + dts.mon*100 + dts.day;
+   if(g_session_start==0 || g_session_day!=day)
+     {
+      g_session_start = b;
+      g_session_day   = day;
+      g_session_equity_start = AccountInfoDouble(ACCOUNT_EQUITY);
+      g_equity_highwater     = g_session_equity_start;
+      if(ShouldLog(LOG_INFO)) PrintFormat("Session rollover: start=%s equity=%.2f",
+        TimeToString(g_session_start, TIME_DATE|TIME_MINUTES), g_session_equity_start);
+     }
+  }
+
+int CountNewTradesSince(const datetime t0)
+  {
+   int count=0;
+   if(!HistorySelect(t0, TimeCurrent())) return 0;
+   for(int i=0;i<HistoryDealsTotal();++i)
+     {
+      ulong dtk = HistoryDealGetTicket(i); if(dtk==0) continue;
+      if((int)HistoryDealGetInteger(dtk, DEAL_ENTRY)!=DEAL_ENTRY_IN) continue;
+      string ds = HistoryDealGetString(dtk, DEAL_SYMBOL);
+      long   mg = (long)HistoryDealGetInteger(dtk, DEAL_MAGIC);
+      if(ds==_Symbol && mg==MagicNumber) ++count;
+     }
+   return count;
+  }
+
+int CountConsecutiveLosses()
+  {
+   int consec=0;
+   datetime t0 = TimeCurrent() - 120*86400; // scan up to 120 days
+   if(!HistorySelect(t0, TimeCurrent())) return 0;
+   for(int i=HistoryDealsTotal()-1; i>=0; --i)
+     {
+      ulong dtk = HistoryDealGetTicket(i);
+      if(dtk==0) continue;
+      string ds = HistoryDealGetString(dtk, DEAL_SYMBOL);
+      long   mg = (long)HistoryDealGetInteger(dtk, DEAL_MAGIC);
+      if(ds!=_Symbol || mg!=MagicNumber) continue;
+      int entry_flag = (int)HistoryDealGetInteger(dtk, DEAL_ENTRY);
+      if(entry_flag!=DEAL_ENTRY_OUT) continue;
+      double profit = HistoryDealGetDouble(dtk, DEAL_PROFIT);
+      if(profit < 0.0) ++consec;
+      else if(profit > 0.0) break; // stop on first win
+     }
+   return consec;
+  }
+
+bool SpreadAllowed(string &reason)
+  {
+   reason = "ok";
+   if(SpreadMaxPoints<=0.0) return true;
+   double spr = CurrentSpreadPoints();
+   if(spr <= SpreadMaxPoints) return true;
+   reason = "spread_cap";
+   return false;
+  }
+
+bool SessionAllowed(string &reason)
+  {
+   reason = "ok";
+   if(SessionMaxTrades<=0) return true;
+   int used = CountNewTradesSince(g_session_start);
+   if(used < SessionMaxTrades) return true;
+   reason = "session_cap";
+   return false;
+  }
+
+bool RiskAllowed(string &reason)
+  {
+   reason = "ok";
+   double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(eq>g_equity_highwater) g_equity_highwater = eq;
+   if(MaxDailyLossPct>0.0 && g_session_equity_start>0.0)
+     {
+      double dd = 100.0*(g_session_equity_start - eq)/g_session_equity_start;
+      if(dd >= MaxDailyLossPct) { reason="max_daily_loss"; return false; }
+     }
+   if(MaxDrawdownPct>0.0 && g_equity_highwater>0.0)
+     {
+      double ddh = 100.0*(g_equity_highwater - eq)/g_equity_highwater;
+      if(ddh >= MaxDrawdownPct) { reason="max_drawdown"; return false; }
+     }
+   if(MinMarginLevel>0.0)
+     {
+      double ml = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+      if(ml>0.0 && ml < MinMarginLevel) { reason="margin_level"; return false; }
+     }
+   if(ConsecutiveLossLimit>0)
+     {
+     int cl = (P5_PersistLossCounters ? GetConsecLossPersist(_Symbol, MagicNumber) : CountConsecutiveLosses());
+      if(cl >= ConsecutiveLossLimit) { reason="consec_losses"; return false; }
+     }
+  return true;
+ }
+
+ // --- Phase 5 advanced gating stubs (default-allow; telemetry wired in OnTick)
+bool P5_CorrPruneAllow(const TradeOrder &order, string &reason)
+  {
+   reason = "ok";
+   // No open positions -> nothing to prune
+   int npos = PositionsTotal();
+   if(npos<=0)
+     return true;
+
+   // Prefer PositionManager's portfolio correlation if available
+   double avg_abs_corr = 0.0;
+   bool corr_from_pm = (CheckPointer(g_position_manager)!=POINTER_INVALID);
+   if(corr_from_pm)
+     {
+      avg_abs_corr = (*g_position_manager).GetPortfolioCorrelation(_Symbol);
+     }
+   else
+     {
+      // Manual weighted average absolute correlation to each open symbol
+       int ps = PeriodSeconds(_Period);
+       if(ps<=0) ps = 60;
+       int approx_bars = (int)MathMax(50, MathMin(2000, (P5_CorrLookbackDays*86400)/ps));
+       double sum=0.0, wsum=0.0;
+       for(int i=0;i<npos;++i)
+         {
+          ulong ot = PositionGetTicket(i);
+          if(ot==0) continue;
+          string osym = PositionGetString(POSITION_SYMBOL);
+          if(osym=="" || osym==_Symbol) continue;
+         // selection is set by PositionGetTicket; read fields directly
+         double vol = PositionGetDouble(POSITION_VOLUME);
+         // Compute Pearson correlation between closes of _Symbol and osym
+         double a[]; double b[];
+         int ca = CopyClose(_Symbol, _Period, 0, approx_bars, a);
+         int cb = CopyClose(osym,   _Period, 0, approx_bars, b);
+         int m = MathMin(ca, cb);
+         if(m<10) continue;
+         double ma=0.0, mb=0.0; for(int k=0;k<m;++k){ ma+=a[k]; mb+=b[k]; }
+         ma/=m; mb/=m;
+         double cov=0.0, va=0.0, vb=0.0;
+         for(int k=0;k<m;++k)
+           {
+            double da=a[k]-ma; double db=b[k]-mb;
+            cov+=da*db; va+=da*da; vb+=db*db;
+           }
+         if(va<=0.0 || vb<=0.0) continue;
+         double c = cov / MathSqrt(va*vb);
+         if(c>1.0) c=1.0; if(c<-1.0) c=-1.0;
+         sum += MathAbs(c) * vol;
+         wsum += vol;
+        }
+      avg_abs_corr = (wsum>0.0? sum/wsum : 0.0);
+    }
+
+   if(avg_abs_corr > P5_CorrMax)
+     {
+      reason = StringFormat("corr=%.2f>max=%.2f", avg_abs_corr, P5_CorrMax);
+      return false;
+     }
+   return true;
+  }
+ 
+ bool P5_MTFConfirmAllow(const TradeOrder &order, string &reason)
+   {
+    reason = "ok";
+    // Disabled -> allow
+    if(!P5_MTFConfirmEnable)
+      { reason = "mtf_disabled"; return true; }
+    // Selector must be available
+    if(!(UseStrategySelector && CheckPointer(g_selector)!=POINTER_INVALID))
+      { reason = "no_selector"; return true; }
+    // Parse TF list
+    string items[];
+    int n = StringSplit(P5_MTFHigherTFs, ',', items);
+    if(n<=0)
+      { reason = "no_tfs"; return true; }
+
+    int total=0, agree=0;
+    // Accumulate brief details (capped) for reason string
+    string det = ""; int det_added=0;
+    for(int i=0;i<n;++i)
+      {
+       // Map token to timeframe
+       string tok = items[i];
+       StringTrimLeft(tok); StringTrimRight(tok);
+       // Uppercase normalize without relying on return types of library helpers
+       for(int jj=0; jj<StringLen(tok); ++jj)
+         {
+          int ch = (int)StringGetCharacter(tok, jj);
+          if(ch>='a' && ch<='z')
+            StringSetCharacter(tok, jj, (ushort)(ch-32));
+         }
+       int tf = -1;
+       if(tok=="M1") tf = (int)PERIOD_M1;
+       else if(tok=="M2") tf = (int)PERIOD_M2;
+       else if(tok=="M3") tf = (int)PERIOD_M3;
+       else if(tok=="M4") tf = (int)PERIOD_M4;
+       else if(tok=="M5") tf = (int)PERIOD_M5;
+       else if(tok=="M6") tf = (int)PERIOD_M6;
+       else if(tok=="M10") tf = (int)PERIOD_M10;
+       else if(tok=="M12") tf = (int)PERIOD_M12;
+       else if(tok=="M15") tf = (int)PERIOD_M15;
+       else if(tok=="M20") tf = (int)PERIOD_M20;
+       else if(tok=="M30") tf = (int)PERIOD_M30;
+       else if(tok=="H1") tf = (int)PERIOD_H1;
+       else if(tok=="H2") tf = (int)PERIOD_H2;
+       else if(tok=="H3") tf = (int)PERIOD_H3;
+       else if(tok=="H4") tf = (int)PERIOD_H4;
+       else if(tok=="H6") tf = (int)PERIOD_H6;
+       else if(tok=="H8") tf = (int)PERIOD_H8;
+       else if(tok=="H12") tf = (int)PERIOD_H12;
+       else if(tok=="D1") tf = (int)PERIOD_D1;
+       else if(tok=="W1") tf = (int)PERIOD_W1;
+       else if(tok=="MN1" || tok=="MO1" || tok=="MONTH" || tok=="MN") tf = (int)PERIOD_MN1;
+       if(tf<0) continue;
+       // Skip if identical to current TF to ensure it's truly higher/different
+       if(tf == (int)_Period) continue;
+       total++;
+       double s = (*g_selector).Score(_Symbol, (ENUM_TIMEFRAMES)tf, order.strategy_name);
+       bool ok = (s > 0.0);
+       if(ok) agree++;
+       if(det_added<3)
+         {
+          string nm = EnumToString((ENUM_TIMEFRAMES)tf);
+          det += (det==""? "" : ", ") + StringFormat("%s:%.3f%s", nm, s, (ok?"+":"-"));
+          det_added++;
+         }
+      }
+
+    if(total<=0)
+      { reason = "no_valid_tfs"; return true; }
+    if(P5_MTFMinAgree<=0)
+      { reason = StringFormat("agree=%d/%d(skip_min)", agree, total); return true; }
+
+    bool pass = (agree >= P5_MTFMinAgree);
+    reason = StringFormat("agree=%d/%d need>=%d [%s]", agree, total, P5_MTFMinAgree, det);
+    return pass;
+   }
+ 
+ bool P5_StabilityAllow(const TradeOrder &order, string &reason)
+  {
+   reason = "ok";
+   // Read recent R-multiples from features.csv for this strategy+symbol, compute std-dev
+   datetime cutoff = TimeCurrent() - (P5_StabilityWindowDays*24*60*60);
+   int h = FileOpen("DualEA\\features.csv", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
+   if(h==INVALID_HANDLE)
+     {
+      // No features available -> cannot assess; allow with reason
+      reason = "no_features";
+      return true;
+     }
+   double vals[]; ArrayResize(vals, 0);
+   // Build normalized symbol for comparison (strip common broker suffixes)
+   string cur_sym = _Symbol; string cur_low = cur_sym; StringToLower(cur_low);
+   string suf[] = { "_otc", "_pro", "_ecn", "_mini", "_micro", ".r", ".i", ".pro", ".ecn", ".m" };
+   for(int si=0; si<ArraySize(suf); ++si)
+     {
+      int p = StringFind(cur_low, suf[si], StringLen(cur_low)-StringLen(suf[si]));
+      if(p>=0 && p==StringLen(cur_low)-StringLen(suf[si]))
+        { cur_sym = StringSubstr(cur_sym, 0, StringLen(cur_sym)-StringLen(suf[si])); break; }
+     }
+   while(!FileIsEnding(h))
+     {
+      string line = FileReadString(h);
+      if(line=="" && FileIsEnding(h)) break;
+      // Expect CSV: ts,symbol,strategy,key,value
+      int p0 = StringFind(line, ",", 0); if(p0<0) continue; string ts  = StringSubstr(line,0,p0);
+      int p1 = StringFind(line, ",", p0+1); if(p1<0) continue; string sym = StringSubstr(line,p0+1,p1-p0-1);
+      int p2 = StringFind(line, ",", p1+1); if(p2<0) continue; string strat = StringSubstr(line,p1+1,p2-p1-1);
+      int p3 = StringFind(line, ",", p2+1); if(p3<0) continue; string key = StringSubstr(line,p2+1,p3-p2-1);
+      string val = StringSubstr(line,p3+1);
+      StringTrimLeft(sym); StringTrimRight(sym);
+      StringTrimLeft(strat); StringTrimRight(strat);
+      StringTrimLeft(key); StringTrimRight(key);
+      if(StringCompare(key, "r_multiple")!=0) continue;
+      // Normalize symbol in row similarly
+      string row_sym = sym; string row_low = row_sym; StringToLower(row_low);
+      for(int si=0; si<ArraySize(suf); ++si)
+        {
+         int p = StringFind(row_low, suf[si], StringLen(row_low)-StringLen(suf[si]));
+         if(p>=0 && p==StringLen(row_low)-StringLen(suf[si]))
+           { row_sym = StringSubstr(row_sym, 0, StringLen(row_sym)-StringLen(suf[si])); break; }
+        }
+      if(row_sym!=cur_sym) continue;
+      if(strat!=order.strategy_name) continue;
+      datetime t = (datetime)StringToTime(ts); if(t<cutoff) continue;
+      double r = StringToDouble(val);
+      int n=ArraySize(vals); ArrayResize(vals,n+1); vals[n]=r;
+     }
+   FileClose(h);
+   int m = ArraySize(vals);
+   if(m<5)
+     {
+      reason = "insufficient_data";
+      return true;
+     }
+   double mean=0.0; for(int i=0;i<m;++i) mean+=vals[i]; mean/=m;
+   double var=0.0; for(int i=0;i<m;++i){ double d=vals[i]-mean; var+=d*d; } var/=m;
+   double stdr = MathSqrt(var);
+   if(stdr > P5_StabilityMaxStdR)
+     {
+      reason = StringFormat("stdR=%.2f>max=%.2f cnt=%d", stdr, P5_StabilityMaxStdR, m);
+       return false;
+     }
+   return true;
+  }
 
 // Emit periodic scan/gating status and show a small on-chart panel
 void LogHeartbeat()
@@ -1208,6 +1792,27 @@ int OnInit()
    if(CheckPointer(g_trade_manager)==POINTER_INVALID)
       g_trade_manager = new CTradeManager(_Symbol, LotSize, MagicNumber);
 
+   // Optional: PositionManager (behind UsePositionManager)
+   if(UsePositionManager)
+     {
+      if(CheckPointer(g_position_manager)==POINTER_INVALID)
+        {
+         g_position_manager = new CPositionManager();
+         if(CheckPointer(g_position_manager)!=POINTER_INVALID)
+           {
+            bool pm_ok = (*g_position_manager).InitializeSimple(_Symbol, TrailATRPeriod, TrailActivationPoints, TrailDistancePoints, TrailStepPoints);
+            (*g_position_manager).SetMagicNumber(MagicNumber);
+            // Enable ATR-based volatility exit using input multiplier
+            (*g_position_manager).SetVolatilityExit(true, TrailATRMultiplier);
+            if(!pm_ok) { Print("[PM] InitializeSimple failed; continuing without PositionManager enhancements"); }
+           }
+        }
+     }
+   else
+     {
+      if(CheckPointer(g_position_manager)!=POINTER_INVALID){ delete g_position_manager; g_position_manager=NULL; }
+     }
+
     // Telemetry
     if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
       {
@@ -1240,10 +1845,22 @@ int OnInit()
     if(CheckPointer(g_selector)==POINTER_INVALID)
       {
        g_selector = new CStrategySelector();
-       (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
-      (*g_selector).ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
+      (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
+     (*g_selector).ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
       // Align thresholds with gating inputs
       (*g_selector).ConfigureThresholds(GateMinTrades, GateMinWinRate, GateMinExpectancyR, GateMinProfitFactor, GateMaxDrawdownR);
+      // Toggle strict thresholds inside selector scoring
+      (*g_selector).SetStrictThresholds(SelStrictThresholds);
+      // Log selector configuration for transparency
+      if(ShouldLog(LOG_INFO))
+        {
+         PrintFormat("Selector config: w_pf=%.3f w_exp=%.3f w_wr=%.3f w_dd=%.3f recency=%s days=%d alpha=%.3f strict=%s",
+           SelW_PF, SelW_Exp, SelW_WR, SelW_DD,
+           (SelUseRecency?"true":"false"), SelRecentDays, SelRecAlpha,
+           (SelStrictThresholds?"true":"false"));
+         PrintFormat("Selector thresholds: min_trades=%d min_wr=%.2f min_exp=%.2f min_pf=%.2f max_dd=%.2f",
+           GateMinTrades, GateMinWinRate, GateMinExpectancyR, GateMinProfitFactor, GateMaxDrawdownR);
+        }
       // Load insights and recent overlays
       bool ok_ins = (*g_selector).Load();
       bool ok_rec = (*g_selector).LoadRecent();
@@ -1293,6 +1910,13 @@ int OnInit()
    bool dy_ok = LoadExploreCountsDay();
    if(ShouldLog(LOG_INFO)) PrintFormat("Explore counters loaded: week=%s day=%s", (wk_ok?"ok":"fail"), (dy_ok?"ok":"fail"));
 
+   // Load persistent loss counters (optional)
+   if(P5_PersistLossCounters)
+     {
+      bool lc_ok = LoadLossCounters();
+      if(ShouldLog(LOG_INFO)) PrintFormat("Loss counters loaded: %s", (lc_ok?"ok":"fail"));
+     }
+
    // Heartbeat timer
     if(HeartbeatEnabled && HeartbeatMinutes>0)
       {
@@ -1306,6 +1930,8 @@ int OnInit()
      {
       if(ShouldLog(LOG_INFO)) Print("Mode: NoConstraintsMode=true -> bypass trading hours, selector gating, insights gating, exploration caps (0=unlimited), and MaxOpenPositions");
      }
+   // Initialize session baseline and high-water marks
+   EnsureSessionRollover();
    return(INIT_SUCCEEDED);
   }
 
@@ -1317,6 +1943,10 @@ void OnDeinit(const int reason)
     // Persist exploration counters
     SaveExploreCounts();
     SaveExploreCountsDay();
+
+    // Persist loss counters when enabled
+    if(P5_PersistLossCounters)
+      SaveLossCounters();
 
     // Telemetry flush & dispose
     if(CheckPointer(g_telemetry)!=POINTER_INVALID)
@@ -1364,6 +1994,7 @@ void OnDeinit(const int reason)
    if(CheckPointer(g_trade_manager)!=POINTER_INVALID){ delete g_trade_manager; g_trade_manager=NULL; }
    if(CheckPointer(g_features)!=POINTER_INVALID){ delete g_features; g_features=NULL; }
    if(CheckPointer(g_kb)!=POINTER_INVALID){ delete g_kb; g_kb=NULL; }
+   if(CheckPointer(g_position_manager)!=POINTER_INVALID){ delete g_position_manager; g_position_manager=NULL; }
    if(HeartbeatEnabled) { EventKillTimer(); Comment(""); }
   }
 
@@ -1375,17 +2006,7 @@ void OnTimer()
    // Always allow policy reload checks on timer
    CheckPolicyReload();
    // On-demand insights rebuild via flag in Common Files
-   {
-    string reload = "DualEA\\insights.reload";
-    if(FileIsExist(reload, FILE_COMMON))
-      {
-       if(ShouldLog(LOG_INFO)) Print("[INSIGHTS] reload flag detected, rebuilding insights.json ...");
-       CInsightsBuilder b; bool ok = b.Build();
-       if(ok) { if(ShouldLog(LOG_INFO)) Print("[INSIGHTS] rebuild complete"); }
-       else   { Print("[INSIGHTS] rebuild failed"); }
-       FileDelete(reload, FILE_COMMON);
-      }
-     }
+   CheckInsightsReload();
     // Periodic staleness check and auto-rebuild
     if(InsightsAutoBuild && InsightsCheckOnTimer)
       {
@@ -1399,6 +2020,42 @@ void OnTimer()
    LogHeartbeat();
   }
 
+// Helper: find the most recent deal ticket for this symbol/magic from history
+ulong FindLatestDealForSymbolMagic(const string sym, const int magic)
+  {
+   datetime t0 = TimeCurrent() - 7*86400;
+   HistorySelect(t0, TimeCurrent());
+   for(int i=HistoryDealsTotal()-1; i>=0; --i)
+     {
+      ulong dtk = HistoryDealGetTicket(i);
+      if(dtk==0) continue;
+      string ds = HistoryDealGetString(dtk, DEAL_SYMBOL);
+      long   mg = (long)HistoryDealGetInteger(dtk, DEAL_MAGIC);
+      if(ds==sym && (magic<=0 || mg==magic))
+         return dtk;
+     }
+   return 0;
+  }
+
+// Helper: find the most recent pending order ticket for this symbol/magic from order pool
+ulong FindLatestOrderForSymbolMagic(const string sym, const int magic)
+  {
+   ulong best=0; datetime best_ts=0;
+   int total = OrdersTotal();
+   for(int i=0; i<total; ++i)
+     {
+      ulong otk = OrderGetTicket(i);
+      if(otk==0) continue;
+      if(!OrderSelect(otk)) continue;
+      string os = OrderGetString(ORDER_SYMBOL);
+      long   mg = (long)OrderGetInteger(ORDER_MAGIC);
+      if(os!=sym || (magic>0 && mg!=magic)) continue;
+      datetime ts = (datetime)OrderGetInteger(ORDER_TIME_SETUP);
+      if(ts>=best_ts) { best_ts=ts; best=otk; }
+     }
+   return best;
+  }
+
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
@@ -1406,32 +2063,43 @@ void OnTick()
   {
    // Runtime policy reload support
    CheckPolicyReload();
+   // Maintain session baseline/high-water on each tick
+   EnsureSessionRollover();
 //--- Always update trailing stops for open positions managed by our magic number
    if(CheckPointer(g_trade_manager)!=POINTER_INVALID)
      {
       (*g_trade_manager).UpdateTrailingStops();
      }
  //--- Optional time-of-day trading hours gate
-   if(!NoConstraintsMode && UseTradingHours)
-     {
-      MqlDateTime _tm; TimeToStruct(TimeCurrent(), _tm); int hr = _tm.hour;
-      bool within=false;
-      if(TradingStartHour<=TradingEndHour)
-        within = (hr>=TradingStartHour && hr<TradingEndHour);
-      else
-        within = (hr>=TradingStartHour || hr<TradingEndHour); // overnight window
-      if(!within)
-        {
-         // Outside trading hours: do not open new trades (still manage trailing above)
-         return;
-        }
-     }
+  if(!NoConstraintsMode && UseTradingHours)
+    {
+     if(IsLikelyCryptoSymbol(_Symbol))
+       {
+        // Crypto allowed 24/7; skip session gating
+       }
+     else
+       {
+        MqlDateTime _tm; TimeToStruct(TimeCurrent(), _tm); int hr = _tm.hour;
+        bool within=false;
+        if(TradingStartHour<=TradingEndHour)
+          within = (hr>=TradingStartHour && hr<TradingEndHour);
+        else
+          within = (hr>=TradingStartHour || hr<TradingEndHour); // overnight window
+        if(!within)
+          {
+           // Outside trading hours: do not open new trades (still manage trailing above)
+           return;
+          }
+       }
+    }
 //--- Update MFE/MAE extremes for active positions
    int pos_total = PositionsTotal();
    for(int i=0; i<pos_total; ++i)
      {
-      string psym = PositionGetSymbol(i); // selects position internally
-      if(psym==NULL || psym=="") continue;
+      ulong t = PositionGetTicket(i);
+      if(t==0) continue;
+      string psym = PositionGetString(POSITION_SYMBOL);
+      if(psym=="") continue;
       long   pmag = PositionGetInteger(POSITION_MAGIC);
       if(psym!=_Symbol || pmag!=MagicNumber) continue;
       ulong  pid  = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
@@ -1442,6 +2110,26 @@ void OnTick()
       if(idx<0) continue;
       if(pcur>g_pos_max_price[idx]) g_pos_max_price[idx]=pcur;
      if(pcur<g_pos_min_price[idx]) g_pos_min_price[idx]=pcur;
+    }
+  //--- Volatility exit checks via PositionManager (ATR trail, etc.)
+ if(UsePositionManager && CheckPointer(g_position_manager)!=POINTER_INVALID)
+  {
+     for(int i=0; i<PositionsTotal(); ++i)
+       {
+        ulong t2 = PositionGetTicket(i);
+        if(t2==0) continue;
+        string psym2 = PositionGetString(POSITION_SYMBOL);
+        if(psym2=="") continue;
+        if(psym2!=_Symbol) continue;
+        long pmag2 = PositionGetInteger(POSITION_MAGIC);
+        if(pmag2!=MagicNumber) continue;
+        ulong ticket = (ulong)PositionGetInteger(POSITION_TICKET);
+        double close_px = 0.0; string reason = "";
+        if((*g_position_manager).CheckExitConditions(ticket, close_px, reason))
+          {
+           (*g_position_manager).ClosePosition(ticket, reason);
+          }
+       }
     }
    //--- Detect closed positions and log outcomes (r_multiple + KB close record)
    for(int i=0; i<ArraySize(g_pos_ids); )
@@ -1478,15 +2166,50 @@ void OnTick()
       Print("Error: g_strategies not initialized; skipping tick.");
       return;
      }
-   for(int i = 0; i < g_strategies.Total(); i++)
-     {
-      // Safely cast to the interface pointer
-      IStrategy* strategy = (IStrategy*)g_strategies.At(i);
-      if(CheckPointer(strategy) == POINTER_INVALID)
-        {
-         Print("Error: Could not cast strategy at index ", i);
-         continue;
-        }
+  // --- Phase 5: PickBest execution mode (optional pre-scan to choose one strategy) ---
+  int chosen_only = -1;
+  if(P5_PickBestEnable && UseStrategySelector && CheckPointer(g_selector)!=POINTER_INVALID)
+    {
+     // Pre-scan to collect strategies with signals
+     string cand_names[]; int cand_index[];
+     for(int i=0; i<g_strategies.Total(); ++i)
+       {
+        IStrategy* st_pre = (IStrategy*)g_strategies.At(i);
+        if(CheckPointer(st_pre)==POINTER_INVALID) continue;
+        (*st_pre).Refresh();
+        TradeOrder ord_pre = (*st_pre).CheckSignal();
+        if(ord_pre.action != ACTION_NONE)
+          {
+           int n = ArraySize(cand_names);
+           ArrayResize(cand_names, n+1); ArrayResize(cand_index, n+1);
+           cand_names[n] = (*st_pre).Name(); cand_index[n] = i;
+          }
+       }
+     if(ArraySize(cand_names)>0)
+       {
+        double scores[];
+        int best_local = (*g_selector).PickBest(_Symbol, _Period, cand_names, scores);
+        if(best_local>=0 && best_local<ArraySize(cand_index))
+          {
+           // Only accept if score is positive; otherwise fall back to normal loop
+           if(ArraySize(scores)>best_local && scores[best_local]>0.0)
+             chosen_only = cand_index[best_local];
+          }
+       }
+    }
+  for(int i = 0; i < g_strategies.Total(); i++)
+    {
+     // Safely cast to the interface pointer
+     IStrategy* strategy = (IStrategy*)g_strategies.At(i);
+     if(CheckPointer(strategy) == POINTER_INVALID)
+       {
+        Print("Error: Could not cast strategy at index ", i);
+        continue;
+       }
+
+     // If PickBest selected a single candidate, skip others
+     if(P5_PickBestEnable && chosen_only>=0 && i!=chosen_only)
+       continue;
 
       // Refresh strategy data (e.g., update indicator values)
       (*strategy).Refresh();
@@ -1512,6 +2235,16 @@ void OnTick()
               {
                string rshadow=""; bool allow_shadow = Insights_Allow(order.strategy_name, _Symbol, _Period, rshadow, true, true);
                (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "insights", allow_shadow, rshadow, true);
+              }
+            // Shadow Phase 4 risk gates when NoConstraintsMode bypasses them
+            if(NoConstraintsMode)
+              {
+               string r_sp=""; bool ok_sp = SpreadAllowed(r_sp);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "risk4_spread", ok_sp, r_sp, true);
+               string r_se=""; bool ok_se = SessionAllowed(r_se);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "risk4_session", ok_se, r_se, true);
+               string r_rk=""; bool ok_rk = RiskAllowed(r_rk);
+               (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "risk4", ok_rk, r_rk, true);
               }
            }
          // Optional: selector gate using insights-based score
@@ -1674,15 +2407,324 @@ void OnTick()
               }
 
            // Execute the trade
-           // Apply policy-driven scaling if available
-           if(UsePolicyGating && g_policy_loaded)
+           // --- Execution Guards ---
+           if(GuardsEnabled)
              {
-              double ppol_exec = GetPolicyProb(order.strategy_name, _Symbol, _Period);
-              if(ppol_exec>=0.0) ApplyPolicyScaling(order, _Symbol, _Period, ppol_exec);
+              // Spread guard
+              if(GuardMaxSpreadPoints>0.0)
+                {
+                 double b=0.0,a=0.0; SymbolInfoDouble(_Symbol,SYMBOL_BID,b); SymbolInfoDouble(_Symbol,SYMBOL_ASK,a);
+                 double spr_pts = 0.0; if(a>0.0 && b>0.0) spr_pts = (a-b)/_Point;
+                 if(spr_pts>GuardMaxSpreadPoints)
+                   {
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[GUARD] spread_points=%.1f > max=%.1f -> skip %s", spr_pts, GuardMaxSpreadPoints, order.strategy_name);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "guards", false, "spread");
+                    continue;
+                   }
+                }
+              // ATR regime percentile guard
+              if(ATRRegimeEnable)
+                {
+                 double pct=0.0; int per=(ATRRegimePeriod>0?ATRRegimePeriod:TrailATRPeriod);
+                 if(GetATRPercentile(_Symbol,(ENUM_TIMEFRAMES)_Period, per, ATRRegimeLookback, pct))
+                   {
+                    if(pct<ATRMinPercentile || pct>ATRMaxPercentile)
+                      {
+                       if(ShouldLog(LOG_INFO)) PrintFormat("[GUARD] ATR%%=%.1f out of [%.1f, %.1f] -> skip %s", pct, ATRMinPercentile, ATRMaxPercentile, order.strategy_name);
+                       if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                         (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "guards", false, "atr_percentile");
+                       continue;
+                      }
+                   }
+                }
              }
-            bool result = (*g_trade_manager).ExecuteOrder(order);
-            if(result)
-              {
+           // Phase 4 Risk & Safety Systems: enforce gating just before execution
+           if(!NoConstraintsMode)
+             {
+              // Spread cap
+              string r_sp_exec="";
+              if(!SpreadAllowed(r_sp_exec))
+                {
+                 if(ShouldLog(LOG_INFO)) PrintFormat("[RISK4] blocked %s on %s/%s reason=%s (spread)", order.strategy_name, _Symbol, EnumToString(_Period), r_sp_exec);
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk4_spread", false, r_sp_exec);
+                 return;
+                }
+              else
+                {
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk4_spread", true, r_sp_exec);
+                }
+
+              // Session/day trade cap
+              string r_se_exec="";
+              if(!SessionAllowed(r_se_exec))
+                {
+                 if(ShouldLog(LOG_INFO)) PrintFormat("[RISK4] blocked %s on %s/%s reason=%s (session)", order.strategy_name, _Symbol, EnumToString(_Period), r_se_exec);
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk4_session", false, r_se_exec);
+                 return;
+                }
+              else
+                {
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk4_session", true, r_se_exec);
+                }
+
+              // Equity/margin/consecutive losses
+              string r_rk_exec="";
+              if(!RiskAllowed(r_rk_exec))
+                {
+                 if(ShouldLog(LOG_INFO)) PrintFormat("[RISK4] blocked %s on %s/%s reason=%s", order.strategy_name, _Symbol, EnumToString(_Period), r_rk_exec);
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk4", false, r_rk_exec);
+                 return;
+                }
+              else
+                {
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "risk4", true, r_rk_exec);
+                }
+             }
+          // --- Phase 5: Advanced gating & tuning (after Phase 4, before execution) ---
+          {
+           // Periodic selector refresh (optional)
+           if(P5_TimerRescoreEnable && CheckPointer(g_selector)!=POINTER_INVALID)
+             {
+              datetime nowts = TimeCurrent();
+              if(g_p5_last_rescore_ts==0 || (nowts - g_p5_last_rescore_ts) >= (P5_TimerRescoreEveryMin*60))
+                {
+                 bool sel_ok = (*g_selector).Load(); // reload insights overlay for selector
+                 g_p5_last_rescore_ts = nowts;
+                 if(ShouldLog(LOG_DEBUG)) PrintFormat("[P5] selector refresh: %s", (sel_ok?"ok":"fail"));
+                }
+             }
+
+           // Strategy-level checks require a live strategy pointer
+           if(CheckPointer(strategy)!=POINTER_INVALID)
+             {
+              // Auto re-enable after cooldown if previously disabled
+              if(P5_AutoDisableEnable && !(*strategy).Enabled())
+                {
+                 string dis_until_s = (*strategy).MetadataGet("p5_disabled_until_ts", "0");
+                 long dis_until_l = (long)StringToInteger(dis_until_s);
+                 datetime dis_until = (datetime)dis_until_l;
+                 if(P5_AutoReenable && dis_until>0 && TimeCurrent() >= dis_until)
+                   {
+                    (*strategy).SetEnabled(true);
+                    (*strategy).MetadataSet("p5_disabled_until_ts", "0");
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[P5] auto-reenabled %s after cooldown", order.strategy_name);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_auto_reenable", true, "cooldown_elapsed");
+                   }
+                 // If still disabled, block this trade
+                 if(!(*strategy).Enabled())
+                   {
+                    string until_str = (dis_until>0? TimeToString(dis_until, TIME_DATE|TIME_MINUTES) : "n/a");
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[P5] blocked %s on %s/%s reason=%s (until=%s)", order.strategy_name, _Symbol, EnumToString(_Period), "p5_disabled_cooldown", until_str);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_disabled", false, "cooldown");
+                    return;
+                   }
+                }
+
+              // Auto-disable underperforming strategies (using selector metrics)
+              if(P5_AutoDisableEnable && CheckPointer(g_selector)!=POINTER_INVALID)
+                {
+                 bool under = (*g_selector).IsUnderperforming(_Symbol, _Period, order.strategy_name,
+                                                              P5_MinPF, P5_MinWR, P5_MinExpR);
+                 if(under)
+                   {
+                    datetime until = TimeCurrent() + (P5_AutoDisableCooldownM*60);
+                    (*strategy).SetEnabled(false);
+                    (*strategy).MetadataSet("p5_disabled_until_ts", IntegerToString((long)until));
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[P5] auto-disable %s on %s/%s until %s (minPF=%.2f, minWR=%.2f, minExp=%.2f)",
+                                                       order.strategy_name, _Symbol, EnumToString(_Period),
+                                                       TimeToString(until, TIME_DATE|TIME_MINUTES), P5_MinPF, P5_MinWR, P5_MinExpR);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_auto_disable", false, "underperform");
+                    return;
+                   }
+                }
+
+              // Auto-tune indicators periodically
+              if(P5_AutoTuneEnable)
+                {
+                 string last_tune_s = (*strategy).MetadataGet("p5_last_tune_ts", "0");
+                 long last_tune_l = (long)StringToInteger(last_tune_s);
+                 datetime last_tune = (datetime)last_tune_l;
+                 if(last_tune<=0 || (TimeCurrent() - last_tune) >= (P5_AutoTuneEveryMin*60))
+                   {
+                    bool tuned = (*strategy).AutoTuneIndicators(_Symbol, (ENUM_TIMEFRAMES)_Period);
+                    if(tuned)
+                      {
+                       if(ShouldLog(LOG_INFO)) PrintFormat("[P5] auto-tuned indicators for %s on %s/%s", order.strategy_name, _Symbol, EnumToString(_Period));
+                       if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                         (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_auto_tune", true, "params_updated");
+                      }
+                    (*strategy).MetadataSet("p5_last_tune_ts", IntegerToString((long)TimeCurrent()));
+                   }
+                }
+             }
+
+           // Correlation pruning gate
+           if(P5_CorrPruneEnable)
+             {
+              string r_corr="";
+              if(NoConstraintsMode)
+                {
+                 bool ok_shadow = P5_CorrPruneAllow(order, r_corr);
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "p5_corr", ok_shadow, r_corr, true);
+                }
+              else
+                {
+                 if(!P5_CorrPruneAllow(order, r_corr))
+                   {
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[P5] blocked %s on %s/%s reason=%s (corr_prune)", order.strategy_name, _Symbol, EnumToString(_Period), r_corr);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_corr", false, r_corr);
+                    return;
+                   }
+                 else
+                   {
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_corr", true, r_corr);
+                   }
+                }
+             }
+
+           // Multi-timeframe confirmation gate
+           if(P5_MTFConfirmEnable)
+             {
+              string r_mtf="";
+              if(NoConstraintsMode)
+                {
+                 bool ok_shadow2 = P5_MTFConfirmAllow(order, r_mtf);
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "mtf_confirm", ok_shadow2, r_mtf, true);
+                }
+              else
+                {
+                 if(!P5_MTFConfirmAllow(order, r_mtf))
+                   {
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[P5] blocked %s on %s/%s reason=%s (mtf_confirm)", order.strategy_name, _Symbol, EnumToString(_Period), r_mtf);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "mtf_confirm", false, r_mtf);
+                    return;
+                   }
+                 else
+                   {
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "mtf_confirm", true, r_mtf);
+                   }
+                }
+             }
+
+           // Stability gating
+           if(P5_StabilityGateEnable)
+             {
+              string r_stab="";
+              if(NoConstraintsMode)
+                {
+                 bool ok_shadow3 = P5_StabilityAllow(order, r_stab);
+                 if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                   (*g_telemetry).LogGatingShadow(order.strategy_name, _Symbol, (int)_Period, "p5_stability", ok_shadow3, r_stab, true);
+                }
+              else
+                {
+                 if(!P5_StabilityAllow(order, r_stab))
+                   {
+                    if(ShouldLog(LOG_INFO)) PrintFormat("[P5] blocked %s on %s/%s reason=%s (stability)", order.strategy_name, _Symbol, EnumToString(_Period), r_stab);
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_stability", false, r_stab);
+                    return;
+                   }
+                 else
+                   {
+                    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+                      (*g_telemetry).LogGating(_Symbol, (int)_Period, order.strategy_name, "p5_stability", true, r_stab);
+                   }
+                }
+             }
+
+          }
+
+          bool result = false;
+           ulong res_order = 0;
+           ulong res_deal  = 0;
+           double res_price = 0.0;
+           int res_retcode = 0;
+
+           if(UsePositionManager && CheckPointer(g_position_manager)!=POINTER_INVALID)
+            {
+              // Snapshot latest before placement
+              ulong prev_order = FindLatestOrderForSymbolMagic(_Symbol, MagicNumber);
+              ulong prev_deal  = FindLatestDealForSymbolMagic(_Symbol, MagicNumber);
+
+              double entry_px = order.price; // 0 for market
+             int trail_pts = 0;
+             if(order.trailing_enabled)
+               {
+                if(order.trailing_type==TRAIL_ATR)
+                  {
+                   // Compute ATR-based trailing distance in points
+                   int atrp = (order.atr_period>0 ? order.atr_period : TrailATRPeriod);
+                   int h = iATR(_Symbol, _Period, atrp);
+                   if(h!=INVALID_HANDLE)
+                     {
+                      double b[]; if(CopyBuffer(h,0,0,1,b)==1)
+                        {
+                         double atr = b[0];
+                         int pts = (int)MathRound((atr * order.atr_multiplier) / _Point);
+                         if(pts>0) trail_pts = pts;
+                        }
+                      IndicatorRelease(h);
+                     }
+                  }
+                else
+                  {
+                   trail_pts = (int)order.trail_distance_points;
+                  }
+               }
+
+              result = (*g_position_manager).PlaceBracketOrder(_Symbol,
+                                                               order.order_type,
+                                                               LotSize,
+                                                               entry_px,
+                                                               order.stop_loss,
+                                                               order.take_profit,
+                                                               0.0,
+                                                               trail_pts,
+                                                               0,
+                                                               order.strategy_name);
+              res_retcode = (result ? 10009 /*TRADE_RETCODE_DONE*/ : GetLastError());
+
+              // Resolve newest order/deal after placement
+              ulong now_order = FindLatestOrderForSymbolMagic(_Symbol, MagicNumber);
+              if(now_order!=0 && now_order!=prev_order) res_order = now_order;
+              ulong now_deal  = FindLatestDealForSymbolMagic(_Symbol, MagicNumber);
+              if(now_deal!=0 && now_deal!=prev_deal)
+                {
+                 res_deal = now_deal;
+                 res_price = HistoryDealGetDouble(res_deal, DEAL_PRICE);
+                }
+             }
+           else
+             {
+              result = (*g_trade_manager).ExecuteOrder(order);
+              if(result)
+                {
+                 res_order = (*g_trade_manager).ResultOrder();
+                 res_deal  = (*g_trade_manager).ResultDeal();
+                 res_price = (*g_trade_manager).ResultPrice();
+                 res_retcode = (int)(*g_trade_manager).ResultRetcode();
+                }
+             }
+
+           if(result)
+             {
                // Configure trailing on successful execution
                if(TrailEnabled)
                  {
@@ -1691,11 +2733,11 @@ void OnTick()
                  }
 
               // Event log
-              (*g_kb).LogTrade(order.strategy_name, (int)(*g_trade_manager).ResultRetcode(), (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+              (*g_kb).LogTrade(order.strategy_name, res_retcode, res_deal, res_order);
 
               // Telemetry: trade executed
               if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
-                (*g_telemetry).LogTradeExecuted(order.strategy_name, _Symbol, (int)_Period, (int)(*g_trade_manager).ResultRetcode(), (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+                (*g_telemetry).LogTradeExecuted(order.strategy_name, _Symbol, (int)_Period, res_retcode, res_deal, res_order);
 
              // Feature logging (Phase 1)
              if(CheckPointer(g_features)!=POINTER_INVALID)
@@ -1742,7 +2784,7 @@ void OnTick()
               rec.timestamp    = TimeCurrent();
               rec.symbol       = _Symbol;
               rec.type         = order.order_type;
-              rec.entry_price  = (*g_trade_manager).ResultPrice();
+              rec.entry_price  = res_price;
               rec.stop_loss    = order.stop_loss;
               rec.take_profit  = order.take_profit;
               rec.close_price  = 0.0;
@@ -1750,14 +2792,14 @@ void OnTick()
               rec.strategy_id  = order.strategy_name;
               (*g_kb).WriteRecord(rec);
               // Stash pending mapping so we can attribute when the entry deal arrives
-              ulong ord = (*g_trade_manager).ResultOrder();
+              ulong ord = res_order;
               if(ord>0)
                 {
                  int n = ArraySize(g_pending_orders);
                  ArrayResize(g_pending_orders, n+1); ArrayResize(g_pending_orders_strat, n+1);
                  g_pending_orders[n] = ord; g_pending_orders_strat[n] = order.strategy_name;
                 }
-              ulong dl = (*g_trade_manager).ResultDeal();
+              ulong dl = res_deal;
               if(dl>0)
                 {
                  int m = ArraySize(g_pending_deals);
@@ -1792,7 +2834,7 @@ void OnTick()
                   ArrayResize(g_pos_max_price,k+1);
                   ArrayResize(g_pos_min_price,k+1);
                   g_pos_ids[k]=pos_id_immediate; g_pos_strats[k]=(order.strategy_name==""?"unknown":order.strategy_name);
-                  double entry_p = (*g_trade_manager).ResultPrice();
+                  double entry_p = res_price;
                   if(entry_p<=0 && PositionSelectByTicket(pos_id_immediate)) entry_p = PositionGetDouble(POSITION_PRICE_OPEN);
                   g_pos_entry_price[k]=entry_p;
                   g_pos_max_price[k]=entry_p; g_pos_min_price[k]=entry_p;
@@ -1821,7 +2863,7 @@ void OnTick()
                  PrintFormat("Exploration used for %s -> %d/%d", g_explore_pending_key, GetExploreCount(g_explore_pending_key), ExploreMaxPerSlice);
                  g_explore_pending_key = "";
                 }
-              PrintFormat("Trade executed by %s. Deal: %d, Order: %d", order.strategy_name, (*g_trade_manager).ResultDeal(), (*g_trade_manager).ResultOrder());
+              PrintFormat("Trade executed by %s. Deal: %d, Order: %d", order.strategy_name, (int)res_deal, (int)res_order);
               return; // Exit after processing one trade
              }
          else
