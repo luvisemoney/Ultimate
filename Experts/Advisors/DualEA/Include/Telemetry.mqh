@@ -1,5 +1,7 @@
 // Telemetry.mqh
 // Buffered JSONL telemetry writer for PaperEA
+#ifndef __DUALEA_TELEMETRY_MQH__
+#define __DUALEA_TELEMETRY_MQH__
 #property copyright "2025, Windsurf"
 #property link      "https://windsurf.ai"
 
@@ -137,3 +139,5 @@ class CTelemetry
         AppendLine(line);
       }
   };
+ 
+#endif // __DUALEA_TELEMETRY_MQH__

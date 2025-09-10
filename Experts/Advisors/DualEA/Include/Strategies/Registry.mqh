@@ -10,7 +10,7 @@
 // This function resets the array each call.
 void GetDefaultStrategyNames(string &out[])
   {
-   ArrayResize(out, 5);
+   ArrayResize(out, 9);
    // Update this list when strategies change
    // Names must match class-name identifiers used by strategies
    out[0] = "BollAveragesStrategy";
@@ -18,6 +18,11 @@ void GetDefaultStrategyNames(string &out[])
    out[2] = "MeanReversionBBStrategy";
    out[3] = "RSI2BBReversionStrategy";
    out[4] = "SuperTrendADXKamaStrategy";
+   // Newly added
+   out[5] = "OpeningRangeBreakoutStrategy";
+   out[6] = "VWAPReversionStrategy";
+   out[7] = "EMAPullbackStrategy";
+   out[8] = "KeltnerMomentumStrategy";
   }
 
 #endif // __STRATEGIES_REGISTRY_MQH__

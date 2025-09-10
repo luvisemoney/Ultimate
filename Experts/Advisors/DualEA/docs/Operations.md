@@ -190,3 +190,23 @@ flowchart LR
 - Fallback trades are neutral and do not consume exploration quotas
 - File I/O uses `FILE_COMMON`; ensure your MT5 has write permissions to the Common Files directory
 - Some readers use `FILE_ANSI` and plain text parsing — avoid altering CSV delimiters/headers
+
+## Artifact Rotation & Compression
+- All major artifacts (features.csv, insights.json, scaler.pkl, tf_model.keras, features.json) are automatically rotated if they exceed operational size limits.
+- **features.csv** (MQL5): If file exceeds 100MB, it is renamed with a timestamped `.bak` suffix before new data is written. No compression (MQL5 limitation).
+- **ML artifacts** (Python):
+  - `tf_model.keras`: Rotated if above 100MB (no compression).
+  - `scaler.pkl`, `features.json`: Rotated and compressed with gzip if above 20MB.
+  - Old files are preserved with a timestamped `.bak` (and `.gz` for compressed).
+- Rotation occurs before each new write session.
+
+## Trade Execution Retry Policy
+- All trade executions (market, stop, limit) are guarded with a retry loop for transient broker errors (requote, busy, timeout, etc.).
+- Up to 3 attempts are made, with a short sleep between retries.
+- Each failure and retry is logged with error code, attempt number, and time.
+- Non-retryable errors abort further attempts immediately.
+
+## Insights Rebuild Timeout
+- The InsightsRebuild script now accepts a `TimeoutMs` input (default: 60,000 ms).
+- The feature scan is chunked and logs progress every 1000 rows, with a brief sleep to avoid watchdog timeouts.
+- If the timeout is exceeded, the rebuild aborts and logs the row/time boundary.

@@ -1,7 +1,11 @@
+
 import argparse
 import os
 import json
 import pickle
+import gzip
+import shutil
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -76,6 +80,20 @@ def make_sequences(df: pd.DataFrame,
         return np.zeros((0, seq_len, X.shape[1]), dtype=float), np.zeros((0,), dtype=int)
     return np.stack(Xs, axis=0).astype(float), np.array(ys, dtype=int)
 
+
+def rotate_and_compress(path, threshold_bytes, compress_exts=(".json", ".pkl")):
+    if os.path.exists(path) and os.path.getsize(path) > threshold_bytes:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        rotated = f"{path}.{ts}.bak"
+        shutil.move(path, rotated)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in compress_exts:
+            with open(rotated, "rb") as f_in, gzip.open(rotated + ".gz", "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            os.remove(rotated)
+            print(f"[ROTATE] {path} rotated and compressed to {rotated}.gz")
+        else:
+            print(f"[ROTATE] {path} rotated to {rotated}")
 
 def train(common_dir: Optional[str],
           epochs: int,
@@ -161,8 +179,20 @@ def train(common_dir: Optional[str],
     if best_model is None:
         raise RuntimeError("Training failed to produce a model")
 
+
     out_dir = os.path.join(os.getcwd(), "artifacts")
     os.makedirs(out_dir, exist_ok=True)
+
+    # Artifact rotation thresholds
+    keras_thresh = 100 * 1024 * 1024  # 100MB
+    json_thresh = 20 * 1024 * 1024    # 20MB
+    pkl_thresh = 20 * 1024 * 1024     # 20MB
+
+    # Rotate/compress before writing
+    rotate_and_compress(os.path.join(out_dir, "tf_model.keras"), keras_thresh, compress_exts=())
+    rotate_and_compress(os.path.join(out_dir, "scaler.pkl"), pkl_thresh)
+    rotate_and_compress(os.path.join(out_dir, "features.json"), json_thresh)
+
     save_model(best_model, out_dir)
     # Persist preprocessing artifacts
     with open(os.path.join(out_dir, "scaler.pkl"), "wb") as f:

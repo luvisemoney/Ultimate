@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __DUALEA_MLCLIENT_MQH__
+#define __DUALEA_MLCLIENT_MQH__
 
 class CMLClient : public CObject
 {
@@ -103,3 +104,5 @@ public:
     return true;
   }
 };
+
+#endif // __DUALEA_MLCLIENT_MQH__

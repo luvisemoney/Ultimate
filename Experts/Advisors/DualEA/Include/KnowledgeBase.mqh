@@ -7,6 +7,8 @@
 #include <Files\File.mqh>
 // Centralized default strategy names
 #include "Strategies\Registry.mqh"
+// Cancellation flag declared in the EA (PaperEA.mq5). When true, builder should abort.
+extern bool g_insights_cancel_requested;
 
 // --- Defines the structure for a single trade record
 struct TradeRecord
@@ -96,6 +98,28 @@ class CFeaturesKB
     bool          WriteKV(const datetime ts, const string symbol, const string strategy, const string feature, const double value)
                     {
                      int h = INVALID_HANDLE;
+                     // File size rotation threshold (100MB)
+                     int rotate_threshold = 100*1024*1024;
+                     // Check if file exists and exceeds threshold
+              int hsize = FileOpen(m_file_path, FILE_READ|FILE_COMMON);
+              if(hsize != INVALID_HANDLE)
+              {
+                ulong sz = FileSize(hsize);
+                FileClose(hsize);
+                if(sz > (ulong)rotate_threshold)
+                {
+                  string tsuffix = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+                  StringReplace(tsuffix, ":", ""); StringReplace(tsuffix, ".", ""); StringReplace(tsuffix, " ", "_");
+                  string rotated = m_file_path + "." + tsuffix + ".bak";
+                  // Try to rename (no compression in MQL5)
+                  if(FileIsExist(rotated, FILE_COMMON)) FileDelete(rotated, FILE_COMMON);
+                  if(FileMove(m_file_path, rotated, FILE_COMMON, FILE_COMMON))
+                    PrintFormat("[ROTATE] features.csv rotated to %s", rotated);
+                  else
+                    PrintFormat("[ROTATE] features.csv rotation failed: %s", rotated);
+                  EnsureHeader();
+                }
+              }
                      // Retry open to mitigate transient locks from readers/writers
                      for(int attempt=0; attempt<10 && h==INVALID_HANDLE; ++attempt)
                        {
@@ -107,13 +131,24 @@ class CFeaturesKB
                         PrintFormat("Error opening features file '%s'. Error: %d", m_file_path, GetLastError());
                         return false;
                        }
-                     if(FileSize(h)==0)
-                        FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
-                     FileSeek(h, 0, SEEK_END);
-                     string line = TimeToString(ts) + m_csv_delim + symbol + m_csv_delim + strategy + m_csv_delim + feature + m_csv_delim + DoubleToString(value, 8);
-                     FileWriteString(h, line + "\n");
-                     FileClose(h);
-                     return true;
+              if(FileSize(h)==0)
+                FileWriteString(h, (string)"timestamp,symbol,strategy,feature,value\n");
+              FileSeek(h, 0, SEEK_END);
+              string line = "";
+              StringConcatenate(line,
+                (string)TimeToString(ts),
+                m_csv_delim,
+                symbol,
+                m_csv_delim,
+                strategy,
+                m_csv_delim,
+                feature,
+                m_csv_delim,
+                DoubleToString(value, 8),
+                "\n");
+              FileWriteString(h, line);
+              FileClose(h);
+              return true;
                     }
   };
 
@@ -125,6 +160,7 @@ class CInsightsBuilder
     string m_features_path;
     string m_out_path;
     string m_delim;
+    int    m_timeout_ms; // 0=disabled
     // --- helpers
     string Trim(string s)
       {
@@ -226,6 +262,19 @@ class CInsightsBuilder
          }
        return maxdd;
       }
+    // --- Deadline helper: returns true if timeout exceeded or external cancel requested
+    bool   DeadlineExceeded(const ulong t0)
+      {
+       if(m_timeout_ms>0)
+         {
+          ulong now = GetTickCount();
+          if((long)(now - t0) >= m_timeout_ms)
+             return true;
+         }
+       if(g_insights_cancel_requested)
+          return true;
+       return false;
+      }
   public:
                   CInsightsBuilder(string kb_path="DualEA\\knowledge_base.csv", string features_path="DualEA\\features.csv", string out_path="DualEA\\insights.json", string delim=",")
                     {
@@ -233,10 +282,14 @@ class CInsightsBuilder
                      m_features_path = features_path;
                      m_out_path = out_path;
                      m_delim = delim;
+                     m_timeout_ms = 0;
                     }
+  void          SetTimeoutMs(const int ms){ m_timeout_ms = 0; } // Timeout disabled
     bool          Build()
                     {
                     // Build insights from features.csv using r_multiple rows
+                    // Establish deadline (if any)
+                    ulong t0 = GetTickCount();
                     // Open features.csv with explicit comma delimiter
                     int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON, (ushort)',');
                     if(hf==INVALID_HANDLE)
@@ -255,8 +308,21 @@ class CInsightsBuilder
                     // Robust CSV scan: 5 fields per row, skip header if present
                     bool header_checked=false;
                     int parsed_rows=0;
+                    int chunk_size = 1000;
                     while(!FileIsEnding(hf))
                       {
+                       // Periodic watchdog/cancel check and progress logging
+                       if((parsed_rows % chunk_size)==0 && parsed_rows > 0)
+                         {
+                          PrintFormat("InsightsBuilder: progress: parsed_rows=%d", parsed_rows);
+                          Sleep(50); // yield to terminal, avoid watchdog
+                          if(DeadlineExceeded(t0))
+                            {
+                             FileClose(hf);
+                             PrintFormat("InsightsBuilder: aborting features.csv scan at row=%d due to timeout/cancel (timeout_ms=%d)", parsed_rows, m_timeout_ms);
+                             return false;
+                            }
+                         }
                        string ts = FileReadString(hf);
                        if(ts=="" && FileIsEnding(hf)) break;
                        string sym = FileReadString(hf);
@@ -345,12 +411,19 @@ class CInsightsBuilder
                        int ht = FileOpen(m_features_path, FILE_READ|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
                        if(ht!=INVALID_HANDLE)
                          {
-                          int added=0; bool header_seen=false;
+                          int added=0; bool header_seen=false; int scanned=0;
                           while(!FileIsEnding(ht))
                             {
                              string line = FileReadString(ht);
                               line = Trim(line);
                               if(line=="") continue;
+                              // Periodic watchdog/cancel check
+                              if((scanned % 5000)==0 && DeadlineExceeded(t0))
+                                {
+                                 FileClose(ht);
+                                 PrintFormat("InsightsBuilder: aborting features.csv text-fallback at scanned=%d due to timeout/cancel (timeout_ms=%d)", scanned, m_timeout_ms);
+                                 return false;
+                                }
                               string parts[];
                               ushort sep = (ushort)StringGetCharacter(",",0);
                               int cnt = StringSplit(line, sep, parts);
@@ -394,6 +467,7 @@ class CInsightsBuilder
                                  tf_list[n]    = tfv;
                                  added++;
                                 }
+                            scanned++;
                             }
                           FileClose(ht);
                           if(added>0)
@@ -411,6 +485,7 @@ class CInsightsBuilder
                           // No header expected in knowledge_base.csv
                           // Columns: ts,symbol,type,entry,sl,tp,close,profit,strategy
                           string sym_list2[]; string strat_list2[]; double r_list2[]; // use profit as R substitute
+                          int kreads=0;
                           while(!FileIsEnding(hk))
                             {
                              string ts = FileReadString(hk); if(ts=="" && FileIsEnding(hk)) break;
@@ -439,6 +514,14 @@ class CInsightsBuilder
                                 sym_list2[n] = sym;
                                 strat_list2[n] = strat;
                                }
+                             // Periodic watchdog/cancel check
+                             if((kreads % 5000)==0 && DeadlineExceeded(t0))
+                               {
+                                FileClose(hk);
+                                PrintFormat("InsightsBuilder: aborting knowledge_base.csv scan at rows=%d due to timeout/cancel (timeout_ms=%d)", kreads, m_timeout_ms);
+                                return false;
+                               }
+                             kreads++;
                             }
                           FileClose(hk);
                           // replace primary arrays for aggregation below
@@ -537,6 +620,12 @@ class CInsightsBuilder
                               tf_list[n3]    = tfc;
                              }
                           }
+                         // Periodic watchdog/cancel check during coverage synthesis
+                         if(DeadlineExceeded(t0))
+                           {
+                            PrintFormat("InsightsBuilder: aborting during coverage synthesis due to timeout/cancel (timeout_ms=%d)", m_timeout_ms);
+                            return false;
+                           }
                        }
                      int added_after = ArraySize(r_list);
                      if(added_after>added_before)
@@ -564,6 +653,12 @@ class CInsightsBuilder
                     double median_R       = Median(r_all);
                     double maxdd_R        = MaxDrawdownR(r_all);
 
+                    // Abort before writing if deadline exceeded to avoid partial files
+                    if(DeadlineExceeded(t0))
+                      {
+                       PrintFormat("InsightsBuilder: aborting before write due to timeout/cancel (timeout_ms=%d)", m_timeout_ms);
+                       return false;
+                      }
                     // Prepare output
                     FolderCreate("DualEA", FILE_COMMON);
                     int out = FileOpen(m_out_path, FILE_WRITE|FILE_COMMON|FILE_TXT|FILE_ANSI);

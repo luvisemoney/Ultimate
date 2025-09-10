@@ -2,7 +2,8 @@
 setlocal enableextensions
 
 REM Paths
-set "EA=c:\Users\itoha\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075\MQL5\Experts\Advisors\DualEA\PaperEA\PaperEA.mq5"
+REM Compile the EA from the current workspace (relative to this script)
+set "EA=%~dp0PaperEA\PaperEA.mq5"
 set "LOG=%TEMP%\PaperEA_compile.log"
 set "EDITOR="
 

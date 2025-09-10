@@ -1,11 +1,13 @@
 // IStrategy.mqh
 // Defines the interface for all trading strategies.
 
+#ifndef DUALEA_INCLUDE_ISTRATEGY_MQH
+#define DUALEA_INCLUDE_ISTRATEGY_MQH
 #property copyright "2025, Windsurf Engineering"
 #property link      "https://www.windsurf.ai"
 
-#include <Trade/Trade.mqh>
 #include <Object.mqh> // Required for CObject
+#include <Trade/Trade.mqh>
 // Forward declaration to avoid circular include; concrete users should include KnowledgeBase.mqh
 class CFeaturesKB;
 
@@ -169,4 +171,4 @@ public:
    virtual bool         PrewarmIndicators(const string symbol, const ENUM_TIMEFRAMES timeframe) { return false; }
   };
 
-
+#endif // DUALEA_INCLUDE_ISTRATEGY_MQH

@@ -11,13 +11,15 @@
 input string InKBPath       = "DualEA\\knowledge_base.csv";  // FILE_COMMON path
 input string InFeaturesPath = "DualEA\\features.csv";        // FILE_COMMON path
 input string OutInsights    = "DualEA\\insights.json";       // FILE_COMMON path
+input int    TimeoutMs      = 60000; // Timeout for rebuild in ms (default: 60s)
 
 void OnStart()
 {
    Print("InsightsRebuild: starting rebuild from features.csv ...");
    CInsightsBuilder b(InKBPath, InFeaturesPath, OutInsights, ",");
+   b.SetTimeoutMs(TimeoutMs);
    bool ok = b.Build();
-   string full = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\\\Files\\\\" + OutInsights;
+   string full = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + OutInsights;
    if(ok)
       PrintFormat("InsightsRebuild: success. Wrote %s", full);
    else

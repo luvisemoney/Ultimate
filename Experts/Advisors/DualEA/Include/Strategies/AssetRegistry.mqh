@@ -16,6 +16,11 @@
 #include "..\\Strategies\\SuperTrendADXKamaStrategy.mqh"
 #include "..\\Strategies\\RSI2BBReversionStrategy.mqh"
 #include "..\\Strategies\\DonchianATRBreakoutStrategy.mqh"
+// Newly added strategies for indices and crypto
+#include "..\\Strategies\\OpeningRangeBreakoutStrategy.mqh"
+#include "..\\Strategies\\VWAPReversionStrategy.mqh"
+#include "..\\Strategies\\EMAPullbackStrategy.mqh"
+#include "..\\Strategies\\KeltnerMomentumStrategy.mqh"
 
 // --- Asset class taxonomy
 enum AssetClass
@@ -119,10 +124,12 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
         }
       case ASSET_CRYPTO:
         {
-         // Crypto: breakout and adaptive trend
-         out.Add((CObject*)new CDonchianATRBreakoutStrategy(symbol, tf));
-         out.Add((CObject*)new CSuperTrendADXKamaStrategy(symbol, tf));
-         break;
+        // Crypto: momentum on Keltner, breakout, and VWAP reversion
+        out.Add((CObject*)new CKeltnerMomentumStrategy(symbol, tf));
+        out.Add((CObject*)new CDonchianATRBreakoutStrategy(symbol, tf));
+        out.Add((CObject*)new CVWAPReversionStrategy(symbol, tf));
+        out.Add((CObject*)new CSuperTrendADXKamaStrategy(symbol, tf));
+        break;
         }
       case ASSET_ENERGY:
         {
@@ -132,9 +139,12 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
         }
       case ASSET_INDEX:
         {
-         // Indices: prefer trend-pullback
-         out.Add((CObject*)new CSuperTrendADXKamaStrategy(symbol, tf));
-         break;
+        // Indices: opening range breakout, EMA pullback, VWAP reversion, and trend
+        out.Add((CObject*)new COpeningRangeBreakoutStrategy(symbol, tf));
+        out.Add((CObject*)new CEMAPullbackStrategy(symbol, tf));
+        out.Add((CObject*)new CVWAPReversionStrategy(symbol, tf));
+        out.Add((CObject*)new CSuperTrendADXKamaStrategy(symbol, tf));
+        break;
         }
       case ASSET_OTHER:
       default:

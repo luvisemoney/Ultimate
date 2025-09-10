@@ -199,6 +199,7 @@ input double GateMinProfitFactor  = 0.00;     // loosened for bootstrap
 input bool   InsightsAutoBuild    = true;     // auto-build insights.json when missing or stale
 input int    InsightsStaleHours   = 6;        // rebuild if older than N hours (0=disable age check)
 input bool   InsightsCheckOnTimer = true;     // also check on timer events
+input int    InsightsRebuildTimeoutMs = 300000; // cooperative timeout for insights rebuild (0=disable) [5 minutes]
 // --- Exploration Mode (bootstrap unseen slices)
 input bool   ExploreOnNoSlice     = true;    // allow limited trades when slice has no data
 input int    ExploreMaxPerSlice   = 100;     // loosened for bootstrap
@@ -266,6 +267,10 @@ input int    TelemetryLevel        = 1;      // 0=off, 1=events, 2=verbose
 input string TelemetryExperiment   = "";     // experiment tag for file prefix
 input int    TelemetryBufferMax    = 256;    // flush threshold
 input string TelemetryDir          = "DualEA\\telemetry"; // Common Files subdir
+
+// --- Insights rebuild concurrency + cancellation guards
+bool g_insights_rebuild_in_progress = false; // prevent overlapping rebuilds
+bool g_insights_cancel_requested    = false; // defined here to satisfy extern in KnowledgeBase.mqh
 
 // --- Verbosity controls
 enum LogLevel { LOG_ERROR = 0, LOG_INFO = 1, LOG_DEBUG = 2 };
@@ -596,13 +601,48 @@ bool Insights_IsStale(const int stale_hours)
 bool Insights_RebuildAndReload(const string reason)
   {
    if(ShouldLog(LOG_INFO)) PrintFormat("Insights auto-build triggered (%s)", reason);
-   CInsightsBuilder b;
-   bool ok = b.Build();
-   if(!ok)
+
+   // Concurrency guard
+   if(g_insights_rebuild_in_progress)
      {
-      PrintFormat("Insights auto-build FAILED (%s). Err=%d", reason, GetLastError());
+      if(ShouldLog(LOG_INFO)) Print("[INSIGHTS] rebuild skipped: already in progress");
+      if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+         (*g_telemetry).LogEvent(_Symbol, (int)_Period, "system", "insights_rebuild_skip_busy", StringFormat("reason=%s", reason));
       return false;
      }
+
+   g_insights_rebuild_in_progress = true;
+   g_insights_cancel_requested = false;
+   ulong t0 = GetTickCount();
+
+   if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+     {
+      string det = StringFormat("reason=%s timeout_ms=%d", reason, InsightsRebuildTimeoutMs);
+      (*g_telemetry).LogEvent(_Symbol, (int)_Period, "system", "insights_rebuild_start", det);
+     }
+
+   int elapsed_ms = 0;
+
+   CInsightsBuilder b;
+   if(InsightsRebuildTimeoutMs>0)
+     b.SetTimeoutMs(InsightsRebuildTimeoutMs);
+
+   bool ok = b.Build();
+   elapsed_ms = (int)(GetTickCount() - t0);
+
+   if(!ok)
+     {
+      PrintFormat("Insights auto-build FAILED (%s). elapsed_ms=%d Err=%d", reason, elapsed_ms, GetLastError());
+      if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+        {
+         string detf = StringFormat("reason=%s elapsed_ms=%d timeout_ms=%d", reason, elapsed_ms, InsightsRebuildTimeoutMs);
+         (*g_telemetry).LogEvent(_Symbol, (int)_Period, "system", "insights_rebuild_failure", detf);
+        }
+      g_insights_rebuild_in_progress = false;
+      g_insights_cancel_requested = false;
+      return false;
+     }
+
    // Reload insights gating cache
    bool gate_loaded = Insights_Load();
    if(ShouldLog(LOG_INFO)) PrintFormat("Insights gating cache reload after build: %s", (gate_loaded?"ok":"fail"));
@@ -612,6 +652,14 @@ bool Insights_RebuildAndReload(const string reason)
       bool sel_ok = (*g_selector).Load();
       if(ShouldLog(LOG_INFO)) PrintFormat("Selector insights reload after build: %s", (sel_ok?"ok":"fail"));
      }
+
+   if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+     {
+      string dets = StringFormat("reason=%s elapsed_ms=%d timeout_ms=%d gate_reload=%s", reason, elapsed_ms, InsightsRebuildTimeoutMs, (gate_loaded?"ok":"fail"));
+      (*g_telemetry).LogEvent(_Symbol, (int)_Period, "system", "insights_rebuild_success", dets);
+     }
+   g_insights_rebuild_in_progress = false;
+   g_insights_cancel_requested = false;
    return true;
   }
 
@@ -2008,7 +2056,7 @@ void OnTimer()
    // On-demand insights rebuild via flag in Common Files
    CheckInsightsReload();
     // Periodic staleness check and auto-rebuild
-    if(InsightsAutoBuild && InsightsCheckOnTimer)
+    if(InsightsAutoBuild)
       {
        if(Insights_IsStale(InsightsStaleHours))
         Insights_RebuildAndReload("OnTimer-stale");
