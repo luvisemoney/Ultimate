@@ -201,7 +201,7 @@ input int    InsightsStaleHours            = 48;        // rebuild if older than
 input int    InsightsMinSourceAdvanceHours = 48;        // require sources (features/kb) to be this many hours newer than insights
 input int    InsightsMinIntervalHours      = 24;        // minimum interval between rebuilds per symbol/timeframe
 input bool   InsightsCheckOnTimer          = true;     // also check on timer events
-input int    InsightsRebuildTimeoutMs      = 300000; // cooperative timeout for insights rebuild (0=disable) [5 minutes]
+input int    InsightsRebuildTimeoutMs      = 1800000; // cooperative timeout for insights rebuild (0=disable) [30 minutes]
 // --- Exploration Mode (bootstrap unseen slices)
 input bool   ExploreOnNoSlice     = true;    // allow limited trades when slice has no data
 input int    ExploreMaxPerSlice   = 100;     // loosened for bootstrap
@@ -273,6 +273,35 @@ input string TelemetryDir          = "DualEA\\telemetry"; // Common Files subdir
 // --- Insights rebuild concurrency + cancellation guards
 bool g_insights_rebuild_in_progress = false; // prevent overlapping rebuilds
 datetime g_last_insights_rebuild_time = 0;    // per-instance (symbol+timeframe) last successful rebuild
+// Per-slice (symbol|timeframe) last rebuild map (in-memory)
+string   g_ir_keys[];
+datetime g_ir_times[];
+int IRFindIndex(const string key)
+{
+  for(int i=0;i<ArraySize(g_ir_keys);++i)
+    if(g_ir_keys[i]==key) return i;
+  return -1;
+}
+datetime IRGetLast(const string key)
+{
+  int idx = IRFindIndex(key);
+  if(idx<0) return 0;
+  return g_ir_times[idx];
+}
+void IRSetLast(const string key, const datetime t)
+{
+  int idx = IRFindIndex(key);
+  if(idx<0)
+  {
+    int n = ArraySize(g_ir_keys);
+    ArrayResize(g_ir_keys,n+1); ArrayResize(g_ir_times,n+1);
+    g_ir_keys[n]=key; g_ir_times[n]=t;
+  }
+  else
+  {
+    g_ir_times[idx]=t;
+  }
+}
 
 // --- Verbosity controls
 enum LogLevel { LOG_ERROR = 0, LOG_INFO = 1, LOG_DEBUG = 2 };
@@ -578,10 +607,12 @@ bool Insights_IsStale(const int stale_hours)
    long ex_i = FileGetInteger(ip, FILE_EXISTS, true);
    if(ex_i==0) return true; // missing insights
    datetime ti = (datetime)FileGetInteger(ip, FILE_MODIFY_DATE, true);
-   // Enforce minimum interval between rebuilds for this chart instance
-   if(InsightsMinIntervalHours>0 && g_last_insights_rebuild_time>0)
+   // Enforce minimum interval between rebuilds for this slice (symbol|timeframe)
+   string slice_key = Symbol() + "|" + IntegerToString((int)Period());
+   datetime last_slice = IRGetLast(slice_key);
+   if(InsightsMinIntervalHours>0 && last_slice>0)
      {
-      if((TimeCurrent() - g_last_insights_rebuild_time) < (InsightsMinIntervalHours*60*60))
+      if((TimeCurrent() - last_slice) < (InsightsMinIntervalHours*60*60))
          return false;
      }
    if(stale_hours>0)
@@ -680,7 +711,26 @@ bool Insights_RebuildAndReload(const string reason)
    g_insights_rebuild_in_progress = false;
    g_insights_cancel_requested = false;
    if(ok)
-     g_last_insights_rebuild_time = TimeCurrent();
+     {
+      g_last_insights_rebuild_time = TimeCurrent();
+      string slice_key2 = Symbol() + "|" + IntegerToString((int)Period());
+      IRSetLast(slice_key2, g_last_insights_rebuild_time);
+      // Write ready signal for LiveEA to detect immediate availability
+      string rdy = "DualEA\\insights.ready";
+      // best-effort delete previous
+      if(FileIsExist(rdy, FILE_COMMON)) FileDelete(rdy, FILE_COMMON);
+      int hr = FileOpen(rdy, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+      if(hr!=INVALID_HANDLE)
+        {
+         FileWrite(hr, IntegerToString((int)g_last_insights_rebuild_time));
+         FileClose(hr);
+         if(ShouldLog(LOG_INFO)) Print("Insights ready signal written");
+        }
+      else
+        {
+         PrintFormat("Insights ready: cannot create %s (err=%d)", rdy, GetLastError());
+        }
+     }
    return true;
   }
 

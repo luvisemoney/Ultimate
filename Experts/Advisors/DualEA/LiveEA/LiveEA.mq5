@@ -59,6 +59,11 @@ input int    NewsImpactMin       = 2;       // 1=low, 2=medium, 3=high
 input bool   NewsUseFile         = true;    // read blackouts from CSV in Common files
 input string NewsFileRelPath     = "DualEA\\news_blackouts.csv";
 
+// --- Insights live auto-reload controls
+input bool   InsightsAutoReload        = true;  // if stale/missing, request rebuild and auto-reload when ready
+input int    InsightsLiveFreshMinutes  = 10;    // consider insights fresh if modified within N minutes
+input int    InsightsReadyPollSec      = 5;     // poll frequency for ready signal (OnTimer)
+
 input bool   UsePromotionGate    = false;   // allow only during configured windows
 input bool   PromoLiveOnly       = false;   // apply only on live accounts
 input int    PromoStartHour      = 0;       // inclusive, server time
@@ -97,6 +102,9 @@ double g_pol_p[];
 double g_pol_sl[];
 double g_pol_tp[];
 double g_pol_trail[];
+
+// Live insights reload state
+bool    g_waiting_insights = false; // set after we request reload; reset when ready is consumed
 
 // --- Exploration Mode tracking (weekly + daily persistent)
 string g_exp_keys[];    // slice key: strategy|symbol|timeframe
@@ -1330,6 +1338,11 @@ int OnInit()
       (ExploreOnNoSlice?"on":"off"), ExploreMaxPerSlice, ExploreMaxPerSlicePerDay);
    if(ShouldLog(LOG_INFO)) PrintFormat("[GATE] %s", gsum);
    if(ShouldLog(LOG_INFO)) Print("LiveEA initialized");
+   // Start watcher timer for insights ready signal
+   if(InsightsAutoReload && InsightsReadyPollSec>0)
+      EventSetTimer(InsightsReadyPollSec);
+   // Bootstrap: ensure insights are fresh or request a rebuild immediately
+   MaybeEnsureInsights();
    return(INIT_SUCCEEDED);
   }
 
@@ -1337,9 +1350,74 @@ void OnDeinit(const int reason)
   {
    if(CheckPointer(g_position_manager)!=POINTER_INVALID) { delete g_position_manager; g_position_manager=NULL; }
    if(CheckPointer(g_telemetry)!=POINTER_INVALID)        { delete g_telemetry;        g_telemetry=NULL; }
+   if(InsightsAutoReload && InsightsReadyPollSec>0)
+      EventKillTimer();
   }
 
 void OnTick()
   {
    // Strategy orchestration is external; gates are available via EvaluateAndMaybeExecute(order)
+  }
+
+// --- Insights ready/reload logic ---
+bool IsInsightsFresh(const int fresh_minutes)
+  {
+   string ip = "DualEA\\insights.json";
+   long ex_i = FileGetInteger(ip, FILE_EXISTS, true);
+   if(ex_i==0) return false;
+   datetime ti = (datetime)FileGetInteger(ip, FILE_MODIFY_DATE, true);
+   if(fresh_minutes<=0) return true; // any existing is fine
+   return ((TimeCurrent() - ti) <= (fresh_minutes*60));
+  }
+
+void RequestInsightsReload()
+  {
+   string path = "DualEA\\insights.reload";
+   if(FileIsExist(path, FILE_COMMON)) FileDelete(path, FILE_COMMON);
+   int h = FileOpen(path, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(h!=INVALID_HANDLE)
+     {
+      FileWrite(h, IntegerToString((int)TimeCurrent()));
+      FileClose(h);
+      if(ShouldLog(LOG_INFO)) Print("Insights reload requested");
+     }
+   else
+     {
+      if(ShouldLog(LOG_WARN)) PrintFormat("Insights reload: cannot create %s (err=%d)", path, GetLastError());
+     }
+  }
+
+void CheckInsightsReady()
+  {
+   string rdy = "DualEA\\insights.ready";
+   int h = FileOpen(rdy, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(h==INVALID_HANDLE) return;
+   // Ready present -> consume and reload
+   FileClose(h);
+   if(!FileDelete(rdy, FILE_COMMON))
+     {
+      // still proceed, but log
+      if(ShouldLog(LOG_WARN)) PrintFormat("Insights ready: cannot delete %s (err=%d)", rdy, GetLastError());
+     }
+   bool ok = Insights_Load();
+   if(ShouldLog(LOG_INFO)) PrintFormat("Insights ready detected: reload %s", (ok?"ok":"fail"));
+   g_waiting_insights = false;
+  }
+
+void MaybeEnsureInsights()
+  {
+   if(!InsightsAutoReload) return;
+   if(IsInsightsFresh(InsightsLiveFreshMinutes)) return;
+   if(!g_waiting_insights)
+     {
+      RequestInsightsReload();
+      g_waiting_insights = true;
+     }
+  }
+
+void OnTimer()
+  {
+   if(!InsightsAutoReload) return;
+   MaybeEnsureInsights();
+   CheckInsightsReady();
   }
