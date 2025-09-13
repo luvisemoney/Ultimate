@@ -48,16 +48,16 @@ Related docs:
 
 ### Cycle 1: Task Decomposition
 - Create work items with IDs, deps, and DoD:
-  - FR-01 Circuit Breakers
-  - FR-02 Session Filter
-  - FR-03 News Filter
-  - FR-04 Position Manager (v1 toggle + exits)
-  - FR-05 Correlation Exposure Caps
-  - FR-06 Volatility Position Sizing
-  - FR-07 Regime Detector Stub
-  - FR-08 Promotion Gate Criteria & Evaluator Script
-  - FR-09 Telemetry Standardization + Ops Views
-  - FR-10 Performance: event batching/log throttling
+  - FR-01 Circuit Breakers d
+  - FR-02 Session Filter d
+  - FR-03 News Filter d
+  - FR-04 Position Manager (v1 toggle + exits) d
+  - FR-05 Correlation Exposure Caps d
+  - FR-06 Volatility Position Sizing d
+  - FR-07 Regime Detector Stub d
+  - FR-08 Promotion Gate Criteria & Evaluator Script d
+  - FR-09 Telemetry Standardization + Ops Views d
+  - FR-10 Performance: event batching/log throttling d
 - Deliverables: backlog with effort, risk, owner, and sequencing.
 
 ### Cycle 2: Code + Peer Review (to be executed later)

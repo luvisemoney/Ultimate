@@ -3,7 +3,11 @@
 #include "..\\Include\\IStrategy.mqh"
 #include "..\\Include\\PositionManager.mqh"
 #include "..\\Include\\TradeManager.mqh"
-#include "..\\Include\\Telemetry.mqh"
+#include "../Include/Telemetry.mqh"
+#include "../Include/TelemetryStandard.mqh"
+#include "../Include/SessionManager.mqh"
+#include "../Include/CorrelationManager.mqh"
+#include "../Include/VolatilitySizer.mqh"
 #include "..\\Include\\InsightsLoader.mqh"
 
 // Logging controls
@@ -15,6 +19,9 @@ bool ShouldLog(const int level) { return (Verbosity>=level); }
 input bool  TelemetryEnabled      = false; // enable telemetry emission
 input bool  NoConstraintsMode     = false; // shadow-gate only, do not block
 input long  MagicNumber           = 123456;
+// Telemetry settings
+input string TelemetryExperiment  = "live";
+input int    TelemetryBufferMax   = 1000;
 
 // Spread/session/risk inputs
 input double SpreadMaxPoints      = 0.0;   // 0=disabled
@@ -62,7 +69,7 @@ input string NewsFileRelPath     = "DualEA\\news_blackouts.csv";
 // --- Insights live auto-reload controls
 input bool   InsightsAutoReload        = true;  // if stale/missing, request rebuild and auto-reload when ready
 input int    InsightsLiveFreshMinutes  = 10;    // consider insights fresh if modified within N minutes
-input int    InsightsReadyPollSec      = 5;     // poll frequency for ready signal (OnTimer)
+input int    InsightsReadyPollSec      = 5;     // poll frequency for ready signal
 
 input bool   UsePromotionGate    = false;   // allow only during configured windows
 input bool   PromoLiveOnly       = false;   // apply only on live accounts
@@ -76,9 +83,35 @@ input double RegimeMaxATRPct     = 1000.0;  // 1000=disabled
 
 input int    CircuitCooldownSec  = 0;       // 0=disabled
 
+// --- FR-02 Session Manager inputs
+input bool   UseSessionManager     = true;
+input int    SessionEndHour        = 20;
+input int    MaxTradesPerSession   = 10;
+
+// --- FR-05 Correlation Manager inputs
+input bool   UseCorrelationManager = true;
+input double MaxCorrelationLimit   = 0.7;
+input int    CorrLookbackDays      = 30;
+
+// --- FR-04 Position Manager inputs
+input int    PMMaxOpenPositions    = 10;     // 0=disabled; cap total open positions before PM gate blocks
+
+// --- FR-06 Volatility Sizer inputs
+input bool   UseVolatilitySizer    = false;
+input int    VolSizerATRPeriod     = 14;
+input double VolSizerBaseATRPct    = 1.0;
+input double VolSizerMinMult       = 0.1;
+input double VolSizerMaxMult       = 3.0;
+input double VolSizerTargetRisk    = 1.0;
+input double BaseLotSize           = 0.01;   // base lot size used when sizing via VolatilitySizer
+
 // Global pointers/state
 CTelemetry       *g_telemetry        = NULL;
+CTelemetryStandard* g_tel_standard = NULL;
 CPositionManager *g_position_manager = NULL;
+CSessionManager* g_session_manager = NULL;
+CCorrelationManager* g_correlation_manager = NULL;
+CVolatilitySizer* g_volatility_sizer = NULL;
 bool              g_eval_busy        = false;
 datetime          g_last_trade_placed= 0;
 
@@ -127,7 +160,15 @@ void EnsureTelemetry()
   {
    if(!TelemetryEnabled) return;
    if(CheckPointer(g_telemetry)==POINTER_INVALID)
-     g_telemetry = new CTelemetry();
+     {
+      g_telemetry = new CTelemetry(_Symbol, TelemetryExperiment, TelemetryBufferMax, (int)_Period);
+      if(CheckPointer(g_telemetry)==POINTER_INVALID)
+        {
+         Print("Failed to create telemetry instance");
+         return;
+        }
+      g_tel_standard = new CTelemetryStandard(g_telemetry);
+     }
   }
 
 void EnsurePM()
@@ -138,6 +179,45 @@ void EnsurePM()
       g_position_manager = new CPositionManager();
       if(CheckPointer(g_position_manager)!=POINTER_INVALID)
         (*g_position_manager).SetMagicNumber((int)MagicNumber);
+     }
+  }
+
+void EnsureSessionManager()
+  {
+   if(!UseSessionManager) return;
+   if(CheckPointer(g_session_manager)==POINTER_INVALID)
+     {
+      g_session_manager = new CSessionManager(_Symbol, _Period);
+      g_session_manager.SetEnabled(true);
+      g_session_manager.SetSessionHours(SessionStartHour, SessionEndHour);
+      g_session_manager.SetMaxTradesPerSession(MaxTradesPerSession);
+      g_session_manager.SetMaxDailyLossPct(MaxDailyLossPct);
+     }
+  }
+
+void EnsureCorrelationManager()
+  {
+   if(!UseCorrelationManager) return;
+   if(CheckPointer(g_correlation_manager)==POINTER_INVALID)
+     {
+      g_correlation_manager = new CCorrelationManager(_Symbol, _Period);
+      g_correlation_manager.SetEnabled(true);
+      g_correlation_manager.SetMaxCorrelation(MaxCorrelationLimit);
+      g_correlation_manager.SetLookbackDays(CorrLookbackDays);
+     }
+  }
+
+void EnsureVolatilitySizer()
+  {
+   if(!UseVolatilitySizer) return;
+   if(CheckPointer(g_volatility_sizer)==POINTER_INVALID)
+     {
+      g_volatility_sizer = new CVolatilitySizer(_Symbol, _Period);
+      g_volatility_sizer.SetEnabled(true);
+      g_volatility_sizer.SetATRPeriod(VolSizerATRPeriod);
+      g_volatility_sizer.SetBaseATRPercent(VolSizerBaseATRPct);
+      g_volatility_sizer.SetMultiplierRange(VolSizerMinMult, VolSizerMaxMult);
+      g_volatility_sizer.SetTargetRiskPercent(VolSizerTargetRisk);
      }
   }
 
@@ -1083,6 +1163,9 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
     EnsureSessionRollover();
     EnsureTelemetry();
     EnsurePM();
+    EnsureSessionManager();
+    EnsureCorrelationManager();
+    EnsureVolatilitySizer();
 
     // Shadow gates (diagnostic only)
     if(NoConstraintsMode && TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
@@ -1252,8 +1335,34 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
    double ppol_now = (UsePolicyGating && g_policy_loaded ? GetPolicyProb(req.strategy_name, _Symbol, (int)_Period) : -1.0);
    ApplyPolicyScaling(req, _Symbol, (int)_Period, ppol_now);
 
-   // Execute the trade using TradeManager
-   CTradeManager tm(_Symbol, 0.0 /* default to symbol min lot if order.lots==0 */, (int)MagicNumber);
+   // --- FR-06 Volatility Position Sizing (set req.lots) ---
+  if(UseVolatilitySizer && CheckPointer(g_volatility_sizer)!=POINTER_INVALID)
+    {
+     double stop_pts = 0.0;
+     double bid=0.0, ask=0.0; SymbolInfoDouble(_Symbol, SYMBOL_BID, bid); SymbolInfoDouble(_Symbol, SYMBOL_ASK, ask);
+     if(req.stop_loss>0.0)
+       {
+        if(req.order_type==ORDER_TYPE_BUY || req.order_type==ORDER_TYPE_BUY_LIMIT || req.order_type==ORDER_TYPE_BUY_STOP)
+          {
+           double ref = (req.price>0.0? req.price : ask);
+           stop_pts = MathMax(0.0, (ref - req.stop_loss)/_Point);
+          }
+        else
+          {
+           double ref = (req.price>0.0? req.price : bid);
+           stop_pts = MathMax(0.0, (req.stop_loss - ref)/_Point);
+          }
+       }
+     double atr_pct=0.0; string vs_r1=""; double mult_hint = (*g_volatility_sizer).CalculateSizeMultiplier(atr_pct, vs_r1);
+     double mult_final=1.0; string vs_r2="";
+     double sized = (*g_volatility_sizer).CalculatePositionSize(BaseLotSize, stop_pts, mult_final, vs_r2);
+     if(sized>0.0) req.lots = sized;
+     if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+       (*g_tel_standard).LogVolatilitySizingEvent(_Symbol, (int)_Period, BaseLotSize, mult_final, (sized>0.0?sized:BaseLotSize), atr_pct);
+    }
+
+  // Execute the trade using TradeManager
+  CTradeManager tm(_Symbol, 0.0 /* default to symbol min lot if order.lots==0 */, (int)MagicNumber);
    bool exec_ok = tm.ExecuteOrder(req);
    uint retcode = tm.ResultRetcode();
    ulong deal_id = tm.ResultDeal();
@@ -1293,6 +1402,9 @@ int OnInit()
    EnsureSessionRollover();
    EnsureTelemetry();
    EnsurePM();
+   EnsureSessionManager();
+   EnsureCorrelationManager();
+   EnsureVolatilitySizer();
    // Load exploration counters and gating caches
    LoadExploreCounts();
    LoadExploreCountsDay();
@@ -1350,6 +1462,10 @@ void OnDeinit(const int reason)
   {
    if(CheckPointer(g_position_manager)!=POINTER_INVALID) { delete g_position_manager; g_position_manager=NULL; }
    if(CheckPointer(g_telemetry)!=POINTER_INVALID)        { delete g_telemetry;        g_telemetry=NULL; }
+   if(CheckPointer(g_tel_standard)!=POINTER_INVALID)     { delete g_tel_standard;     g_tel_standard=NULL; }
+   if(CheckPointer(g_session_manager)!=POINTER_INVALID)  { delete g_session_manager;  g_session_manager=NULL; }
+   if(CheckPointer(g_correlation_manager)!=POINTER_INVALID) { delete g_correlation_manager; g_correlation_manager=NULL; }
+   if(CheckPointer(g_volatility_sizer)!=POINTER_INVALID) { delete g_volatility_sizer; g_volatility_sizer=NULL; }
    if(InsightsAutoReload && InsightsReadyPollSec>0)
       EventKillTimer();
   }
@@ -1357,6 +1473,119 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    // Strategy orchestration is external; gates are available via EvaluateAndMaybeExecute(order)
+   // Early gating before any selection/insights logic
+   if(!EvaluateAndMaybeExecute_PreSelector())
+     {
+      if(ShouldLog(LOG_INFO)) Print("[EARLY] gates blocked tick");
+      return;
+     }
+   // If an external orchestrator performs selection and prepares orders, it should
+   // call EvaluateAndMaybeExecute_PreExecute() just before execution. We call it here
+   // as a placeholder to ensure telemetry is emitted even when no orders are placed.
+   EvaluateAndMaybeExecute_PreExecute();
+  }
+
+// --- Phase 6: Gate orchestration with shadow telemetry
+ulong NowMs(){ return (ulong)GetTickCount(); }
+
+void LogGate(const string tag, const bool allowed, const string phase, const ulong t0)
+  {
+   int latency = (int)(NowMs() - t0);
+   if(ShouldLog(LOG_INFO))
+      PrintFormat("[%s] %s latency_ms=%d", tag, (allowed?"allow":"block"), latency);
+   if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+     {
+      string det = StringFormat("phase=%s p6_latency_ms=%d", phase, latency);
+      (*g_telemetry).LogEvent(_Symbol, (int)_Period, "gate", StringFormat("%s_%s", tag, (allowed?"allow":"block")), det);
+     }
+   // Standardized telemetry
+   if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+     {
+      (*g_tel_standard).LogGateEvent(_Symbol, (int)_Period, tag, allowed, phase, latency, "n/a");
+     }
+  }
+
+// Early gates before selector/insights
+bool EarlyGatesAllow()
+  {
+   string reason;
+   ulong t0;
+   // NEWS
+   t0=NowMs(); bool news_ok = NewsAllowed(reason); LogGate("NEWS", news_ok, "early", t0);
+   if(!news_ok && !NoConstraintsMode) return false;
+   // PROMO
+   t0=NowMs(); bool promo_ok = PromotionAllowed(reason); LogGate("PROMO", promo_ok, "early", t0);
+   if(!promo_ok && !NoConstraintsMode) return false;
+   // REGIME
+   t0=NowMs(); bool reg_ok = RegimeAllowed(reason); LogGate("REGIME", reg_ok, "early", t0);
+   if(!reg_ok && !NoConstraintsMode) return false;
+   // CIRCUIT cooldown
+   t0=NowMs(); bool circ_ok = CircuitCooldownAllowed(reason); LogGate("CIRCUIT", circ_ok, "early", t0);
+   // SESSION (diagnostic in early; block only if NoConstraintsMode is false)
+   EnsureSessionManager();
+   if(UseSessionManager && CheckPointer(g_session_manager)!=POINTER_INVALID)
+     {
+      t0=NowMs(); bool sess_ok = g_session_manager.IsSessionAllowed(reason); LogGate("SESSION", sess_ok, "early", t0);
+      if(!sess_ok && !NoConstraintsMode) return false;
+     }
+   // CORRELATION (diagnostic/block depending on NoConstraintsMode)
+   EnsureCorrelationManager();
+   if(UseCorrelationManager && CheckPointer(g_correlation_manager)!=POINTER_INVALID)
+     {
+      double max_corr;
+      t0=NowMs(); bool corr_ok = g_correlation_manager.CheckCorrelationLimits(reason, max_corr); LogGate("CORR", corr_ok, "early", t0);
+      if(!corr_ok && !NoConstraintsMode) return false;
+     }
+   return true;
+  }
+
+// Final risk4 gates just before execution
+bool Risk4GatesAllow()
+  {
+   string reason;
+   ulong t0;
+   t0=NowMs(); bool news_ok = NewsAllowed(reason); LogGate("NEWS", news_ok, "risk4", t0); if(!news_ok) return false;
+   t0=NowMs(); bool promo_ok= PromotionAllowed(reason); LogGate("PROMO", promo_ok,"risk4", t0); if(!promo_ok) return false;
+   t0=NowMs(); bool reg_ok  = RegimeAllowed(reason); LogGate("REGIME", reg_ok, "risk4", t0); if(!reg_ok) return false;
+   t0=NowMs(); bool circ_ok = CircuitCooldownAllowed(reason); LogGate("CIRCUIT", circ_ok,"risk4", t0); if(!circ_ok) return false;
+   
+   // FR-02 Session gate
+   EnsureSessionManager();
+   if(UseSessionManager && CheckPointer(g_session_manager)!=POINTER_INVALID)
+     {
+      t0=NowMs(); bool sess_ok = g_session_manager.IsSessionAllowed(reason); LogGate("SESSION", sess_ok, "risk4", t0); if(!sess_ok) return false;
+     }
+   
+   // FR-05 Correlation gate
+   EnsureCorrelationManager();
+   if(UseCorrelationManager && CheckPointer(g_correlation_manager)!=POINTER_INVALID)
+     {
+      double max_corr;
+      t0=NowMs(); bool corr_ok = g_correlation_manager.CheckCorrelationLimits(reason, max_corr); LogGate("CORR", corr_ok, "risk4", t0); if(!corr_ok) return false;
+     }
+   
+   // FR-04 Position Manager gate
+   EnsurePM();
+   if(UsePositionManager && CheckPointer(g_position_manager)!=POINTER_INVALID)
+     {
+      int open_positions = PositionsTotal();
+      bool pm_ok = (PMMaxOpenPositions<=0 ? true : (open_positions < PMMaxOpenPositions));
+      t0=NowMs(); LogGate("PM", pm_ok, "risk4", t0); 
+      if(!pm_ok) return false;
+     }
+   
+   return true;
+  }
+
+// Public function to be called by orchestrator before/after selector/insights
+bool EvaluateAndMaybeExecute_PreSelector()
+  {
+   return EarlyGatesAllow();
+  }
+
+bool EvaluateAndMaybeExecute_PreExecute()
+  {
+   return Risk4GatesAllow();
   }
 
 // --- Insights ready/reload logic ---

@@ -29,9 +29,9 @@ flowchart TD
     STR[Strategies]:::implemented
     SEL[Selector & Gates]:::implemented
     TM[Trade Manager]:::implemented
-    PM[Position Manager]:::planned
+    PM[Position Manager]:::implemented
     EXP[Explore Caps]:::implemented
-    TLP[Telemetry Paper]:::inprogress
+    TLP[Telemetry Paper]:::implemented
   end
 
   %% Knowledge Base in Common Files
@@ -58,7 +58,7 @@ flowchart TD
   %% Live EA
   subgraph Live
     LEA[LiveEA]:::inprogress
-    TLL[Telemetry Live]:::planned
+    TLL[Telemetry Live]:::inprogress
   end
 
   %% Data flows from PaperEA
@@ -163,6 +163,52 @@ MQL5/
 - `Telemetry.mqh` is being standardized and extended for LiveEA.
 - All scripts under `Scripts/DualEA/` are implemented; CI integration and scheduled validation are recommended next steps.
 - Documentation is up to date but should be maintained as features evolve.
+
+## Insights Handshake and Live Auto-Reload
+
+To avoid frequent rebuilds while still giving LiveEA immediate access to fresh insights:
+
+- PaperEA writes `DualEA/insights.ready` after a successful rebuild of `insights.json`.
+- LiveEA can request a rebuild by creating `DualEA/insights.reload` and watches for `insights.ready` via `OnTimer`.
+- LiveEA inputs:
+  - `InsightsAutoReload` (bool): enable the watcher/requester.
+  - `InsightsLiveFreshMinutes` (int): freshness threshold for `insights.json` before requesting a rebuild.
+  - `InsightsReadyPollSec` (int): timer poll frequency.
+- PaperEA staleness policy inputs:
+  - `InsightsStaleHours = 48` (auto rebuild if aged beyond this; 0=disable age check)
+  - `InsightsMinSourceAdvanceHours = 48` (require sources to be ≥ this much newer than `insights.json`)
+  - `InsightsMinIntervalHours = 24` (minimum interval between rebuilds per symbol|timeframe slice, tracked in-memory)
+  - `InsightsRebuildTimeoutMs = 1800000` (30 minutes, cooperative timeout)
+- Builder logging is behind a verbosity flag and uses a very large chunk size to reduce progress spam; final success/failure logs are always emitted.
+
+## Gating Pipeline (Early + Risk4) and Telemetry
+
+Both EAs expose the same gate helpers and inputs for parity:
+
+- News gate: `UseNewsFilter`, `NewsBufferBeforeMin`, `NewsBufferAfterMin`, `NewsImpactMin`, `NewsUseFile`, `NewsFileRelPath`.
+- Promotion window: `UsePromotionGate`, `PromoLiveOnly`, `PromoStartHour`, `PromoEndHour`.
+- Regime gate (ATR%): `UseRegimeGate`, `RegimeATRPeriod`, `RegimeMinATRPct`, `RegimeMaxATRPct`.
+- Circuit cooldown: `CircuitCooldownSec`.
+
+Pipeline phases and call sites:
+
+1) Early phase (pre-selector/insights)
+   - LiveEA function: `EvaluateAndMaybeExecute_PreSelector()`
+   - PaperEA call: `EarlyGatesAllow()` early in `OnTick()` before any selection/execution
+   - Behavior: block immediately unless `NoConstraintsMode` is enabled (LiveEA uses `NoConstraintsMode`; PaperEA typically runs with it true for data collection)
+
+2) Risk4 phase (pre-execution)
+   - LiveEA function: `EvaluateAndMaybeExecute_PreExecute()`
+   - PaperEA call: `Risk4GatesAllow()` immediately before any execution-like action (simulate parity; PaperEA primarily logs/tracks)
+
+Telemetry and logs:
+
+- Each gate emits a `[TAG] allow|block latency_ms=N` line and a telemetry event with `phase` and `p6_latency_ms`.
+- Tags: `[NEWS]`, `[PROMO]`, `[REGIME]`, `[CIRCUIT]`.
+
+Parity note:
+
+- LiveEA and PaperEA share identical inputs and helper implementations for these gates for consistent behavior and observability. LiveEA wires them via `EvaluateAndMaybeExecute_*` functions; PaperEA uses `EarlyGatesAllow()` in `OnTick()` and exposes `Risk4GatesAllow()` for placement near any execution-equivalent points.
 
 ## Current Capabilities (PaperEA)
 - Modular strategies via `IStrategy` base class stored in `CArrayObj`.
@@ -698,60 +744,4 @@ Fields:
 - PaperEA and LiveEA do not read from `jailbreak/`; it is a write‑only audit area.
 - Keep PII/broker identifiers out of logs; sanitize before sharing.
 - Large artifacts (CSV/JSON) should be rotated/compressed if size grows beyond operational limits.
-
-### Todo
-Confirm scope priority: implement framework integration in LiveEA first (inputs + stubs) with defaults disabled; PaperEA unaffected for now
-
-Locate and review LiveEA.mq5 to identify gating points (stability, insights, spread, session, risk) and execution function
-
-Integrate feature flags and stubs in LiveEA.mq5: CircuitBreakers, SessionFilter, NewsFilter, PromotionGate, PositionManager, Correlation/VolSizing, Regime
-
-Wire optional PositionManager.mqh behind UsePositionManager flag with no-op fallbacks
-
-Add telemetry/log lines for new gates: [CIRCUIT], [SESSION], [NEWS], [PROMO], [PM], [CORR], [REGIME] with p6_latency emitting at each gate
-
-Update DualEA/docs to record insertion points, risk defaults (fail-closed vs fail-open), and new input documentation
-
-Ask for clarifications: default enable/disable, promotion thresholds, session windows/timezone, news data source path, fail-open/closed policy
-
-
-Add new gating inputs: NewsFilter, PromotionGate, RegimeGate, CircuitBreaker cooldown in LiveEA.mq5
-
-2
-Implement helper functions: NewsAllowed, PromotionAllowed, RegimeAllowed, CircuitCooldownAllowed
-
-3
-Extend shadow telemetry in EvaluateAndMaybeExecute for the new gates (when NoConstraintsMode=true)
-
-4
-Insert early gating checks before selector/insights gating for the new gates
-
-5
-Add final risk4 gating checks for the new gates just before ExecuteOrder
-
-Build/compile and fix any compile errors
-
-Smoke-test shadow telemetry and gating behavior with file flags and ATR thresholds
-Add new gating helpers NewsAllowed, PromotionAllowed, RegimeAllowed, CircuitCooldownAllowed to LiveEA.mq5 (after RiskAllowed()).
-
-Extend NoConstraintsMode shadow telemetry in EvaluateAndMaybeExecute() to log the four new gates.
-
-Add early gating checks (before selector/insights) for news, promotion, regime, circuit cooldown with logging and telemetry.
-
-Add Phase 4 [RISK4] gating checks just before ExecuteOrder for the four new gates with risk4_* telemetry keys.
-
-Build/compile LiveEA.mq5 and smoke-test: verify gates block/allow correctly and telemetry contains shadow, early, and risk4 entries.
-
-Add new gating helpers NewsAllowed, PromotionAllowed, RegimeAllowed, CircuitCooldownAllowed to LiveEA.mq5 (after RiskAllowed()).
-
-Extend NoConstraintsMode shadow telemetry in EvaluateAndMaybeExecute() to log the four new gates.
-
-Add early gating checks (before selector/insights) for news, promotion, regime, circuit cooldown with logging and telemetry.
-
-Add Phase 4 [RISK4] gating checks just before ExecuteOrder for the four new gates with risk4_* telemetry keys.
-
-Build/compile LiveEA.mq5 and smoke-test: verify gates block/allow correctly and telemetry contains shadow, early, and risk4 entries.
-
-6
-Locate EvaluateAndMaybeExecute() and telemetry (g_telemetry, LogGating*, ExecuteOrder) in LiveEA or includes; or provide the updated LiveEA.mq5 containing them.
 

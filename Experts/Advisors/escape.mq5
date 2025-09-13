@@ -1468,14 +1468,20 @@ public:
          return false;
       }
       
-      // Wait for indicators to calculate
+      // Wait for indicators to calculate (>0). Treat <=0 (including -1 error) as not ready
       int retries = 0;
-      while(BarsCalculated(m_rsiHandle) == 0 || BarsCalculated(m_maHandle) == 0 || BarsCalculated(m_atrHandle) == 0)
+      while(true)
       {
+         int rsiBars = BarsCalculated(m_rsiHandle);
+         int maBars  = BarsCalculated(m_maHandle);
+         int atrBars = BarsCalculated(m_atrHandle);
+         if(rsiBars > 0 && maBars > 0 && atrBars > 0)
+            break;
+
          retries++;
-         if(retries > 10) 
+         if(retries > 20)
          {
-            Print("Error: Indicators not ready after 10 retries");
+            Print("Error: Indicators not ready after retries. RSI=", rsiBars, " MA=", maBars, " ATR=", atrBars);
             return false;
          }
          Sleep(100);
@@ -1527,6 +1533,17 @@ public:
          return false;
       }
       int calcBars = BarsCalculated(m_rsiHandle);
+      if(calcBars < 0)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            int err = GetLastError();
+            Print("RSI read skipped: BarsCalculated returned error. BarsCalculated=", calcBars, ", LastError=", err);
+            m_lastRSIReadinessLog = TimeCurrent();
+            ResetLastError();
+         }
+         return false;
+      }
       if(calcBars < neededBars)
       {
          if(TimeCurrent() - m_lastRSIReadinessLog > 60)
@@ -1603,6 +1620,17 @@ public:
          return false;
       }
       int calcBars = BarsCalculated(m_rsiHandle);
+      if(calcBars < 0)
+      {
+         if(TimeCurrent() - m_lastRSIReadinessLog > 60)
+         {
+            int err = GetLastError();
+            Print("RSI read skipped: BarsCalculated returned error. BarsCalculated=", calcBars, ", LastError=", err);
+            m_lastRSIReadinessLog = TimeCurrent();
+            ResetLastError();
+         }
+         return false;
+      }
       if(calcBars < neededBars)
       {
          if(TimeCurrent() - m_lastRSIReadinessLog > 60)
@@ -1928,10 +1956,13 @@ void CheckSignals(int tickCount)
    {
       if(tickCount % 100 == 0)
          Print("Maximum number of open trades reached (", g_currentOpenTrades, "/", MAX_OPEN_TRADES, ")");
+      // Update last signal check time even if we skip due to max trades
+      g_lastSignalCheck = TimeCurrent();
       return;
    }
    
    // Check for signals from all strategies
+   g_lastSignalCheck = TimeCurrent();
    bool longSignal = g_strategyManager.CheckLongSignal();
    bool shortSignal = g_strategyManager.CheckShortSignal();
    
@@ -1953,6 +1984,9 @@ void CheckSignals(int tickCount)
       {
          // Draw buy signal on chart
          DrawBuySignal();
+         
+         // Count signals in the current minute window
+         g_signalsSentThisMinute++;
          
          if(ExecuteMarketOrder(ORDER_TYPE_BUY, lotSize, stopLoss, takeProfit, "Strategy Buy"))
          {
@@ -1977,6 +2011,9 @@ void CheckSignals(int tickCount)
          // Draw sell signal on chart
          DrawSellSignal();
          
+         // Count signals in the current minute window
+         g_signalsSentThisMinute++;
+         
          if(ExecuteMarketOrder(ORDER_TYPE_SELL, lotSize, stopLoss, takeProfit, "Strategy Sell"))
          {
             Print("Successfully executed SELL order");
@@ -1998,6 +2035,15 @@ void OnTick()
    tickCount++;
    if(tickCount % 100 == 0) // Log every 100 ticks to avoid flooding
       Print("OnTick called. Current open trades: ", g_currentOpenTrades, "/", MAX_OPEN_TRADES);
+   
+   // Reset the per-minute signal counter once per minute
+   static datetime lastSignalMinuteStart = 0;
+   datetime now_for_minute = TimeCurrent();
+   if(lastSignalMinuteStart == 0 || (now_for_minute - lastSignalMinuteStart) >= 60)
+   {
+      g_signalsSentThisMinute = 0;
+      lastSignalMinuteStart = now_for_minute;
+   }
       
    // Check for trading signals
    if(tickCount % 50 == 0) // Log status every 50 ticks
@@ -2022,9 +2068,22 @@ void OnTick()
 
    if(SymbolInfoTick(_Symbol, last_tick))
      {
-      current_price = last_tick.last;
+      // Some symbols may have last==0.0; fall back to mid/ask/bid
+      if(last_tick.last > 0.0)
+         current_price = last_tick.last;
+      else if(last_tick.ask > 0.0 && last_tick.bid > 0.0)
+         current_price = (last_tick.ask + last_tick.bid) / 2.0;
+      else if(last_tick.ask > 0.0)
+         current_price = last_tick.ask;
+      else
+         current_price = last_tick.bid;
       if(tickCount % 100 == 0)
-         Print("Current price: ", current_price, " (Ask: ", last_tick.ask, ", Bid: ", last_tick.bid, ")");
+      {
+         if(last_tick.last <= 0.0)
+            Print("Current price fallback used. Mid/Side price: ", current_price, " (Ask: ", last_tick.ask, ", Bid: ", last_tick.bid, ")");
+         else
+            Print("Current price: ", current_price, " (Ask: ", last_tick.ask, ", Bid: ", last_tick.bid, ")");
+      }
      }
      else
      {
@@ -2128,6 +2187,8 @@ void OnTick()
       
       UpdateTradingStats();
       CheckTradingMode();
+      // Update last log update time for status display
+      g_lastLogUpdate = currentTime;
       lastUpdateTime = currentTime;
       
       // Log current indicator values for debugging

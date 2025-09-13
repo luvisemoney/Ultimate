@@ -143,7 +143,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 #include "..\Include\KnowledgeBase.mqh"
 #include "..\Include\TradeManager.mqh"
 // --- Telemetry
-#include "..\Include\Telemetry.mqh"
+#include "../Include/Telemetry.mqh"
+#include "../Include/TelemetryStandard.mqh"
+#include "../Include/SessionManager.mqh"
+#include "../Include/CorrelationManager.mqh"
+#include "../Include/VolatilitySizer.mqh"
 // --- Shared Insights loader (DRY)
 #include "..\Include\InsightsLoader.mqh"
 
@@ -251,6 +255,231 @@ input double P5_StabilityMaxStdR     = 1.00;    // max allowed std-dev of R in w
 input bool   P5_PersistLossCounters  = false;   // persist consecutive loss counters per symbol+magic (FILE_COMMON)
 input bool   P5_PickBestEnable       = false;   // execute only the best-scoring strategy (selector) per tick
 
+// --- News / Promotion / Regime / Circuit cooldown (parity with LiveEA)
+input bool   UseNewsFilter       = false;   // block around defined news windows
+input int    NewsBufferBeforeMin = 30;      // minutes before an event
+input int    NewsBufferAfterMin  = 30;      // minutes after an event
+input int    NewsImpactMin       = 2;       // 1=low, 2=medium, 3=high
+input bool   NewsUseFile         = true;    // read blackouts from CSV in Common files
+input string NewsFileRelPath     = "DualEA\\news_blackouts.csv";
+
+input bool   UsePromotionGate    = false;   // allow only during configured windows
+input bool   PromoLiveOnly       = false;   // apply only on live accounts
+input int    PromoStartHour      = 0;       // inclusive, server time
+input int    PromoEndHour        = 24;      // exclusive, supports wrap if less than start
+
+input bool   UseRegimeGate       = false;   // filter by volatility regimes
+input int    RegimeATRPeriod     = 14;
+input double RegimeMinATRPct     = 0.0;     // 0=disabled
+input double RegimeMaxATRPct     = 1000.0;  // 1000=disabled
+
+input int    CircuitCooldownSec  = 0;       // 0=disabled
+
+// --- FR-02 Session Manager inputs
+input bool   UseSessionManager     = true;
+input int    SessionEndHour        = 20;
+input int    MaxTradesPerSession   = 10;
+
+// --- FR-05 Correlation Manager inputs
+input bool   UseCorrelationManager = true;
+input double MaxCorrelationLimit   = 0.7;
+input int    CorrLookbackDays      = 30;
+
+// --- FR-06 Volatility Sizer inputs
+input bool   UseVolatilitySizer    = false;
+input int    VolSizerATRPeriod     = 14;
+input double VolSizerBaseATRPct    = 1.0;
+input double VolSizerMinMult       = 0.1;
+input double VolSizerMaxMult       = 3.0;
+input double VolSizerTargetRisk    = 1.0;
+
+// --- Gate helper implementations and telemetry (parity with LiveEA)
+// Global manager instances
+CTelemetryStandard* g_tel_standard = NULL;
+CSessionManager* g_session_manager = NULL;
+CCorrelationManager* g_correlation_manager = NULL;
+CVolatilitySizer* g_volatility_sizer = NULL;
+
+// News blackout cache
+string   g_news_key[];
+datetime g_news_from[];
+datetime g_news_to[];
+int      g_news_impact[];
+
+void EnsureNewsLoaded()
+  {
+   if(!UseNewsFilter || !NewsUseFile) return;
+   if(ArraySize(g_news_key)>0) return;
+   int h = FileOpen(NewsFileRelPath, FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
+   if(h==INVALID_HANDLE) { if(ShouldLog(LOG_INFO)) PrintFormat("News filter: cannot open %s (Common). Err=%d", NewsFileRelPath, GetLastError()); return; }
+   bool first=true;
+   while(!FileIsEnding(h))
+     {
+      string k = FileReadString(h); if(k=="" && FileIsEnding(h)) break;
+      string sfrom = FileReadString(h);
+      string sto   = FileReadString(h);
+      string simp  = FileReadString(h);
+      if(first && (StringFind(k, "key", 0)==0)) { first=false; continue; }
+      first=false;
+      datetime tfrom = StringToTime(sfrom);
+      datetime tto   = StringToTime(sto);
+      int impact = (int)StringToInteger(simp);
+      int n = ArraySize(g_news_key);
+      ArrayResize(g_news_key,n+1); ArrayResize(g_news_from,n+1); ArrayResize(g_news_to,n+1); ArrayResize(g_news_impact,n+1);
+      StringToUpper(k);
+      g_news_key[n]=k; g_news_from[n]=tfrom; g_news_to[n]=tto; g_news_impact[n]=impact;
+     }
+   FileClose(h);
+   if(ShouldLog(LOG_INFO)) PrintFormat("News blackout windows loaded: %d", ArraySize(g_news_key));
+  }
+
+void AddUniqueKey(string &arr[], const string k)
+  {
+   for(int i=0;i<ArraySize(arr);++i) if(arr[i]==k) return;
+   int n=ArraySize(arr); ArrayResize(arr, n+1); arr[n]=k;
+  }
+
+bool NewsAllowed(string &reason)
+  {
+   reason = "ok";
+   if(!UseNewsFilter) return true;
+   EnsureNewsLoaded();
+   string keys[]; string sU=_Symbol; StringToUpper(sU);
+   AddUniqueKey(keys, sU); AddUniqueKey(keys, "*");
+   string ccy[] = { "USD","EUR","GBP","JPY","CHF","AUD","NZD","CAD","SEK","NOK","DKK","SGD","HKD","CNY","CNH","ZAR","MXN","TRY" };
+   for(int i=0;i<ArraySize(ccy);++i) if(StringFind(sU, ccy[i])>=0) AddUniqueKey(keys, ccy[i]);
+   if(StringFind(sU, "US30")>=0 || StringFind(sU, "US500")>=0 || StringFind(sU, "NAS")>=0 || StringFind(sU, "DJ")>=0 || StringFind(sU, "SPX")>=0) AddUniqueKey(keys, "USD");
+   if(StringFind(sU, "GER")>=0 || StringFind(sU, "DAX")>=0 || StringFind(sU, "FRA40")>=0 || StringFind(sU, "CAC")>=0) AddUniqueKey(keys, "EUR");
+   if(StringFind(sU, "UK100")>=0 || StringFind(sU, "FTSE")>=0) AddUniqueKey(keys, "GBP");
+   if(StringFind(sU, "JPN")>=0 || StringFind(sU, "JP")>=0 || StringFind(sU, "NIK")>=0) AddUniqueKey(keys, "JPY");
+   if(StringFind(sU, "HK50")>=0 || StringFind(sU, "HSI")>=0) AddUniqueKey(keys, "HKD");
+   if(StringFind(sU, "AUS")>=0) AddUniqueKey(keys, "AUD");
+   datetime now=TimeCurrent();
+   for(int i=0;i<ArraySize(g_news_key);++i)
+     {
+      if(g_news_impact[i] < NewsImpactMin) continue;
+      bool match=false; for(int j=0;j<ArraySize(keys) && !match;++j) if(g_news_key[i]==keys[j]) match=true; if(!match) continue;
+      datetime from=g_news_from[i]-(NewsBufferBeforeMin*60);
+      datetime to  =g_news_to[i]  +(NewsBufferAfterMin*60);
+      if(now>=from && now<=to) { reason="news_window"; return false; }
+     }
+   return true;
+  }
+
+bool PromotionAllowed(string &reason)
+  {
+   reason="ok";
+   if(!UsePromotionGate) return true;
+   if(PromoLiveOnly && AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_REAL) return true;
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   int h=dt.hour;
+   bool in_window = (PromoStartHour<=PromoEndHour ? (h>=PromoStartHour && h<PromoEndHour)
+                                                 : (h>=PromoStartHour || h<PromoEndHour));
+   if(!in_window) { reason="promo_window"; return false; }
+   return true;
+  }
+
+bool RegimeAllowed(string &reason)
+  {
+   reason="ok";
+   if(!UseRegimeGate) return true;
+   int atr_handle = iATR(_Symbol, _Period, RegimeATRPeriod);
+   if(atr_handle==INVALID_HANDLE) return true;
+   double atr_buf[]; ArrayResize(atr_buf,1);
+   int copied = CopyBuffer(atr_handle, 0, 0, 1, atr_buf);
+   IndicatorRelease(atr_handle);
+   if(copied!=1) return true;
+   double atr=atr_buf[0]; double px=SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(atr<=0.0 || px<=0.0) return true;
+   double atr_pct = 100.0 * atr / px;
+   if(RegimeMinATRPct>0.0 && atr_pct < RegimeMinATRPct) { reason="regime_low_atr"; return false; }
+   if(RegimeMaxATRPct>0.0 && atr_pct > RegimeMaxATRPct) { reason="regime_high_atr"; return false; }
+   return true;
+  }
+
+bool CircuitCooldownAllowed(string &reason)
+  {
+   reason="ok";
+   if(CircuitCooldownSec<=0) return true;
+   static datetime g_last_paper_action = 0;
+   if(g_last_paper_action==0) return true;
+   if((TimeCurrent() - g_last_paper_action) < CircuitCooldownSec) { reason="circuit_cooldown"; return false; }
+   return true;
+  }
+
+ulong NowMs(){ return (ulong)GetTickCount(); }
+void LogGate(const string tag, const bool allowed, const string phase, const ulong t0)
+  {
+   int latency = (int)(NowMs() - t0);
+   if(ShouldLog(LOG_INFO)) PrintFormat("[%s] %s latency_ms=%d", tag, (allowed?"allow":"block"), latency);
+   if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
+     {
+      string det = StringFormat("phase=%s p6_latency_ms=%d", phase, latency);
+      (*g_telemetry).LogEvent(_Symbol, (int)_Period, "gate", StringFormat("%s_%s", tag, (allowed?"allow":"block")), det);
+     }
+   // Standardized telemetry schema
+   if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+     {
+      (*g_tel_standard).LogGateEvent(_Symbol, (int)_Period, tag, allowed, phase, latency, "n/a");
+     }
+  }
+
+bool EarlyGatesAllow()
+  {
+   string reason; ulong t0;
+   t0=NowMs(); bool news_ok = NewsAllowed(reason);    LogGate("NEWS",   news_ok, "early", t0); if(!news_ok) return false;
+   t0=NowMs(); bool promo_ok= PromotionAllowed(reason);LogGate("PROMO",  promo_ok,"early", t0); if(!promo_ok) return false;
+   t0=NowMs(); bool reg_ok  = RegimeAllowed(reason);  LogGate("REGIME", reg_ok,  "early", t0); if(!reg_ok) return false;
+   t0=NowMs(); bool circ_ok = CircuitCooldownAllowed(reason); LogGate("CIRCUIT", circ_ok, "early", t0); if(!circ_ok) return false;
+   
+   // FR-02 Session gate
+   if(UseSessionManager && CheckPointer(g_session_manager)!=POINTER_INVALID)
+     {
+      t0=NowMs(); bool sess_ok = g_session_manager.IsSessionAllowed(reason); LogGate("SESSION", sess_ok, "early", t0); if(!sess_ok) return false;
+     }
+   
+   // FR-05 Correlation gate
+   if(UseCorrelationManager && CheckPointer(g_correlation_manager)!=POINTER_INVALID)
+     {
+      double max_corr;
+      t0=NowMs(); bool corr_ok = g_correlation_manager.CheckCorrelationLimits(reason, max_corr); LogGate("CORR", corr_ok, "early", t0); if(!corr_ok) return false;
+     }
+   
+   return true;
+  }
+
+bool Risk4GatesAllow()
+  {
+   string reason; ulong t0;
+   t0=NowMs(); bool news_ok = NewsAllowed(reason);    LogGate("NEWS",   news_ok, "risk4", t0); if(!news_ok) return false;
+   t0=NowMs(); bool promo_ok= PromotionAllowed(reason);LogGate("PROMO",  promo_ok,"risk4", t0); if(!promo_ok) return false;
+   t0=NowMs(); bool reg_ok  = RegimeAllowed(reason);  LogGate("REGIME", reg_ok,  "risk4", t0); if(!reg_ok) return false;
+   t0=NowMs(); bool circ_ok = CircuitCooldownAllowed(reason); LogGate("CIRCUIT", circ_ok, "risk4", t0); if(!circ_ok) return false;
+   
+   // FR-02 Session gate
+   if(UseSessionManager && CheckPointer(g_session_manager)!=POINTER_INVALID)
+     {
+      t0=NowMs(); bool sess_ok = g_session_manager.IsSessionAllowed(reason); LogGate("SESSION", sess_ok, "risk4", t0); if(!sess_ok) return false;
+     }
+   
+   // FR-05 Correlation gate
+   if(UseCorrelationManager && CheckPointer(g_correlation_manager)!=POINTER_INVALID)
+     {
+      double max_corr;
+      t0=NowMs(); bool corr_ok = g_correlation_manager.CheckCorrelationLimits(reason, max_corr); LogGate("CORR", corr_ok, "risk4", t0); if(!corr_ok) return false;
+     }
+
+   // FR-04 Position Manager gate
+   if(UsePositionManager && CheckPointer(g_position_manager)!=POINTER_INVALID)
+     {
+      int open_positions = PositionsTotal();
+      bool pm_ok = (open_positions < 10);
+      t0=NowMs(); LogGate("PM", pm_ok, "risk4", t0);
+      if(!pm_ok) return false;
+     }
+   
+   return true;
+  }
 // --- Policy gating (async from ml/policy.json)
 input bool   UsePolicyGating       = true;
 // --- Default policy fallback (neutral scaling when policy lookup misses)
@@ -1933,35 +2162,69 @@ int OnInit()
      }
 
     // Telemetry
-    if(TelemetryEnabled && CheckPointer(g_telemetry)==POINTER_INVALID)
-      {
-       g_telemetry = new CTelemetry(TelemetryDir, TelemetryExperiment, TelemetryLevel, TelemetryBufferMax);
-       if(CheckPointer(g_telemetry)!=POINTER_INVALID)
-         (*g_telemetry).LogEvent(_Symbol, (int)_Period, "sys", "init", StringFormat("NoConstraints=%s", (NoConstraintsMode?"true":"false")));
-      }
+    if(TelemetryEnabled)
+     {
+      g_telemetry = new CTelemetry(_Symbol, TelemetryExperiment, TelemetryBufferMax, (int)_Period);
+      if(CheckPointer(g_telemetry)==POINTER_INVALID)
+        {
+         Print("Failed to create telemetry instance");
+         return INIT_FAILED;
+        }
+      g_tel_standard = new CTelemetryStandard(g_telemetry);
+     }
 
-    // Reset pending mappings and tracking arrays to ensure a clean state on (re)init
-    ArrayResize(g_pending_orders, 0);
-    ArrayResize(g_pending_orders_strat, 0);
-    ArrayResize(g_pending_deals, 0);
-    ArrayResize(g_pending_deals_strat, 0);
-    ArrayResize(g_pos_ids, 0);
-    ArrayResize(g_pos_strats, 0);
-    ArrayResize(g_pos_entry_price, 0);
-    ArrayResize(g_pos_initial_risk, 0);
-    ArrayResize(g_pos_start_time, 0);
-    ArrayResize(g_pos_type, 0);
-    ArrayResize(g_pos_max_price, 0);
-    ArrayResize(g_pos_min_price, 0);
-    g_explore_pending_key = "";
-    // Reset explore-cap dedupe state
-    g_ecap_bar_time = 0;
-    ArrayResize(g_ecap_keys, 0);
-    ArrayResize(g_ecap_counts, 0);
-    ArrayResize(g_ecap_printed_once, 0);
+   // Initialize FR-02 Session Manager
+   if(UseSessionManager)
+     {
+      g_session_manager = new CSessionManager(_Symbol, _Period);
+      g_session_manager.SetEnabled(true);
+      g_session_manager.SetSessionHours(SessionStartHour, SessionEndHour);
+      g_session_manager.SetMaxTradesPerSession(MaxTradesPerSession);
+      g_session_manager.SetMaxDailyLossPct(MaxDailyLossPct);
+     }
 
-    // Strategy selector
-    if(CheckPointer(g_selector)==POINTER_INVALID)
+   // Initialize FR-05 Correlation Manager
+   if(UseCorrelationManager)
+     {
+      g_correlation_manager = new CCorrelationManager(_Symbol, _Period);
+      g_correlation_manager.SetEnabled(true);
+      g_correlation_manager.SetMaxCorrelation(MaxCorrelationLimit);
+      g_correlation_manager.SetLookbackDays(CorrLookbackDays);
+     }
+
+   // Initialize FR-06 Volatility Sizer
+   if(UseVolatilitySizer)
+     {
+      g_volatility_sizer = new CVolatilitySizer(_Symbol, _Period);
+      g_volatility_sizer.SetEnabled(true);
+      g_volatility_sizer.SetATRPeriod(VolSizerATRPeriod);
+      g_volatility_sizer.SetBaseATRPercent(VolSizerBaseATRPct);
+      g_volatility_sizer.SetMultiplierRange(VolSizerMinMult, VolSizerMaxMult);
+      g_volatility_sizer.SetTargetRiskPercent(VolSizerTargetRisk);
+     }
+
+   // Reset pending mappings and tracking arrays to ensure a clean state on (re)init
+   ArrayResize(g_pending_orders, 0);
+   ArrayResize(g_pending_orders_strat, 0);
+   ArrayResize(g_pending_deals, 0);
+   ArrayResize(g_pending_deals_strat, 0);
+   ArrayResize(g_pos_ids, 0);
+   ArrayResize(g_pos_strats, 0);
+   ArrayResize(g_pos_entry_price, 0);
+   ArrayResize(g_pos_initial_risk, 0);
+   ArrayResize(g_pos_start_time, 0);
+   ArrayResize(g_pos_type, 0);
+   ArrayResize(g_pos_max_price, 0);
+   ArrayResize(g_pos_min_price, 0);
+   g_explore_pending_key = "";
+   // Reset explore-cap dedupe state
+   g_ecap_bar_time = 0;
+   ArrayResize(g_ecap_keys, 0);
+   ArrayResize(g_ecap_counts, 0);
+   ArrayResize(g_ecap_printed_once, 0);
+
+   // Strategy selector
+   if(CheckPointer(g_selector)==POINTER_INVALID)
       {
        g_selector = new CStrategySelector();
       (*g_selector).ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
@@ -2114,6 +2377,10 @@ void OnDeinit(const int reason)
    if(CheckPointer(g_features)!=POINTER_INVALID){ delete g_features; g_features=NULL; }
    if(CheckPointer(g_kb)!=POINTER_INVALID){ delete g_kb; g_kb=NULL; }
    if(CheckPointer(g_position_manager)!=POINTER_INVALID){ delete g_position_manager; g_position_manager=NULL; }
+   if(CheckPointer(g_tel_standard)!=POINTER_INVALID){ delete g_tel_standard; g_tel_standard=NULL; }
+   if(CheckPointer(g_session_manager)!=POINTER_INVALID){ delete g_session_manager; g_session_manager=NULL; }
+   if(CheckPointer(g_correlation_manager)!=POINTER_INVALID){ delete g_correlation_manager; g_correlation_manager=NULL; }
+   if(CheckPointer(g_volatility_sizer)!=POINTER_INVALID){ delete g_volatility_sizer; g_volatility_sizer=NULL; }
    if(HeartbeatEnabled) { EventKillTimer(); Comment(""); }
   }
 
@@ -2180,8 +2447,14 @@ ulong FindLatestOrderForSymbolMagic(const string sym, const int magic)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // Runtime policy reload support
-   CheckPolicyReload();
+  // Runtime policy reload support
+  CheckPolicyReload();
+  // Early gating checks (parity with LiveEA): NEWS, PROMO, REGIME, CIRCUIT
+  if(!EarlyGatesAllow())
+    {
+     if(ShouldLog(LOG_INFO)) Print("[EARLY] gates blocked tick");
+     return;
+    }
    // Maintain session baseline/high-water on each tick
    EnsureSessionRollover();
 //--- Always update trailing stops for open positions managed by our magic number
@@ -2807,17 +3080,42 @@ void OnTick()
                    trail_pts = (int)order.trail_distance_points;
                   }
                }
+             // --- Volatility Sizing (FR-06) ---
+             double stop_pts_pm = 0.0;
+             double bid_pm=0.0, ask_pm=0.0; SymbolInfoDouble(_Symbol,SYMBOL_BID,bid_pm); SymbolInfoDouble(_Symbol,SYMBOL_ASK,ask_pm);
+             if(order.stop_loss>0.0)
+               {
+                if(order.order_type==ORDER_TYPE_BUY || order.order_type==ORDER_TYPE_BUY_LIMIT || order.order_type==ORDER_TYPE_BUY_STOP)
+                  {
+                   double ref = (entry_px>0.0? entry_px : ask_pm);
+                   stop_pts_pm = MathMax(0.0, (ref - order.stop_loss)/_Point);
+                  }
+                else
+                  {
+                   double ref = (entry_px>0.0? entry_px : bid_pm);
+                   stop_pts_pm = MathMax(0.0, (order.stop_loss - ref)/_Point);
+                  }
+               }
+             double lot_to_use_pm = LotSize;
+             if(UseVolatilitySizer && CheckPointer(g_volatility_sizer)!=POINTER_INVALID)
+               {
+                double atr_pct_pm=0.0; string vs_r1_pm=""; double mult_hint_pm = (*g_volatility_sizer).CalculateSizeMultiplier(atr_pct_pm, vs_r1_pm);
+                double mult_final_pm=1.0; string vs_r2_pm="";
+                lot_to_use_pm = (*g_volatility_sizer).CalculatePositionSize(LotSize, stop_pts_pm, mult_final_pm, vs_r2_pm);
+                if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+                  (*g_tel_standard).LogVolatilitySizingEvent(_Symbol, (int)_Period, LotSize, mult_final_pm, lot_to_use_pm, atr_pct_pm);
+               }
 
-              result = (*g_position_manager).PlaceBracketOrder(_Symbol,
-                                                               order.order_type,
-                                                               LotSize,
-                                                               entry_px,
-                                                               order.stop_loss,
-                                                               order.take_profit,
-                                                               0.0,
-                                                               trail_pts,
-                                                               0,
-                                                               order.strategy_name);
+             result = (*g_position_manager).PlaceBracketOrder(_Symbol,
+                                                              order.order_type,
+                                                              lot_to_use_pm,
+                                                              entry_px,
+                                                              order.stop_loss,
+                                                              order.take_profit,
+                                                              0.0,
+                                                              trail_pts,
+                                                              0,
+                                                              order.strategy_name);
               res_retcode = (result ? 10009 /*TRADE_RETCODE_DONE*/ : GetLastError());
 
               // Resolve newest order/deal after placement
@@ -2832,6 +3130,33 @@ void OnTick()
              }
            else
              {
+              // --- Volatility Sizing (FR-06) ---
+              double stop_pts_tm = 0.0;
+              double bid_tm=0.0, ask_tm=0.0; SymbolInfoDouble(_Symbol,SYMBOL_BID,bid_tm); SymbolInfoDouble(_Symbol,SYMBOL_ASK,ask_tm);
+              if(order.stop_loss>0.0)
+                {
+                 if(order.order_type==ORDER_TYPE_BUY || order.order_type==ORDER_TYPE_BUY_LIMIT || order.order_type==ORDER_TYPE_BUY_STOP)
+                   {
+                    double ref = (order.price>0.0? order.price : ask_tm);
+                    stop_pts_tm = MathMax(0.0, (ref - order.stop_loss)/_Point);
+                   }
+                 else
+                   {
+                    double ref = (order.price>0.0? order.price : bid_tm);
+                    stop_pts_tm = MathMax(0.0, (order.stop_loss - ref)/_Point);
+                   }
+                }
+              double lot_to_use_tm = LotSize;
+              if(UseVolatilitySizer && CheckPointer(g_volatility_sizer)!=POINTER_INVALID)
+                {
+                 double atr_pct_tm=0.0; string vs_r1_tm=""; double mult_hint_tm = (*g_volatility_sizer).CalculateSizeMultiplier(atr_pct_tm, vs_r1_tm);
+                 double mult_final_tm=1.0; string vs_r2_tm="";
+                 lot_to_use_tm = (*g_volatility_sizer).CalculatePositionSize(LotSize, stop_pts_tm, mult_final_tm, vs_r2_tm);
+                 if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+                   (*g_tel_standard).LogVolatilitySizingEvent(_Symbol, (int)_Period, LotSize, mult_final_tm, lot_to_use_tm, atr_pct_tm);
+                }
+              // Apply to order override so TradeManager uses it
+              order.lots = lot_to_use_tm;
               result = (*g_trade_manager).ExecuteOrder(order);
               if(result)
                 {
