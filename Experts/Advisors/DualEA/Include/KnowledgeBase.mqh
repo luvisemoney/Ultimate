@@ -7,8 +7,12 @@
 #include <Files\File.mqh>
 // Centralized default strategy names
 #include "Strategies\Registry.mqh"
-// Cancellation flag declared in the EA (PaperEA.mq5). When true, builder should abort.
-extern bool g_insights_cancel_requested;
+// Optional cancellation flag (default false). Host programs may toggle this.
+// Guard the definition to avoid duplicate symbols if this header is included multiple times in a unit.
+#ifndef KB_CANCEL_FLAG_DEFINED
+#define KB_CANCEL_FLAG_DEFINED 1
+static bool g_insights_cancel_requested = false;
+#endif
 
 // --- Defines the structure for a single trade record
 struct TradeRecord
@@ -108,14 +112,15 @@ class CFeaturesKB
                 FileClose(hsize);
                 if(sz > (ulong)rotate_threshold)
                 {
-                  string tsuffix = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+                    string tsuffix = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
                   StringReplace(tsuffix, ":", ""); StringReplace(tsuffix, ".", ""); StringReplace(tsuffix, " ", "_");
-                  string rotated = m_file_path + "." + tsuffix + ".bak";
+                    string rotated = m_file_path + "." + tsuffix + ".bak";
                   // Try to rename (no compression in MQL5)
                   if(FileIsExist(rotated, FILE_COMMON)) FileDelete(rotated, FILE_COMMON);
-                  if(FileMove(m_file_path, rotated, FILE_COMMON, FILE_COMMON))
+                 // Signature: FileMove(src_name, src_common_flag, dst_name, dst_common_flag)
+                 if(FileMove(m_file_path, FILE_COMMON, rotated, FILE_COMMON))
                     PrintFormat("[ROTATE] features.csv rotated to %s", rotated);
-                  else
+                 else
                     PrintFormat("[ROTATE] features.csv rotation failed: %s", rotated);
                   EnsureHeader();
                 }
@@ -132,20 +137,9 @@ class CFeaturesKB
                         return false;
                        }
               if(FileSize(h)==0)
-                FileWriteString(h, (string)"timestamp,symbol,strategy,feature,value\n");
+                FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
               FileSeek(h, 0, SEEK_END);
-              string line = "";
-              StringConcatenate(line,
-                (string)TimeToString(ts),
-                m_csv_delim,
-                symbol,
-                m_csv_delim,
-                strategy,
-                m_csv_delim,
-                feature,
-                m_csv_delim,
-                DoubleToString(value, 8),
-                "\n");
+              string line = (string)TimeToString(ts, TIME_DATE|TIME_MINUTES|TIME_SECONDS) + m_csv_delim + symbol + m_csv_delim + strategy + m_csv_delim + feature + m_csv_delim + DoubleToString(value, 8) + "\n";
               FileWriteString(h, line);
               FileClose(h);
               return true;
@@ -161,6 +155,7 @@ class CInsightsBuilder
     string m_out_path;
     string m_delim;
     int    m_timeout_ms; // 0=disabled
+    bool   m_verbose;    // progress logging
     // --- helpers
     string Trim(string s)
       {
@@ -283,8 +278,10 @@ class CInsightsBuilder
                      m_out_path = out_path;
                      m_delim = delim;
                      m_timeout_ms = 0;
+                     m_verbose = false;
                     }
-  void          SetTimeoutMs(const int ms){ m_timeout_ms = 0; } // Timeout disabled
+  void          SetTimeoutMs(const int ms){ m_timeout_ms = ms; }
+  void          SetVerbose(const bool v){ m_verbose = v; }
     bool          Build()
                     {
                     // Build insights from features.csv using r_multiple rows
@@ -308,21 +305,21 @@ class CInsightsBuilder
                     // Robust CSV scan: 5 fields per row, skip header if present
                     bool header_checked=false;
                     int parsed_rows=0;
-                    int chunk_size = 1000;
+                    int chunk_size = 30000000; // large chunks to reduce progress log frequency
                     while(!FileIsEnding(hf))
                       {
                        // Periodic watchdog/cancel check and progress logging
                        if((parsed_rows % chunk_size)==0 && parsed_rows > 0)
-                         {
-                          PrintFormat("InsightsBuilder: progress: parsed_rows=%d", parsed_rows);
-                          Sleep(50); // yield to terminal, avoid watchdog
-                          if(DeadlineExceeded(t0))
-                            {
-                             FileClose(hf);
-                             PrintFormat("InsightsBuilder: aborting features.csv scan at row=%d due to timeout/cancel (timeout_ms=%d)", parsed_rows, m_timeout_ms);
-                             return false;
-                            }
-                         }
+                        {
+                         if(m_verbose) PrintFormat("InsightsBuilder: progress: parsed_rows=%d", parsed_rows);
+                         Sleep(50); // yield to terminal, avoid watchdog
+                         if(DeadlineExceeded(t0))
+                           {
+                            FileClose(hf);
+                            PrintFormat("InsightsBuilder: aborting features.csv scan at row=%d due to timeout/cancel (timeout_ms=%d)", parsed_rows, m_timeout_ms);
+                            return false;
+                           }
+                        }
                        string ts = FileReadString(hf);
                        if(ts=="" && FileIsEnding(hf)) break;
                        string sym = FileReadString(hf);
@@ -479,7 +476,7 @@ class CInsightsBuilder
                        
                        Print("InsightsBuilder: no r_multiple rows found in features.csv; falling back to knowledge_base.csv using profit as surrogate");
                        // Open knowledge_base.csv with explicit comma delimiter
-                       int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_COMMON, (ushort)',' );
+                       int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON, (ushort)',' );
                        if(hk!=INVALID_HANDLE)
                          {
                           // No header expected in knowledge_base.csv

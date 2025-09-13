@@ -196,10 +196,12 @@ input double GateMinExpectancyR   = -10.0;    // loosened for bootstrap
 input double GateMaxDrawdownR     = 1000000.0;// loosened for bootstrap
 input double GateMinProfitFactor  = 0.00;     // loosened for bootstrap
 // --- Insights auto-build & staleness
-input bool   InsightsAutoBuild    = true;     // auto-build insights.json when missing or stale
-input int    InsightsStaleHours   = 6;        // rebuild if older than N hours (0=disable age check)
-input bool   InsightsCheckOnTimer = true;     // also check on timer events
-input int    InsightsRebuildTimeoutMs = 300000; // cooperative timeout for insights rebuild (0=disable) [5 minutes]
+input bool   InsightsAutoBuild             = true;     // auto-build insights.json when missing or stale
+input int    InsightsStaleHours            = 48;        // rebuild if older than N hours (0=disable age check)
+input int    InsightsMinSourceAdvanceHours = 48;        // require sources (features/kb) to be this many hours newer than insights
+input int    InsightsMinIntervalHours      = 24;        // minimum interval between rebuilds per symbol/timeframe
+input bool   InsightsCheckOnTimer          = true;     // also check on timer events
+input int    InsightsRebuildTimeoutMs      = 300000; // cooperative timeout for insights rebuild (0=disable) [5 minutes]
 // --- Exploration Mode (bootstrap unseen slices)
 input bool   ExploreOnNoSlice     = true;    // allow limited trades when slice has no data
 input int    ExploreMaxPerSlice   = 100;     // loosened for bootstrap
@@ -270,7 +272,7 @@ input string TelemetryDir          = "DualEA\\telemetry"; // Common Files subdir
 
 // --- Insights rebuild concurrency + cancellation guards
 bool g_insights_rebuild_in_progress = false; // prevent overlapping rebuilds
-bool g_insights_cancel_requested    = false; // defined here to satisfy extern in KnowledgeBase.mqh
+datetime g_last_insights_rebuild_time = 0;    // per-instance (symbol+timeframe) last successful rebuild
 
 // --- Verbosity controls
 enum LogLevel { LOG_ERROR = 0, LOG_INFO = 1, LOG_DEBUG = 2 };
@@ -576,6 +578,12 @@ bool Insights_IsStale(const int stale_hours)
    long ex_i = FileGetInteger(ip, FILE_EXISTS, true);
    if(ex_i==0) return true; // missing insights
    datetime ti = (datetime)FileGetInteger(ip, FILE_MODIFY_DATE, true);
+   // Enforce minimum interval between rebuilds for this chart instance
+   if(InsightsMinIntervalHours>0 && g_last_insights_rebuild_time>0)
+     {
+      if((TimeCurrent() - g_last_insights_rebuild_time) < (InsightsMinIntervalHours*60*60))
+         return false;
+     }
    if(stale_hours>0)
      {
       if((TimeCurrent() - ti) > (stale_hours*60*60))
@@ -586,13 +594,22 @@ bool Insights_IsStale(const int stale_hours)
    if(FileGetInteger(fp, FILE_EXISTS, true)>0)
      {
       datetime tf = (datetime)FileGetInteger(fp, FILE_MODIFY_DATE, true);
-      if(tf>ti) return true;
+      if(tf>ti)
+        {
+         // Require sources to be ahead by at least InsightsMinSourceAdvanceHours
+         if(InsightsMinSourceAdvanceHours<=0 || (tf - ti) >= (InsightsMinSourceAdvanceHours*60*60))
+            return true;
+        }
      }
    string kp = "DualEA\\knowledge_base.csv";
    if(FileGetInteger(kp, FILE_EXISTS, true)>0)
      {
       datetime tk = (datetime)FileGetInteger(kp, FILE_MODIFY_DATE, true);
-      if(tk>ti) return true;
+      if(tk>ti)
+        {
+         if(InsightsMinSourceAdvanceHours<=0 || (tk - ti) >= (InsightsMinSourceAdvanceHours*60*60))
+            return true;
+        }
      }
    return false;
   }
@@ -626,6 +643,8 @@ bool Insights_RebuildAndReload(const string reason)
    CInsightsBuilder b;
    if(InsightsRebuildTimeoutMs>0)
      b.SetTimeoutMs(InsightsRebuildTimeoutMs);
+   // Disable verbose progress by default; can be toggled later if needed
+   b.SetVerbose(false);
 
    bool ok = b.Build();
    elapsed_ms = (int)(GetTickCount() - t0);
@@ -660,6 +679,8 @@ bool Insights_RebuildAndReload(const string reason)
      }
    g_insights_rebuild_in_progress = false;
    g_insights_cancel_requested = false;
+   if(ok)
+     g_last_insights_rebuild_time = TimeCurrent();
    return true;
   }
 
@@ -2075,8 +2096,8 @@ ulong FindLatestDealForSymbolMagic(const string sym, const int magic)
    HistorySelect(t0, TimeCurrent());
    for(int i=HistoryDealsTotal()-1; i>=0; --i)
      {
-      ulong dtk = HistoryDealGetTicket(i);
-      if(dtk==0) continue;
+      ulong dtk = HistoryDealGetTicket(i); if(dtk==0) continue;
+      if((int)HistoryDealGetInteger(dtk, DEAL_ENTRY)!=DEAL_ENTRY_IN) continue;
       string ds = HistoryDealGetString(dtk, DEAL_SYMBOL);
       long   mg = (long)HistoryDealGetInteger(dtk, DEAL_MAGIC);
       if(ds==sym && (magic<=0 || mg==magic))
@@ -2998,14 +3019,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest 
             int ptype = POSITION_TYPE_BUY;
             if(PositionSelectByTicket(pos_id)) ptype = (int)PositionGetInteger(POSITION_TYPE);
             g_pos_type[k]=ptype;
-            double init_r = 0.0;
+            double init_risk = 0.0;
             if(PositionSelectByTicket(pos_id))
               {
                double slc = PositionGetDouble(POSITION_SL);
                double eop = PositionGetDouble(POSITION_PRICE_OPEN);
-               if(slc>0 && eop>0) init_r = MathAbs((ptype==POSITION_TYPE_BUY? eop - slc : slc - eop));
+               if(slc>0 && eop>0) init_risk = MathAbs((ptype==POSITION_TYPE_BUY? eop - slc : slc - eop));
               }
-            g_pos_initial_risk[k]=init_r;
+            g_pos_initial_risk[k]=init_risk;
             g_pos_start_time[k]=TimeCurrent();
             if(ShouldLog(LOG_INFO)) PrintFormat("OnTradeTransaction: tracked entry pid=%I64u strat=%s", pos_id, g_pos_strats[k]);
            }

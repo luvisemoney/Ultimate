@@ -92,8 +92,7 @@ void LoadRequirementsFromConfig(const string path,
       else if(key=="RequireStrategiesCSV") stratsCSV = val;
       else if(key=="FailOnMissingRequired")
       {
-         string v = StringToLower(val);
-         if(v=="1" || v=="true" || v=="yes" || v=="y") failMissing=true;
+         failMissing = (val=="1" || val=="true" || val=="yes" || val=="y");
       }
    }
    FileClose(h);
@@ -287,12 +286,12 @@ void Validate()
    report += "insights.json mtime : "+TimeToString(t_ins, TIME_DATE|TIME_MINUTES|TIME_SECONDS)+"\n";
    if(feat_exists) report += "features.csv  mtime : "+TimeToString(t_feat, TIME_DATE|TIME_MINUTES|TIME_SECONDS)+"\n";
    if(kb_exists)   report += "knowledge_base.csv mtime : "+TimeToString(t_kb, TIME_DATE|TIME_MINUTES|TIME_SECONDS)+"\n";
-   report += StringFormat("stale: %s\n", (is_stale?"true":"false"));
-   report += StringFormat("totals.trade_count: %d\n", total_trade_count);
-   report += StringFormat("by_strategy.count: %d\n", cnt_by_strategy);
-   report += StringFormat("by_timeframe.count: %d\n", cnt_by_tf);
-   report += StringFormat("by_symbol_strategy_timeframe.count: %d\n", slice_count);
-   report += StringFormat("uniques: symbols=%d strategies=%d timeframes=%d\n", ArraySize(uniq_syms), ArraySize(uniq_strats), ArraySize(uniq_tfs));
+   report += "stale: "+(is_stale?"true":"false")+"\n";
+   report += "totals.trade_count: "+IntegerToString(total_trade_count)+"\n";
+   report += "by_strategy.count: "+IntegerToString(cnt_by_strategy)+"\n";
+   report += "by_timeframe.count: "+IntegerToString(cnt_by_tf)+"\n";
+   report += "by_symbol_strategy_timeframe.count: "+IntegerToString(slice_count)+"\n";
+   report += "uniques: symbols="+IntegerToString(ArraySize(uniq_syms))+" strategies="+IntegerToString(ArraySize(uniq_strats))+" timeframes="+IntegerToString(ArraySize(uniq_tfs))+"\n";
    report += "uniques.symbols: "+JoinStrings(uniq_syms, ",")+"\n";
    report += "uniques.strategies: "+JoinStrings(uniq_strats, ",")+"\n";
    report += "uniques.timeframes: "+JoinInts(uniq_tfs, ",")+"\n";
@@ -306,17 +305,17 @@ void Validate()
    for(int i=0;i<ArraySize(reqSyms);++i)
    {
       bool present=false; for(int j=0;j<ArraySize(uniq_syms);++j) if(uniq_syms[j]==reqSyms[i]) { present=true; break; }
-      if(!present) { report += StringFormat("WARN: required symbol missing: %s\n", reqSyms[i]); missing_required=true; }
+      if(!present) { report += "WARN: required symbol missing: "+reqSyms[i]+"\n"; missing_required=true; }
    }
    for(int i=0;i<ArraySize(reqStrats);++i)
    {
       bool present=false; for(int j=0;j<ArraySize(uniq_strats);++j) if(uniq_strats[j]==reqStrats[i]) { present=true; break; }
-      if(!present) { report += StringFormat("WARN: required strategy missing: %s\n", reqStrats[i]); missing_required=true; }
+      if(!present) { report += "WARN: required strategy missing: "+reqStrats[i]+"\n"; missing_required=true; }
    }
    for(int i=0;i<ArraySize(reqTFs);++i)
    {
       bool present=false; for(int j=0;j<ArraySize(uniq_tfs);++j) if(uniq_tfs[j]==reqTFs[i]) { present=true; break; }
-      if(!present) { report += StringFormat("WARN: required timeframe missing: %d\n", reqTFs[i]); missing_required=true; }
+      if(!present) { report += "WARN: required timeframe missing: "+IntegerToString(reqTFs[i])+"\n"; missing_required=true; }
    }
    if(missing_required && fail_missing_required) { report += "ALERT: required coverage missing\n"; has_errors=true; }
 
