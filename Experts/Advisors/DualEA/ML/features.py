@@ -4,7 +4,10 @@ from typing import Tuple, List, Optional
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
 from sklearn.preprocessing import StandardScaler
 
 
@@ -79,6 +82,9 @@ def enrich_with_yahoo(df: pd.DataFrame,
     if time_col not in df.columns:
         return df
 
+    # If yfinance is unavailable, skip enrichment gracefully
+    if yf is None:
+        return df
     df = df.copy()
     df[time_col] = pd.to_datetime(df[time_col], utc=True, errors="coerce")
     if tz:

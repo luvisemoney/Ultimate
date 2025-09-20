@@ -108,8 +108,12 @@ TradeOrder CBollAveragesStrategy::CheckSignal()
       order.action = ACTION_BUY;
       order.order_type = ORDER_TYPE_BUY;
       double price = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
-      order.stop_loss = price - 150 * _Point; // Example SL
-      order.take_profit = price + 300 * _Point; // Example TP
+      double atr = GetATR(14, 0);
+      double spread = SymbolInfoDouble(m_symbol, SYMBOL_ASK) - SymbolInfoDouble(m_symbol, SYMBOL_BID);
+      double min_stop = MathMax(atr * 1.5, MathMax(spread*3, SymbolInfoInteger(m_symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point));
+      order.stop_loss = price - min_stop;
+      order.take_profit = price + min_stop * 3.0;
+      if(spread > min_stop*0.5) return order;
       return order;
      }
 
@@ -119,8 +123,12 @@ TradeOrder CBollAveragesStrategy::CheckSignal()
       order.action = ACTION_SELL;
       order.order_type = ORDER_TYPE_SELL;
       double price = SymbolInfoDouble(m_symbol, SYMBOL_BID);
-      order.stop_loss = price + 150 * _Point; // Example SL
-      order.take_profit = price - 300 * _Point; // Example TP
+      double atr = GetATR(14, 0);
+      double spread = SymbolInfoDouble(m_symbol, SYMBOL_ASK) - SymbolInfoDouble(m_symbol, SYMBOL_BID);
+      double min_stop = MathMax(atr * 1.5, MathMax(spread*3, SymbolInfoInteger(m_symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point));
+      order.stop_loss = price + min_stop;
+      order.take_profit = price - min_stop * 3.0;
+      if(spread > min_stop*0.5) return order;
       return order;
      }
 

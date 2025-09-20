@@ -8,8 +8,18 @@
 
 #include <Object.mqh> // Required for CObject
 #include <Trade/Trade.mqh>
+// Make ATR helper available to all strategies that include IStrategy
+#include "ATRUtil.mqh"
 // Forward declaration to avoid circular include; concrete users should include KnowledgeBase.mqh
 class CFeaturesKB;
+
+// --- Trade action type for all strategies
+enum TradeAction
+  {
+   ACTION_NONE = 0,
+   ACTION_BUY = 1,
+   ACTION_SELL = -1
+  };
 
 // --- Trailing stop policy
 enum TrailingType
@@ -20,12 +30,12 @@ enum TrailingType
   };
 
 
-// --- Enum for the type of trade action
-enum TradeAction
+// --- Enum for the type of signal (added for all strategies)
+enum SignalType
   {
-   ACTION_NONE,
-   ACTION_BUY,
-   ACTION_SELL
+   SIGNAL_NONE = 0,
+   SIGNAL_BUY = 1,
+   SIGNAL_SELL = -1
   };
 
 // --- Struct to hold all details for a trade order

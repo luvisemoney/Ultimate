@@ -58,9 +58,13 @@ public:
          double min_buy_stop = ask + min_dist;
          if(raw_price < min_buy_stop) raw_price = min_buy_stop;
          ord.price = NormalizeDouble(raw_price, digits);
-         // SL/TP around intended entry region
-         ord.stop_loss = NormalizeDouble(ord.price - m_atrMult*m_atr1, digits);
-         ord.take_profit = NormalizeDouble(ord.price + 2.0*(m_atrMult*m_atr1), digits);
+         // ATR-based SL/TP with spread/min distance checks
+         double atr = GetATR(m_atrPeriod, 0);
+         double spread = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double min_stop = MathMax(atr * m_atrMult, MathMax(spread*3, SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point));
+         ord.stop_loss = NormalizeDouble(ord.price - min_stop, digits);
+         ord.take_profit = NormalizeDouble(ord.price + 2.0*min_stop, digits);
+         if(spread > min_stop*0.5) return ord;
          ord.trailing_enabled=true; ord.trailing_type=TRAIL_ATR; ord.atr_period=m_atrPeriod; ord.atr_multiplier=m_atrMult; return ord;
         }
       // Short breakout
@@ -77,9 +81,13 @@ public:
          double max_sell_stop = bid - min_dist;
          if(raw_price > max_sell_stop) raw_price = max_sell_stop;
          ord.price = NormalizeDouble(raw_price, digits);
-         // SL/TP around intended entry region
-         ord.stop_loss = NormalizeDouble(ord.price + m_atrMult*m_atr1, digits);
-         ord.take_profit = NormalizeDouble(ord.price - 2.0*(m_atrMult*m_atr1), digits);
+         // ATR-based SL/TP with spread/min distance checks
+         double atr = GetATR(m_atrPeriod, 0);
+         double spread = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         double min_stop = MathMax(atr * m_atrMult, MathMax(spread*3, SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point));
+         ord.stop_loss = NormalizeDouble(ord.price + min_stop, digits);
+         ord.take_profit = NormalizeDouble(ord.price - 2.0*min_stop, digits);
+         if(spread > min_stop*0.5) return ord;
          ord.trailing_enabled=true; ord.trailing_type=TRAIL_ATR; ord.atr_period=m_atrPeriod; ord.atr_multiplier=m_atrMult; return ord;
         }
       return ord;

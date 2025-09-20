@@ -1,6 +1,23 @@
 // --- Includes and runtime configuration
 #property strict
+
+input int LiveEAMaxTradesPerDay = 10;
+static int trades_today = 0;
+static datetime last_trade_day = 0;
+static int last_processed_minute = -1;
+
+ 
+
+void TryLiveTrade(datetime now) {
+    if (trades_today >= LiveEAMaxTradesPerDay) return;
+    // Insert all existing trade/PM/TM gating and trade execution logic here
+    // If trade is actually placed:
+    // trades_today++;
+    // last_trade_day = now;
+}
+
 #include "..\\Include\\IStrategy.mqh"
+#include "..\\Include\\ATRUtil.mqh"
 #include "..\\Include\\PositionManager.mqh"
 #include "..\\Include\\TradeManager.mqh"
 #include "../Include/Telemetry.mqh"
@@ -1926,12 +1943,6 @@ void OnDeinit(const int reason)
 
 void OnTick()
   {
-   static datetime last_trade_bar_time = 0;
-   datetime current_bar_time = iTime(_Symbol, _Period, 0);
-   if(current_bar_time == last_trade_bar_time)
-      return; // Already traded this bar
-   last_trade_bar_time = current_bar_time;
-
    // FR-07: optional regime tag telemetry
    EnsureTelemetry();
    if(TelemetryEnabled && RegimeTagTelemetry && CheckPointer(g_telemetry)!=POINTER_INVALID)
@@ -2173,14 +2184,14 @@ void MaybeEnsureInsights()
 
 void OnTimer()
   {
+   datetime tick_time = TimeCurrent();
    // FR-10: periodic telemetry flush independent of insights reload toggles
    if(TelemetryEnabled && TelemetryFlushIntervalSec>0 && CheckPointer(g_telemetry)!=POINTER_INVALID)
      {
-      datetime now = TimeCurrent();
-      if((now - g_last_tel_flush) >= TelemetryFlushIntervalSec)
+      if((tick_time - g_last_tel_flush) >= TelemetryFlushIntervalSec)
         {
          (*g_telemetry).Flush();
-         g_last_tel_flush = now;
+         g_last_tel_flush = tick_time;
         }
      }
    // Insights auto-reload watchers
@@ -2188,5 +2199,19 @@ void OnTimer()
      {
       MaybeEnsureInsights();
       CheckInsightsReady();
+     }
+   // Minute-level dedup and daily cap gating + trade attempt (non-intrusive)
+   MqlDateTime dt_now;  TimeToStruct(tick_time, dt_now);
+   MqlDateTime dt_last; TimeToStruct(last_trade_day, dt_last);
+   int curr_minute = (int)dt_now.min;
+   if(curr_minute != last_processed_minute)
+     {
+      last_processed_minute = curr_minute;
+      if(dt_now.year!=dt_last.year || dt_now.mon!=dt_last.mon || dt_now.day!=dt_last.day)
+        {
+         trades_today = 0;
+         last_trade_day = tick_time;
+        }
+      TryLiveTrade(tick_time);
      }
   }

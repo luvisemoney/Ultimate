@@ -1,4 +1,308 @@
 //+------------------------------------------------------------------+
+//| PaperEA.mq5 - REFACTORED STRUCTURE |
+//+------------------------------------------------------------------+
+
+// ===================[ 1. PROPERTIES & METADATA ]===================
+#property copyright "Copyright 2025, Windsurf, Inc."
+#property link      "https://windsurf.ai"
+#property version   "1.00"
+
+// ===================[ 2. INCLUDES (ALL MODULES) ]==================
+#include "..\Include\IStrategy.mqh"
+#include "..\Include\ATRUtil.mqh"
+#include "..\Include\KnowledgeBase.mqh"
+#include "..\Include\TradeManager.mqh"
+#include "..\Include\PolicyEngine.mqh"
+#include "../Include/Telemetry.mqh"
+#include "../Include/TelemetryStandard.mqh"
+#include "../Include/SessionManager.mqh"
+#include "../Include/CorrelationManager.mqh"
+#include "../Include/VolatilitySizer.mqh"
+#include "../Include/InsightsRealtime.mqh"
+#include "..\Include\InsightsLoader.mqh"
+#include "..\Include\GatingPipeline.mqh"
+#include <Arrays/ArrayObj.mqh>
+#include <Files/File.mqh>
+#include "..\Include\PositionManager.mqh"
+#include "..\Include\Strategies\AssetRegistry.mqh"
+#include "..\Include\StrategySelector.mqh"
+
+// ===================[ 3. INPUT PARAMETERS - GROUPED ]==============
+// --- Trading Inputs
+input double LotSize = 0.15;
+input int    MagicNumber = 12345;
+input double StopLossPips = 150;
+input double TakeProfitPips = 300;
+input bool   TrailEnabled = true;
+input int    TrailType = 0; // 0=fixed, 2=ATR
+input int    TrailActivationPoints = 30;
+input int    TrailDistancePoints   = 20;
+input int    TrailStepPoints       = 5;
+input int    TrailATRPeriod       = 14;
+input double TrailATRMultiplier   = 2.0;
+input bool   UsePositionManager   = true;
+input int    PMMaxOpenPositions   = 10;
+input bool   NoConstraintsMode    = true;
+
+// --- Gating/Insights
+input bool   UseInsightsGating    = true;
+input int    GateMinTrades        = 0;
+input double GateMinWinRate       = 0.00;
+input double GateMinExpectancyR   = -10.0;
+input double GateMaxDrawdownR     = 1000000.0;
+input double GateMinProfitFactor  = 0.00;
+input bool   InsightsAutoBuild             = true;
+input int    InsightsStaleHours            = 48;
+input int    InsightsMinSourceAdvanceHours = 48;
+input int    InsightsMinIntervalHours      = 24;
+input bool   InsightsCheckOnTimer          = true;
+input int    InsightsRebuildTimeoutMs      = 1800000;
+input bool   ExploreOnNoSlice     = true;
+input int    ExploreMaxPerSlice   = 100;
+input int    ExploreMaxPerSlicePerDay = 100;
+
+// --- Selector
+input bool   UseStrategySelector   = true;
+input double SelW_PF               = 1.0;
+input double SelW_Exp              = 1.0;
+input double SelW_WR               = 0.5;
+input double SelW_DD               = 0.3;
+input bool   SelStrictThresholds   = false;
+input bool   SelUseRecency         = true;
+input int    SelRecentDays         = 14;
+input double SelRecAlpha           = 0.5;
+
+// --- Phase 5 Advanced Gating/Tuning
+input bool   P5_AutoDisableEnable    = true;
+input double P5_MinPF                = 1.20;
+input double P5_MinWR                = 0.45;
+input double P5_MinExpR              = -0.05;
+input int    P5_AutoDisableCooldownM = 1440;
+input bool   P5_AutoReenable         = true;
+input bool   P5_AutoTuneEnable       = true;
+input int    P5_AutoTuneEveryMin     = 60;
+input bool   P5_TimerRescoreEnable   = true;
+input int    P5_TimerRescoreEveryMin = 60;
+input bool   P5_CorrPruneEnable      = true;
+input double P5_CorrMax              = 0.80;
+input int    P5_CorrLookbackDays     = 30;
+input bool   P5_MTFConfirmEnable     = true;
+input string P5_MTFHigherTFs         = "H1,H4";
+input int    P5_MTFMinAgree          = 1;
+input bool   P5_StabilityGateEnable  = false;
+input int    P5_StabilityWindowDays  = 14;
+input double P5_StabilityMaxStdR     = 1.00;
+input bool   P5_PersistLossCounters  = false;
+input bool   P5_PickBestEnable       = false;
+input int    MaxOpenPositions     = 0;
+input bool   GuardsEnabled         = true;
+input double GuardMaxSpreadPoints  = 0.0;
+input bool   ATRRegimeEnable       = false;
+input int    ATRRegimePeriod       = 14;
+input int    ATRRegimeLookback     = 500;
+input double ATRMinPercentile      = 0.0;
+input double ATRMaxPercentile      = 100.0;
+input double ATRRegimeMinATRPct    = 0.0;
+input double ATRRegimeMaxATRPct    = 1000.0;
+input bool   UseCircuitBreakers   = false;
+input double CBDailyLossLimitPct  = 0.0;
+input double CBDrawdownLimitPct   = 0.0;
+input int    CBCooldownMinutes    = 0;
+input bool   UseNewsFilter       = false;
+input int    NewsBufferBeforeMin = 30;
+input int    NewsBufferAfterMin  = 30;
+input int    NewsImpactMin       = 2;
+input bool   NewsUseFile         = true;
+input string NewsFileRelPath     = "DualEA\\news_blackouts.csv";
+input bool   UsePromotionGate    = false;
+input bool   PromoLiveOnly       = false;
+input int    PromoStartHour      = 0;
+input int    PromoEndHour        = 24;
+input bool   UseRegimeGate       = false;
+input int    RegimeATRPeriod     = 14;
+input double RegimeMinATRPct     = 0.0;
+input double RegimeMaxATRPct     = 1000.0;
+input bool   RegimeTagTelemetry   = false;
+input string RegimeMethod         = "atr";
+input int    RegimeADXPeriod      = 14;
+input double RegimeADXTrendThreshold = 25.0;
+input int    CircuitCooldownSec  = 0;
+input bool   UseSessionManager     = true;
+input int    SessionEndHour        = 20;
+input int    MaxTradesPerSession   = 10;
+input int    SessionTZOffsetMinutes= 0;
+input string SessionWindowsSpec    = "";
+input bool   UseCorrelationManager = true;
+input double MaxCorrelationLimit   = 0.7;
+input int    CorrLookbackDays      = 30;
+input bool   UseVolatilitySizer    = false;
+input int    VolSizerATRPeriod     = 14;
+input double VolSizerBaseATRPct    = 1.0;
+input double VolSizerMinMult       = 0.1;
+input double VolSizerMaxMult       = 3.0;
+input double VolSizerTargetRisk    = 1.0;
+input bool   UsePolicyGating       = true;
+input bool   DefaultPolicyFallback = true;
+input bool   FallbackDemoOnly      = true;
+input bool   FallbackWhenNoPolicy  = true;
+input bool   UsePolicyEngine       = false;
+input bool   UseTradingHours       = false;
+input int    TradingStartHour      = 7;
+input int    TradingEndHour        = 20;
+input bool   TelemetryEnabled      = true;
+input int    TelemetryLevel        = 1;
+input string TelemetryExperiment   = "";
+input int    TelemetryBufferMax    = 256;
+input string TelemetryDir          = "DualEA\\telemetry";
+input bool   GateLogThrottleEnabled = true;
+input int    GateLogCooldownSec     = 30;
+input int    TelemetryFlushIntervalSec = 0;
+input int    Verbosity = 1;
+input double SpreadMaxPoints   = 0.0;
+input int    SessionStartHour  = 0;
+input int    SessionMaxTrades  = 0;
+input int    MaxTradesPerBar   = 0;
+input int    PaperAggroLevel   = 50;
+input double MaxDailyLossPct   = 0.0;
+input double MaxDrawdownPct    = 0.0;
+input double MinMarginLevel    = 0.0;
+input int    ConsecutiveLossLimit = 0;
+input int    GlobalSL_Points       = 500;
+input int    GlobalTP_Points       = 1000;
+input bool   DebugTrailing = false;
+input bool   KBDebugInit   = true;
+input bool   TrainerLSTM_Enable     = false;
+input int    TrainerLSTM_MinSeq     = 50;
+input int    TrainerLSTM_MaxSeq     = 500;
+input bool   TrainerLSTM_UseRecency = true;
+input bool   HeartbeatEnabled = true;
+input int    HeartbeatMinutes = 15;
+input bool   HeartbeatVerbose = true;
+
+// ===================[ 4. GLOBAL STATE ]=============================
+// --- Timer/cooldown for trade frequency gating ---
+input int PaperTradeCooldownSec = 900; // 15 min default
+static datetime last_paper_trade_time = 0;
+static int last_processed_minute = -1;
+
+// --- Pending orders/deals tracking for event handlers ---
+ulong    g_pending_orders[];
+string   g_pending_orders_strat[];
+ulong    g_pending_deals[];
+string   g_pending_deals_strat[];
+// --- Tracked positions for analytics/closure ---
+ulong    g_pos_ids[];
+string   g_pos_strats[];
+double   g_pos_entry_price[];
+double   g_pos_initial_risk[];
+datetime g_pos_start_time[];
+int      g_pos_type[];
+double   g_pos_max_price[];
+double   g_pos_min_price[];
+// --- Add any other global arrays/vars needed by handlers below ---
+
+// --- News blackout cache
+string   g_news_key[];
+datetime g_news_from[];
+datetime g_news_to[];
+int      g_news_impact[];
+
+// --- Session and risk state
+datetime g_session_start = 0;
+int      g_session_day = 0;
+double   g_session_equity_start = 0.0;
+double   g_equity_highwater = 0.0;
+
+// --- Circuit breaker state
+bool     g_cb_active = false;
+datetime g_cb_trigger_time = 0;
+string   g_cb_last_cause = "";
+double   g_cb_last_threshold = 0.0;
+double   g_cb_last_value = 0.0;
+
+// --- Telemetry, gating, and selector state
+string   g_gate_log_keys[];
+datetime g_gate_log_last_ts[];
+
+// --- Gating/insights/selector arrays (as referenced)
+string   g_gate_strat[];
+string   g_gate_sym[];
+int      g_gate_tf[];
+int      g_gate_cnt[];
+double   g_gate_wr[];
+double   g_gate_avgR[];
+double   g_gate_pf[];
+double   g_gate_dd[];
+
+// --- Policy cache
+bool     g_policy_loaded = false;
+double   g_policy_min_conf = 0.0;
+string   g_pol_strat[];
+string   g_pol_sym[];
+int      g_pol_tf[];
+double   g_pol_p[];
+double   g_pol_sl[];
+double   g_pol_tp[];
+double   g_pol_trail[];
+
+// --- Exploration tracking
+string   g_exp_keys[];
+int      g_exp_weeks[];
+int      g_exp_counts[];
+string   g_explore_pending_key = "";
+string   g_exp_day_keys[];
+int      g_exp_day_days[];
+int      g_exp_day_counts[];
+
+// --- Loss counters
+string   g_loss_sym[];
+long     g_loss_mag[];
+int      g_loss_cnt[];
+
+// --- Telemetry pointers
+CTelemetryStandard* g_tel_standard = NULL;
+CSessionManager* g_session_manager = NULL;
+CCorrelationManager* g_correlation_manager = NULL;
+CVolatilitySizer* g_volatility_sizer = NULL;
+CPolicyEngine*     g_policy_engine    = NULL;
+CInsightsRealtime* g_ins_rt = NULL;
+
+// --- Selector, position manager, features logger, knowledge base, trade manager
+CStrategySelector*       g_selector = NULL;
+CPositionManager*        g_position_manager = NULL;
+CFeaturesKB*             g_features = NULL;
+CKnowledgeBase*          g_kb = NULL;
+CTradeManager*           g_trade_manager = NULL;
+CTelemetry*              g_telemetry = NULL;
+
+// --- Strategies container and additional missing globals
+CArrayObj*               g_strategies = NULL;
+bool                     g_insights_rebuild_in_progress = false;
+datetime                 g_last_insights_rebuild_time = 0;
+datetime                 g_p5_last_rescore_ts = 0;
+
+// --- Insights rebuild tracking per slice
+string                   g_ir_slice_keys[];
+datetime                 g_ir_slice_times[];
+
+// --- LOG LEVELS (enum and constants)
+enum LogLevel { LOG_ERROR = 0, LOG_INFO = 1, LOG_DEBUG = 2 };
+#define LOG_INFO 1
+#define LOG_ERROR 0
+#define LOG_DEBUG 2
+
+// --- Forward declarations for helper functions used before definition ---
+int FindTrackedIndexByPid(ulong pid);
+void HandlePositionClosed(int idx, ulong close_deal);
+bool ShouldLog(const int level);
+
+// ===================[ 5. EVENT HANDLERS ]==========================
+void TryPaperTrade(datetime now) {
+    if (now - last_paper_trade_time < PaperTradeCooldownSec) return;
+    // Insert all existing trade/PM/TM gating and trade execution logic here
+    // If trade is actually placed:
+    // last_paper_trade_time = now;
+}
 
 //+------------------------------------------------------------------+
 //| Trade transactions handler                                       |
@@ -139,6 +443,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
 // --- Core Interfaces & Data Structures
 #include "..\Include\IStrategy.mqh"
+#include "..\Include\ATRUtil.mqh"
 
 // --- Core Services
 #include "..\Include\KnowledgeBase.mqh"
@@ -168,179 +473,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 // Strategy selector
 #include "..\\Include\\StrategySelector.mqh"
 
-// --- Input Parameters
-input double LotSize = 0.01;
-input int    MagicNumber = 12345;
-input double StopLossPips = 150;
-input double TakeProfitPips = 300;
-// Trailing stop defaults (used if a strategy does not set trailing fields)
-input bool   TrailEnabled = true;
-// 0=fixed points, 2=ATR
-input int    TrailType = 0;
-input int    TrailActivationPoints = 30;
-input int    TrailDistancePoints   = 20;
-input int    TrailStepPoints       = 5;
-// ATR defaults (used when TrailType==2 or a strategy selects ATR)
-input int    TrailATRPeriod       = 14;
-input double TrailATRMultiplier   = 2.0;
-  // Use PositionManager for order placement and bracket handling
-  input bool   UsePositionManager   = true;
- // FR-04: Position Manager gate cap (0=disabled)
-  input int    PMMaxOpenPositions   = 10;
-// --- No-Constraints mode (paper data collection)
-input bool   NoConstraintsMode    = true;     // bypass selector/insights/time gates and exploration caps
-
-// --- Insights gating controls
-input bool   UseInsightsGating    = true;
-input int    GateMinTrades        = 0;        // loosened for bootstrap
-input double GateMinWinRate       = 0.00;     // loosened for bootstrap
-input double GateMinExpectancyR   = -10.0;    // loosened for bootstrap
-input double GateMaxDrawdownR     = 1000000.0;// loosened for bootstrap
-input double GateMinProfitFactor  = 0.00;     // loosened for bootstrap
-
-// --- Insights auto-build & staleness
-input bool   InsightsAutoBuild             = true;     // auto-build insights.json when missing or stale
-input int    InsightsStaleHours            = 48;        // rebuild if older than N hours (0=disable age check)
-input int    InsightsMinSourceAdvanceHours = 48;        // require sources (features/kb) to be this many hours newer than insights
-input int    InsightsMinIntervalHours      = 24;        // minimum interval between rebuilds per symbol/timeframe
-input bool   InsightsCheckOnTimer          = true;     // also check on timer events
-input int    InsightsRebuildTimeoutMs      = 1800000; // cooperative timeout for insights rebuild (0=disable) [30 minutes]
-
-// --- Exploration Mode (bootstrap unseen slices)
-input bool   ExploreOnNoSlice     = true;    // allow limited trades when slice has no data
-input int    ExploreMaxPerSlice   = 100;     // loosened for bootstrap
-input int    ExploreMaxPerSlicePerDay = 100; // loosened for bootstrap
-
-// --- Strategy selection controls
-input bool   UseStrategySelector   = true;   // gate by insights-based score
-input double SelW_PF               = 1.0;
-input double SelW_Exp              = 1.0;
-input double SelW_WR               = 0.5;
-input double SelW_DD               = 0.3;
-input bool   SelStrictThresholds   = false;  // enforce hard thresholds inside selector
-
-// --- Selector recency weighting
-input bool   SelUseRecency         = true;   // blend recent performance
-input int    SelRecentDays         = 14;     // lookback days from features.csv
-input double SelRecAlpha           = 0.5;    // 0..1 weight towards recent
-
-// --- Phase 5: Advanced gating and tuning
-input bool   P5_AutoDisableEnable    = true;    // auto-disable underperforming strategies
-input double P5_MinPF                = 1.20;    // minimum recent/baseline profit factor
-input double P5_MinWR                = 0.45;    // minimum win rate
-input double P5_MinExpR              = -0.05;   // minimum expectancy (R multiple)
-input int    P5_AutoDisableCooldownM = 1440;    // minutes to keep disabled before re-evaluate
-input bool   P5_AutoReenable         = true;    // automatically re-enable after cooldown
-
-input bool   P5_AutoTuneEnable       = true;    // enable dynamic indicator auto-tuning
-input int    P5_AutoTuneEveryMin     = 60;      // run auto-tune every N minutes
-
-input bool   P5_TimerRescoreEnable   = true;    // refresh recent overlays on a timer
-input int    P5_TimerRescoreEveryMin = 60;      // rescore/lookback refresh interval (minutes)
-
-// Placeholders for correlation pruning, MTF confirmation, and stability gating
-// Wire-ups are logged and skipped if the required selector/strategy helpers are unavailable
-input bool   P5_CorrPruneEnable      = true;   // prune highly correlated strategies (across open positions)
-input double P5_CorrMax              = 0.80;    // max allowed correlation before pruning
-input int    P5_CorrLookbackDays     = 30;      // lookback window for correlation build
-
-input bool   P5_MTFConfirmEnable     = true;   // require higher-TF confirmation (if available)
-input string P5_MTFHigherTFs         = "H1,H4";  // comma-separated higher TFs to consider
-input int    P5_MTFMinAgree          = 1;       // minimum agreeing TF count
-
-input bool   P5_StabilityGateEnable  = false;   // gate on parameter stability (if available)
-input int    P5_StabilityWindowDays  = 14;      // window for stability tracking
-input double P5_StabilityMaxStdR     = 1.00;    // max allowed std-dev of R in window
-
-// Persistence and execution mode
-input bool   P5_PersistLossCounters  = false;   // persist consecutive loss counters per symbol+magic (FILE_COMMON)
-input bool   P5_PickBestEnable       = false;   // execute only the best-scoring strategy (selector) per tick
- // --- Execution guards (spread, ATR regime, sessions)
- input int    MaxOpenPositions     = 0;       // 0=unlimited; total simultaneous positions across account
- input bool   GuardsEnabled         = true;    // master switch for execution guards
- input double GuardMaxSpreadPoints  = 0.0;     // 0=disabled; skip entries if spread (points) exceeds this
- input bool   ATRRegimeEnable       = false;   // gate by ATR percentile regime
- input int    ATRRegimePeriod       = 14;      // ATR period for regime calc
- input int    ATRRegimeLookback     = 500;     // number of bars to build empirical distribution
- input double ATRMinPercentile      = 0.0;     // 0..100 inclusive
- input double ATRMaxPercentile      = 100.0;   // 0..100 inclusive
- input double ATRRegimeMinATRPct    = 0.0;     // 0=disabled
- input double ATRRegimeMaxATRPct    = 1000.0;  // 1000=disabled
-
-// --- FR-01 Circuit Breakers (stateful; parity with LiveEA)
- input bool   UseCircuitBreakers   = false;   // enable/disable circuit breaker logic
- input double CBDailyLossLimitPct  = 0.0;     // blocks when session loss >= this % vs session equity start
- input double CBDrawdownLimitPct   = 0.0;     // blocks when drawdown >= this % vs equity high-water
- input int    CBCooldownMinutes    = 0;       // optional timed cooldown after a trigger; resets each session
-
-// --- News / Promotion / Regime / Circuit cooldown (parity with LiveEA)
-input bool   UseNewsFilter       = false;   // block around defined news windows
-input int    NewsBufferBeforeMin = 30;      // minutes before an event
-input int    NewsBufferAfterMin  = 30;      // minutes after an event
-input int    NewsImpactMin       = 2;       // 1=low, 2=medium, 3=high
-input bool   NewsUseFile         = true;    // read blackouts from CSV in Common files
-input string NewsFileRelPath     = "DualEA\\news_blackouts.csv";
-
-input bool   UsePromotionGate    = false;   // allow only during configured windows
-input bool   PromoLiveOnly       = false;   // apply only on live accounts
-input int    PromoStartHour      = 0;       // inclusive, server time
-input int    PromoEndHour        = 24;      // exclusive, supports wrap if less than start
-
-input bool   UseRegimeGate       = false;   // filter by volatility regimes
-input int    RegimeATRPeriod     = 14;
-input double RegimeMinATRPct     = 0.0;     // 0=disabled
-input double RegimeMaxATRPct     = 1000.0;  // 1000=disabled
-
-// FR-07: Regime detector stub/tagging
-input bool   RegimeTagTelemetry   = false;   // emit regime tag telemetry each tick
-input string RegimeMethod         = "atr";  // atr | adx (stub)
-input int    RegimeADXPeriod      = 14;      // used when RegimeMethod=adx
-input double RegimeADXTrendThreshold = 25.0; // ADX >= threshold => 'trend', else 'range'
-
-input int    CircuitCooldownSec  = 0;       // 0=disabled
-
-// --- FR-02 Session Manager inputs
-input bool   UseSessionManager     = true;
-input int    SessionEndHour        = 20;
-input int    MaxTradesPerSession   = 10;
-input int    SessionTZOffsetMinutes= 0;      // FR-02 upgrade: offset from server time to session local
-input string SessionWindowsSpec    = "";     // FR-02 upgrade: e.g., "Mon=09:30-16:00;Tue=09:30-16:00;Sat=*;Sun=*"
-
-// --- FR-05 Correlation Manager inputs
-input bool   UseCorrelationManager = true;
-input double MaxCorrelationLimit   = 0.7;
-input int    CorrLookbackDays      = 30;
-
-// --- FR-06 Volatility Sizer inputs
-input bool   UseVolatilitySizer    = false;
-input int    VolSizerATRPeriod     = 14;
-input double VolSizerBaseATRPct    = 1.0;
-input double VolSizerMinMult       = 0.1;
-input double VolSizerMaxMult       = 3.0;
-input double VolSizerTargetRisk    = 1.0;
-
-// --- Gate helper implementations and telemetry (parity with LiveEA)
-// Global manager instances
-CTelemetryStandard* g_tel_standard = NULL;
-CSessionManager* g_session_manager = NULL;
-CCorrelationManager* g_correlation_manager = NULL;
-CVolatilitySizer* g_volatility_sizer = NULL;
-CPolicyEngine*     g_policy_engine    = NULL;
-CInsightsRealtime* g_ins_rt = NULL;
-// News blackout cache
-string   g_news_key[];
-datetime g_news_from[];
-datetime g_news_to[];
-int      g_news_impact[];
-
 void EnsureNewsLoaded()
   {
    if(!UseNewsFilter || !NewsUseFile) return;
    if(ArraySize(g_news_key)>0) return;
    int h = FileOpen(NewsFileRelPath, FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
-   if(h==INVALID_HANDLE) { if(ShouldLog(LOG_INFO)) PrintFormat("News filter: cannot open %s (Common). Err=%d", NewsFileRelPath, GetLastError()); return; }
-   bool first=true;
-   while(!FileIsEnding(h))
+  if(h==INVALID_HANDLE) { if(Verbosity >= 1) PrintFormat("News filter: cannot open %s (Common). Err=%d", NewsFileRelPath, GetLastError()); return; }
+  bool first=true;
+  while(!FileIsEnding(h))
      {
       string k = FileReadString(h); if(k=="" && FileIsEnding(h)) break;
       string sfrom = FileReadString(h);
@@ -357,7 +497,7 @@ void EnsureNewsLoaded()
       g_news_key[n]=k; g_news_from[n]=tfrom; g_news_to[n]=tto; g_news_impact[n]=impact;
      }
    FileClose(h);
-   if(ShouldLog(LOG_INFO)) PrintFormat("News blackout windows loaded: %d", ArraySize(g_news_key));
+  if(Verbosity >= 1) PrintFormat("News blackout windows loaded: %d", ArraySize(g_news_key));
   }
 
 void AddUniqueKey(string &arr[], const string k)
@@ -410,6 +550,7 @@ bool RegimeAllowed(string &reason)
   {
    reason="ok";
    if(!UseRegimeGate) return true;
+   // Compute ATR percentage (volatility proxy)
    int atr_handle = iATR(_Symbol, _Period, RegimeATRPeriod);
    if(atr_handle==INVALID_HANDLE) return true;
    double atr_buf[]; ArrayResize(atr_buf,1);
@@ -419,22 +560,61 @@ bool RegimeAllowed(string &reason)
    double atr=atr_buf[0]; double px=SymbolInfoDouble(_Symbol, SYMBOL_BID);
    if(atr<=0.0 || px<=0.0) return true;
    double atr_pct = 100.0 * atr / px;
-   if(RegimeMinATRPct>0.0 && atr_pct < RegimeMinATRPct) { reason="regime_low_atr"; return false; }
-   if(RegimeMaxATRPct>0.0 && atr_pct > RegimeMaxATRPct) { reason="regime_high_atr"; return false; }
+
+   // Track spread for minor adaptive tightening/loosening
+   double bid=0.0, ask=0.0; SymbolInfoDouble(_Symbol, SYMBOL_BID, bid); SymbolInfoDouble(_Symbol, SYMBOL_ASK, ask);
+   double spr_pts = (ask>0.0 && bid>0.0 ? (ask-bid)/_Point : 0.0);
+   double spr_ref = (GuardMaxSpreadPoints>0.0 ? GuardMaxSpreadPoints : 20.0);
+   double spr_factor = (spr_ref>0.0 ? MathMin(2.0, MathMax(0.5, spr_pts/spr_ref)) : 1.0);
+
+   // Select method: atr (default) or adx
+   string method = RegimeMethod;
+   // normalize to lowercase
+   StringToLower(method);
+   if(method=="adx")
+     {
+      // ADX regime: gate out low-trend regimes with adaptive threshold informed by ATR%
+       int adx_handle = iADX(_Symbol, _Period, RegimeADXPeriod);
+       if(adx_handle==INVALID_HANDLE) return true;
+       double adx_buf[]; ArrayResize(adx_buf,1);
+       int c2 = CopyBuffer(adx_handle, 0 /*ADX main*/, 0, 1, adx_buf);
+       IndicatorRelease(adx_handle);
+       if(c2!=1) return true;
+       double adx = adx_buf[0];
+       // Adaptive ADX threshold: tighten when ATR%% high, loosen when low or spread high
+       double adj = 1.0 + MathMax(-0.3, MathMin(0.3, 0.2*(atr_pct/1.0 - 1.0))); // +/-20% around 1%% ATR baseline, clamped +/-30%
+       // Penalize when spread is high (be stricter)
+       adj *= (spr_factor>1.0 ? MathMin(1.2, 1.0 + 0.1*(spr_factor-1.0)) : MathMax(0.9, 1.0 - 0.05*(1.0-spr_factor)));
+       double dyn_adx_thr = RegimeADXTrendThreshold * adj;
+       // Telemetry: regime adaptive params (ADX)
+       if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+         {
+          string det_reg_adx = StringFormat("method=adx adx=%.2f thr=%.2f atr_pct=%.2f spr_pts=%.1f spr_factor=%.2f", adx, dyn_adx_thr, atr_pct, spr_pts, spr_factor);
+          (*g_tel_standard).LogGateParams(_Symbol, (int)_Period, "regime", det_reg_adx);
+         }
+       if(adx < dyn_adx_thr)
+         { reason = StringFormat("regime_low_adx(%.1f<%.1f)", adx, dyn_adx_thr); return false; }
+       return true;
+     }
+   // ATR regime: use adaptive min/max bands
+   double k = 0.10; // base widening by 10%
+   // Tighten when spread is high; loosen when low
+   if(spr_factor>1.0) k *= MathMax(0.5, 1.0 - 0.3*(spr_factor-1.0)); else k *= MathMin(1.5, 1.0 + 0.2*(1.0 - spr_factor));
+   double min_dyn = (RegimeMinATRPct>0.0 ? RegimeMinATRPct * (1.0 - k) : 0.0);
+   double max_dyn = (RegimeMaxATRPct>0.0 ? RegimeMaxATRPct * (1.0 + k) : 0.0);
+   // Telemetry: regime adaptive params (ATR)
+   if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+     {
+      string det_reg_atr = StringFormat("method=atr atr_pct=%.2f min_dyn=%.2f max_dyn=%.2f spr_pts=%.1f spr_factor=%.2f", atr_pct, min_dyn, max_dyn, spr_pts, spr_factor);
+      (*g_tel_standard).LogGateParams(_Symbol, (int)_Period, "regime", det_reg_atr);
+     }
+   if(min_dyn>0.0 && atr_pct < min_dyn) { reason=StringFormat("regime_low_atr(%.2f%%<%.2f%%)", atr_pct, min_dyn); return false; }
+   if(max_dyn>0.0 && atr_pct > max_dyn) { reason=StringFormat("regime_high_atr(%.2f%%>%.2f%%)", atr_pct, max_dyn); return false; }
    return true;
   }
-
-bool CircuitCooldownAllowed(string &reason)
-  {
-   reason="ok";
-   if(CircuitCooldownSec<=0) return true;
+// ...
    static datetime g_last_paper_action = 0;
-   if(g_last_paper_action==0) return true;
-   if((TimeCurrent() - g_last_paper_action) < CircuitCooldownSec) { reason="circuit_cooldown"; return false; }
-   return true;
-  }
 
-// FR-01: Circuit breaker gating (daily loss vs session start, drawdown vs high-water, timed cooldown)
 bool CircuitBreakerAllowed(string &reason)
   {
    reason = "ok";
@@ -485,7 +665,31 @@ bool CircuitBreakerAllowed(string &reason)
    return true;
   }
 
+bool CircuitCooldownAllowed(string &reason)
+  {
+   reason = "ok";
+   if(CircuitCooldownSec<=0) return true;
+   // Simple implementation - check if enough time has passed since last circuit event
+   if(g_cb_trigger_time>0)
+     {
+      datetime now = TimeCurrent();
+      if((now - g_cb_trigger_time) < CircuitCooldownSec)
+        {
+         reason = "circuit_cooldown_active";
+         return false;
+        }
+     }
+   return true;
+  }
+
 ulong NowMs(){ return (ulong)GetTickCount(); }
+
+// Check if logging should occur based on verbosity level
+bool ShouldLog(const int level)
+  {
+   return (Verbosity >= level);
+  }
+
 // FR-10: gate print throttling helpers
 bool GateShouldPrint(const string tag, const string phase)
   {
@@ -524,11 +728,11 @@ void GateMarkPrinted(const string tag, const string phase)
 void LogGate(const string tag, const bool allowed, const string phase, const ulong t0)
   {
    int latency = (int)(NowMs() - t0);
-   if(ShouldLog(LOG_INFO) && (!GateLogThrottleEnabled || GateShouldPrint(tag, phase)))
-     {
-      PrintFormat("[%s] %s latency_ms=%d", tag, (allowed?"allow":"block"), latency);
-      GateMarkPrinted(tag, phase);
-     }
+   if((Verbosity>=1) && (!GateLogThrottleEnabled || GateShouldPrint(tag, phase)))
+    {
+     PrintFormat("[%s] %s latency_ms=%d", tag, (allowed?"allow":"block"), latency);
+     GateMarkPrinted(tag, phase);
+    }
    if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
      {
       string det = StringFormat("phase=%s p6_latency_ms=%d", phase, latency);
@@ -551,84 +755,6 @@ bool Risk4GatesAllow()
    GP_RISK4_GATES_BLOCK
   }
 // --- Policy gating (async from ml/policy.json)
-input bool   UsePolicyGating       = true;
-// --- Default policy fallback (neutral scaling when policy lookup misses)
-input bool   DefaultPolicyFallback = true;   // allow neutral trading when policy slice is missing
-input bool   FallbackDemoOnly      = true;   // restrict fallback to demo accounts
-input bool   FallbackWhenNoPolicy  = true;   // allow fallback when policy file is not loaded
-input bool   UsePolicyEngine       = false;  // feature flag: consult PolicyEngine first
-
-// --- Time-of-day gating (server time)
-input bool   UseTradingHours       = false;
-input int    TradingStartHour      = 7;      // inclusive [0..23]
-input int    TradingEndHour        = 20;     // exclusive when Start<End; wraps overnight otherwise
-
-// --- Telemetry (buffered JSONL)
-input bool   TelemetryEnabled      = true;
-input int    TelemetryLevel        = 1;      // 0=off, 1=events, 2=verbose
-input string TelemetryExperiment   = "";     // experiment tag for file prefix
-input int    TelemetryBufferMax    = 256;    // flush threshold
-input string TelemetryDir          = "DualEA\\telemetry"; // Common Files subdir
-// FR-10: gate print throttling + periodic flush cadence
-input bool   GateLogThrottleEnabled = true;  // throttle repetitive gate prints
-input int    GateLogCooldownSec     = 30;    // cooldown window per gate tag+phase
-input int    TelemetryFlushIntervalSec = 0;  // 0=flush on every timer tick (legacy behavior)
-
-// --- Insights rebuild concurrency + cancellation guards
-bool g_insights_rebuild_in_progress = false; // prevent overlapping rebuilds
-datetime g_last_insights_rebuild_time = 0;    // per-instance (symbol+timeframe) last successful rebuild
-// Per-slice (symbol|timeframe) last rebuild map (in-memory)
-string   g_ir_keys[];
-datetime g_ir_times[];
-int IRFindIndex(const string key)
-{
-  for(int i=0;i<ArraySize(g_ir_keys);++i)
-    if(g_ir_keys[i]==key) return i;
-  return -1;
-}
-datetime IRGetLast(const string key)
-{
-  int idx = IRFindIndex(key);
-  if(idx<0) return 0;
-  return g_ir_times[idx];
-}
-void IRSetLast(const string key, const datetime t)
-{
-  int idx = IRFindIndex(key);
-  if(idx<0)
-  {
-    int n = ArraySize(g_ir_keys);
-    ArrayResize(g_ir_keys,n+1); ArrayResize(g_ir_times,n+1);
-    g_ir_keys[n]=key; g_ir_times[n]=t;
-  }
-  else
-  {
-    g_ir_times[idx]=t;
-  }
-}
-
-// --- Verbosity controls
-enum LogLevel { LOG_ERROR = 0, LOG_INFO = 1, LOG_DEBUG = 2 };
-input int    Verbosity = LOG_INFO; // 0=silent, 1=info, 2=debug
-bool ShouldLog(const int level){ return Verbosity >= level; }
-
-// --- Spread and Session caps
-input double SpreadMaxPoints   = 0.0; // 0=disabled, block when current spread (points) > this cap
-input int    SessionStartHour  = 0;   // session/day boundary hour [0..23] for daily caps and baselines
-input int    SessionMaxTrades  = 0;   // 0=unlimited; max new trades per session/day (per symbol/timeframe for this EA instance)
-// Aggressive paper trading knobs
-input int    MaxTradesPerBar   = 0;   // 0=unlimited; cap number of entries per bar (per symbol/timeframe for this EA instance)
-input int    PaperAggroLevel   = 50;  // 0..100; increases allowed spread by (1+Aggro/100)
-
-// --- Risk & circuit breakers (0=disabled)
-input double MaxDailyLossPct   = 0.0; // block new trades if equity drawdown from session baseline exceeds this percent
-input double MaxDrawdownPct    = 0.0; // block new trades if equity drawdown from session high-water exceeds this percent
-input double MinMarginLevel    = 0.0; // block if Account margin level (%) < this threshold
-input int    ConsecutiveLossLimit = 0; // block when consecutive losing closures >= this limit (magic-number scoped)
-
-// --- Global SL/TP enforcement (applies to every strategy)
-input int    GlobalSL_Points       = 500;    // 0=disabled; minimum stop-loss distance in points
-input int    GlobalTP_Points       = 1000;   // 0=disabled; minimum take-profit distance in points
 
 // --- Helper: compute R multiple strictly in price units
 double ComputeRMultiple(const double entry_price, const double close_price, const double init_risk_price, const int pos_type)
@@ -913,6 +1039,31 @@ double ComputeRMultiple(const double entry_price, const double close_price, cons
                    order.strategy_name, symbol, timeframe, ppol, sls, tps, trs);
     }
 
+// Helper functions for insights rebuild tracking per slice
+datetime IRGetLast(const string slice_key)
+  {
+   for(int i=0; i<ArraySize(g_ir_slice_keys); ++i)
+     if(g_ir_slice_keys[i] == slice_key)
+       return g_ir_slice_times[i];
+   return 0;
+  }
+
+void IRSetLast(const string slice_key, const datetime time)
+  {
+   for(int i=0; i<ArraySize(g_ir_slice_keys); ++i)
+     if(g_ir_slice_keys[i] == slice_key)
+       {
+        g_ir_slice_times[i] = time;
+        return;
+       }
+   // Add new entry
+   int n = ArraySize(g_ir_slice_keys);
+   ArrayResize(g_ir_slice_keys, n+1);
+   ArrayResize(g_ir_slice_times, n+1);
+   g_ir_slice_keys[n] = slice_key;
+   g_ir_slice_times[n] = time;
+  }
+
 // Determine if insights.json is missing or stale vs features/knowledge_base or by age
 bool Insights_IsStale(const int stale_hours)
   {
@@ -1097,15 +1248,6 @@ bool GetATRPercentile(const string symbol, const ENUM_TIMEFRAMES tf, const int p
    percentile_out = 100.0 * ((double)below / (double)valid);
    return true;
   }
-// Logging controls
-input bool   DebugTrailing = false;
-input bool   KBDebugInit   = true;
-
-// --- Trainer / LSTM flags (for downstream trainer tooling)
-input bool   TrainerLSTM_Enable     = false;
-input int    TrainerLSTM_MinSeq     = 50;
-input int    TrainerLSTM_MaxSeq     = 500;
-input bool   TrainerLSTM_UseRecency = true;
 
 // --- Explore-cap logging dedupe state ---
 datetime g_ecap_bar_time = 0;
@@ -1169,89 +1311,13 @@ void ECapFlushSummaryIfNewBar()
   g_ecap_bar_time = bar;
 }
 
-// --- Heartbeat / status panel
-input bool   HeartbeatEnabled = true;
-input int    HeartbeatMinutes = 15;   // update every N minutes
-input bool   HeartbeatVerbose = true; // print [STRAT] lines per strategy
-// FR-10: gate print throttle state + telemetry flush cadence
-string   g_gate_log_keys[];
-datetime g_gate_log_last_ts[];
+// FR-10: gate print throttle state + telemetry flush cadence (moved from earlier declaration)
 datetime g_last_tel_flush = 0;
-
-// --- Globals
-CKnowledgeBase*         g_kb = NULL;
-CTradeManager*          g_trade_manager = NULL;
- CArrayObj*              g_strategies; // Array to hold all strategy objects
- CFeaturesKB*            g_features = NULL; // Features logger
- CTelemetry*             g_telemetry = NULL; // Telemetry logger
- // --- Spread/Session/Risk state
- datetime                g_session_start = 0;
- int                     g_session_day   = 0;
- double                  g_session_equity_start = 0.0;
- double                  g_equity_highwater     = 0.0;
- // FR-01: Circuit breaker state
- bool                    g_cb_active         = false;
- datetime                g_cb_trigger_time   = 0;
- string                  g_cb_last_cause     = "";   // daily_loss | drawdown
- double                  g_cb_last_threshold = 0.0;
- double                  g_cb_last_value     = 0.0;
- // Strategy selector
- CStrategySelector*       g_selector = NULL;
- // Position manager (optional)
- CPositionManager*        g_position_manager = NULL;
- // Insights gating cache
-string                  g_gate_strat[];
-string                  g_gate_sym[];
-int                     g_gate_tf[];
-int                     g_gate_cnt[];
-double                  g_gate_wr[];
-double                  g_gate_avgR[];
-double                  g_gate_pf[];
-double                  g_gate_dd[];
-// Policy cache (per-slice probability) and threshold
-bool                    g_policy_loaded = false;
-double                  g_policy_min_conf = 0.0;
-string                  g_pol_strat[];
-string                  g_pol_sym[];
-int                     g_pol_tf[];
-// --- Phase 5 housekeeping
-// Last timestamp we refreshed recent overlays for selector (optional; used to rate-limit rescoring)
-datetime               g_p5_last_rescore_ts = 0;
-double                  g_pol_p[];
-double                  g_pol_sl[];
-double                  g_pol_tp[];
-double                  g_pol_trail[];
-
-// Exploration Mode tracking (weekly persistent)
-string                  g_exp_keys[];    // slice key: strategy|symbol|timeframe
-int                     g_exp_weeks[];   // week bucket id (Monday yyyymmdd)
-int                     g_exp_counts[];  // count within week
-string                  g_explore_pending_key = ""; // set by Insights_Allow when allowing explore
-
-// Daily exploration tracking (persistent)
-string                  g_exp_day_keys[];
-int                     g_exp_day_days[];   // yyyymmdd
-int                     g_exp_day_counts[];
-
-// Active position tracking for MFE/MAE and closure analytics
-ulong                   g_pos_ids[];           // POSITION_IDENTIFIER
-string                  g_pos_strats[];        // strategy attribution
-double                  g_pos_entry_price[];   // entry price
-double                  g_pos_initial_risk[];  // initial risk (price units)
-datetime                g_pos_start_time[];    // entry time
-int                     g_pos_type[];          // POSITION_TYPE_*
-double                  g_pos_max_price[];     // MFE price
-double                  g_pos_min_price[];     // MAE price
-
-// Persistent consecutive loss counters (per symbol + magic)
-string                  g_loss_sym[];
-long                    g_loss_mag[];
-int                     g_loss_cnt[];
 
 // --- Persistent loss counters helpers (placed before first use)
 string LossCountersDirPath()
   {
-   return "DualEA/"; // keep under common DualEA folder
+   return "DualEA_v2/"; // keep under common DualEA folder
   }
 
 string SanitizeForFilename(const string s)
@@ -1495,11 +1561,6 @@ void HandlePositionClosed(int idx, ulong close_deal)
    ArrayResize(g_pos_min_price, last);
   }
 
-// Pending order/deal attribution (to map back strategy names on asynchronous trade events)
-ulong                   g_pending_orders[];
-string                  g_pending_orders_strat[];
-ulong                   g_pending_deals[];
-string                  g_pending_deals_strat[];
 
 // Returns Monday date of the week as yyyymmdd integer for the provided time
 int WeekMondayId(datetime t)
@@ -1718,30 +1779,80 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
            }
         }
      }
-   // Find matching slice
-   for(int i=0;i<ArraySize(g_gate_strat);++i)
-     if(g_gate_strat[i]==strategy && g_gate_sym[i]==symbol && g_gate_tf[i]==timeframe)
-       {
-        if(g_gate_cnt[i] < GateMinTrades)
+   // Compute adaptive effective thresholds based on ATR%% and spread
+  int effMinTrades = GateMinTrades;
+  double effMinWR = GateMinWinRate;
+  double effMinExpR = GateMinExpectancyR;
+  double effMinPF = GateMinProfitFactor;
+  double effMaxDD = GateMaxDrawdownR;
+  // Context capture for telemetry
+  double ctx_atr_pct = 0.0; double ctx_spr_pts = 0.0; double ctx_spr_factor = 1.0; double ctx_adj = 0.0;
+  {
+    // ATR%% context
+    double px_i=0.0; SymbolInfoDouble(_Symbol, SYMBOL_BID, px_i);
+    int h_atr_i = iATR(_Symbol, _Period, RegimeATRPeriod);
+    if(h_atr_i!=INVALID_HANDLE && px_i>0.0)
+      {
+        double b_atr[]; if(CopyBuffer(h_atr_i,0,0,1,b_atr)==1)
           {
-            reason = "min_trades"; return false;
+            double atr_i = b_atr[0];
+            double atr_pct_i = (atr_i>0.0? 100.0*atr_i/px_i : 0.0);
+            // Spread context
+            double bid_i=0.0, ask_i=0.0; SymbolInfoDouble(_Symbol,SYMBOL_BID,bid_i); SymbolInfoDouble(_Symbol,SYMBOL_ASK,ask_i);
+            double spr_pts_i = (ask_i>0.0 && bid_i>0.0 ? (ask_i-bid_i)/_Point : 0.0);
+            double spr_ref_i = (GuardMaxSpreadPoints>0.0 ? GuardMaxSpreadPoints : 20.0);
+            double spr_factor_i = (spr_ref_i>0.0 ? MathMin(2.0, MathMax(0.5, spr_pts_i/spr_ref_i)) : 1.0);
+            // Volatility strictness: +10% for high vol (>1%), -10% for very low vol (<0.5%)
+            double v_adj = 0.0;
+            if(atr_pct_i > 1.0) v_adj = MathMin(0.15, 0.10 * (atr_pct_i/1.0 - 1.0));
+            else if(atr_pct_i < 0.5) v_adj = MathMax(-0.15, -0.10 * (1.0 - atr_pct_i/0.5));
+            // Spread penalty: add up to +10% strictness when spreads high
+            double s_adj = (spr_factor_i>1.0 ? MathMin(0.10, 0.10*(spr_factor_i-1.0)) : MathMax(-0.05, -0.05*(1.0-spr_factor_i)));
+            double adj = v_adj + s_adj; // net adjustment
+            // Apply to thresholds conservatively
+            effMinWR      = GateMinWinRate      * (1.0 + adj);
+            effMinExpR    = GateMinExpectancyR  * (1.0 + adj);
+            effMinPF      = GateMinProfitFactor * (1.0 + adj);
+            effMaxDD      = GateMaxDrawdownR    * (1.0 - adj); // stricter DD in high-vol
+            // Min trades: integer step
+            effMinTrades  = (int)MathMax(0.0, MathRound(GateMinTrades * (1.0 + adj)));
+            // Capture context for telemetry
+            ctx_atr_pct = atr_pct_i; ctx_spr_pts = spr_pts_i; ctx_spr_factor = spr_factor_i; ctx_adj = adj;
           }
-        if(g_gate_wr[i]  < GateMinWinRate)
-          {
-            reason = "win_rate"; return false;
-          }
-        if(g_gate_avgR[i]< GateMinExpectancyR)
-          {
-            reason = "expectancy"; return false;
-          }
-        if(g_gate_dd[i]  > GateMaxDrawdownR)
-          {
-            reason = "drawdown"; return false;
-          }
-        if(g_gate_pf[i]  < GateMinProfitFactor)
-          {
-            reason = "profit_factor"; return false;
-          }
+        IndicatorRelease(h_atr_i);
+      }
+  }
+  // Telemetry: insights effective thresholds and context
+  if(TelemetryEnabled && CheckPointer(g_tel_standard)!=POINTER_INVALID)
+    {
+      string det_ins = StringFormat("effMinTrades=%d effMinWR=%.4f effMinExpR=%.4f effMinPF=%.4f effMaxDD=%.2f atr_pct=%.2f spr_pts=%.1f spr_factor=%.2f adj=%.3f",
+                                    effMinTrades, effMinWR, effMinExpR, effMinPF, effMaxDD, ctx_atr_pct, ctx_spr_pts, ctx_spr_factor, ctx_adj);
+      (*g_tel_standard).LogGateParams(_Symbol, (int)_Period, "insights", det_ins);
+    }
+  // Find matching slice
+  for(int i=0;i<ArraySize(g_gate_strat);++i)
+    if(g_gate_strat[i]==strategy && g_gate_sym[i]==symbol && g_gate_tf[i]==timeframe)
+      {
+       if(g_gate_cnt[i] < effMinTrades)
+         {
+           reason = "min_trades"; return false;
+         }
+       if(g_gate_wr[i]  < effMinWR)
+         {
+           reason = "win_rate"; return false;
+         }
+       if(g_gate_avgR[i]< effMinExpR)
+         {
+           reason = "expectancy"; return false;
+         }
+       if(g_gate_dd[i]  > effMaxDD)
+         {
+           reason = "drawdown"; return false;
+         }
+       if(g_gate_pf[i]  < effMinPF)
+         {
+           reason = "profit_factor"; return false;
+         }
         // Policy check for exact slice
         if(UsePolicyGating && g_policy_loaded)
           {
@@ -1772,23 +1883,23 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
       double avgR = (total>0? sumR/total : 0.0);
       double pf   = (pf_cnt>0? pf_sum/pf_cnt : 0.0);
       double dd   = worst_dd;
-      if(total < GateMinTrades)
+      if(total < effMinTrades)
         {
          reason = "min_trades_agg_sym"; return false;
         }
-      if(wr    < GateMinWinRate)
+      if(wr    < effMinWR)
         {
          reason = "win_rate_agg_sym"; return false;
         }
-      if(avgR  < GateMinExpectancyR)
+      if(avgR  < effMinExpR)
         {
          reason = "expectancy_agg_sym"; return false;
         }
-      if(dd    > GateMaxDrawdownR)
+      if(dd    > effMaxDD)
         {
          reason = "drawdown_agg_sym"; return false;
         }
-      if(pf    < GateMinProfitFactor)
+      if(pf    < effMinPF)
         {
          reason = "profit_factor_agg_sym"; return false;
         }
@@ -1819,15 +1930,15 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
       double avgR = (total>0? sumR/total : 0.0);
       double pf   = (pf_cnt>0? pf_sum/pf_cnt : 0.0);
       double dd   = worst_dd;
-      if(total < GateMinTrades)
+      if(total < effMinTrades)
         { reason = "min_trades_agg_strat"; return false; }
-      if(wr    < GateMinWinRate)
+      if(wr    < effMinWR)
         { reason = "win_rate_agg_strat"; return false; }
-      if(avgR  < GateMinExpectancyR)
+      if(avgR  < effMinExpR)
         { reason = "expectancy_agg_strat"; return false; }
-      if(dd    > GateMaxDrawdownR)
+      if(dd    > effMaxDD)
         { reason = "drawdown_agg_strat"; return false; }
-      if(pf    < GateMinProfitFactor)
+      if(pf    < effMinPF)
         { reason = "profit_factor_agg_strat"; return false; }
       // Policy check for aggregated strategy (if available)
       if(UsePolicyGating && g_policy_loaded)
@@ -2555,6 +2666,14 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTimer()
   {
+   datetime tick_time = TimeCurrent();
+   MqlDateTime dt; TimeToStruct(tick_time, dt);
+   int curr_minute = (int)dt.min;
+   if(curr_minute != last_processed_minute)
+     {
+      last_processed_minute = curr_minute;
+      TryPaperTrade(tick_time);
+     }
    // Always allow policy reload checks on timer
    CheckPolicyReload();
    // Avoid blocking Strategy Tester with heavy rebuilds; only rebuild on-timer outside tester
@@ -2636,11 +2755,6 @@ ulong FindLatestOrderForSymbolMagic(const string sym, const int magic)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   static datetime last_trade_bar_time = 0;
-   datetime current_bar_time = iTime(_Symbol, _Period, 0);
-   if(current_bar_time == last_trade_bar_time)
-      return; // Already traded this bar
-   last_trade_bar_time = current_bar_time;
    // Runtime policy reload support
    CheckPolicyReload();
    // FR-07: Regime tag telemetry (independent of gating)

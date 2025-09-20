@@ -409,7 +409,7 @@ public:
      }
 
    // --- Correlation
-   double GetPortfolioCorrelation(const string symbol)
+   double GetPortfolioCorrelation(const string symbol) const
      {
       // Average of absolute correlations to open positions, weighted by volume
       double total_w=0.0, sum=0.0;
@@ -440,6 +440,44 @@ public:
    double GetMarketCorrelation(const string sym1, const string sym2, const int bars)
      {
       double corr=0.0; if(!ComputeCorrelation(sym1, sym2, bars, corr)) return 0.0; return corr;
+     }
+
+   // --- Adaptive position cap helper for gating
+   // Returns a dynamic cap on concurrent open positions based on current risk conditions.
+   // cap_hint: static configured cap (<=0 means unlimited).
+   int ComputeDynamicMaxOpenPositions(const int cap_hint) const
+     {
+      // Unlimited semantics preserved
+      if(cap_hint<=0) return 0;
+
+      int cap = cap_hint;
+
+      // 1) Margin health-based adjustment
+      double ml = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+      if(ml>0.0)
+        {
+         if(ml < 120.0) cap = MathMax(1, cap - 2);       // very low margin headroom -> tighten more
+         else if(ml < 200.0) cap = MathMax(1, cap - 1);  // low headroom -> tighten
+         else if(ml > 500.0) cap = cap + 1;              // ample headroom -> allow slight expansion
+        }
+
+      // 2) Volatility regime (ATR%) adjustment
+      double atr=0.0; double px=0.0; SymbolInfoDouble(m_symbol, SYMBOL_BID, px);
+      if(px<=0.0) SymbolInfoDouble(m_symbol, SYMBOL_LAST, px);
+      if(px>0.0 && ComputeATR(m_symbol, m_atr_period, atr))
+        {
+         double atr_pct = 100.0 * atr / px;
+         if(atr_pct > 2.0)        cap = MathMax(1, cap - 1); // very high vol -> reduce
+         else if(atr_pct < 0.4)   cap = cap + 1;             // very low vol -> allow one more
+        }
+
+      // 3) Portfolio correlation concentration adjustment
+      double pcorr = 0.0;
+      // Use average abs correlation to open positions; concentrates -> reduce cap
+      pcorr = GetPortfolioCorrelation(m_symbol);
+      if(MathAbs(pcorr) > 0.75) cap = MathMax(1, cap - 1);
+
+      return cap;
      }
 
    // --- ML stubs
