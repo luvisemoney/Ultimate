@@ -6,45 +6,44 @@
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
+#include <Trade\OrderInfo.mqh>
+#include <Trade\DealInfo.mqh>
 #include <Arrays\ArrayObj.mqh>
 #include <Object.mqh>
 #include "IStrategy.mqh"
+#include "..\Include\Indicators\ATR.mqh"
+
+// Use TrailingType from IStrategy.mqh instead of defining a duplicate enum
 
 class CTradeManager
   {
 private:
+   // Trailing stop configuration
+   class CTrailConfig : public CObject
+     {
+   public:
+      string            symbol;             // Symbol this config applies to
+      bool              enabled;            // Whether trailing is enabled
+      TrailingType      type;               // Type of trailing (points, ATR, etc.)
+      int               distance_points;    // Distance in points for fixed trailing
+      int               activation_points;  // Activation distance in points
+      int               step_points;        // Minimum step in points for adjustment
+      int               atr_period;         // Period for ATR calculation
+      double            atr_multiplier;     // Multiplier for ATR distance
+      
+      // Constructor with defaults
+      CTrailConfig() : enabled(false), type(TRAIL_NONE), distance_points(100), 
+                      activation_points(50), step_points(10), atr_period(14), 
+                      atr_multiplier(2.0) {}
+     };
+
    CTrade            m_trade;
    string            m_symbol;
    double            m_lot_size;
    int               m_magic_number;
+   CArrayObj         m_trails;           // Array of CTrailConfig objects
 
-   // Trailing configurations keyed by symbol (netting mode assumption)
-   class CTrailConfig : public CObject
-     {
-      public:
-        string       symbol;
-        bool         enabled;
-        TrailingType type;
-        double       distance_points;
-        double       activation_points;
-        double       step_points;
-        // ATR-based trailing params
-        int          atr_period;
-        double       atr_multiplier;
-        CTrailConfig(): enabled(false), type(TRAIL_NONE), distance_points(0), activation_points(0), step_points(0), atr_period(14), atr_multiplier(2.0) {}
-     };
-   CArrayObj         m_trails;
-
-   CTrailConfig*     FindTrailBySymbol(const string sym)
-     {
-      for(int i=0;i<m_trails.Total();++i)
-        {
-         CTrailConfig* cfg = (CTrailConfig*)m_trails.At(i);
-         if(CheckPointer(cfg)!=POINTER_INVALID && cfg.symbol==sym)
-            return cfg;
-        }
-      return NULL;
-     }
+   // Find trail configuration by symbol - implementation moved to public section
    
    // Normalize and validate volume according to symbol constraints
    double            NormalizeVolume(double lots)
@@ -222,50 +221,53 @@ private:
       if(entry_price>0.0) entry_price = NormalizeDouble(RoundToTick(entry_price), dg);
      }
 
+   // Find trail config by symbol - implementation is in the public section
+     
    // Normalize SL for an existing position with given side; return false if cannot make valid
-   bool              NormalizeSLForPosition(const ENUM_POSITION_TYPE ptype, double &sl)
+   bool NormalizeSLForPosition(const ENUM_POSITION_TYPE ptype, double &sl)
      {
-      double bid=0.0, ask=0.0; SymbolInfoDouble(m_symbol, SYMBOL_BID, bid); SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
-      double minDist = MinStopDistance(); double frz = FreezeDistance(); double needDist = MathMax(minDist, frz); int dg = PriceDigits();
-      if(ptype==POSITION_TYPE_BUY)
+      return NormalizeSLForPosition(m_symbol, ptype, sl);
+     }
+   bool NormalizeSLForPosition(const string sym, const ENUM_POSITION_TYPE ptype, double &sl)
+     {
+      double bid = 0.0, ask = 0.0; 
+      if(!SymbolInfoDouble(sym, SYMBOL_BID, bid) || !SymbolInfoDouble(sym, SYMBOL_ASK, ask))
+         return false;
+         
+      double minDist = MinStopDistance(sym);
+      double frz = FreezeDistance(sym);
+      double needDist = MathMax(minDist, frz);
+      int dg = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+      
+      if(ptype == POSITION_TYPE_BUY)
         {
-         // SL must be below Bid by at least minDist
-         if(sl<=0.0) return false;
+         if(sl <= 0.0) return false;
          double maxSL = bid - needDist;
-         if(sl>=bid || (bid - sl) < needDist) sl = RoundToTickBelow(maxSL, m_symbol);
-         if(sl>=bid) return false; // still invalid
+         if(sl >= bid || (bid - sl) < needDist) sl = RoundToTickBelow(maxSL, sym);
+         if(sl >= bid) return false;
         }
-      else if(ptype==POSITION_TYPE_SELL)
+      else if(ptype == POSITION_TYPE_SELL)
         {
-         // SL must be above Ask by at least minDist
-         if(sl<=0.0) return false;
+         if(sl <= 0.0) return false;
          double minSL = ask + needDist;
-         if(sl<=ask || (sl - ask) < needDist) sl = RoundToTickAbove(minSL, m_symbol);
-         if(sl<=ask) return false;
+         if(sl <= ask || (sl - ask) < needDist) sl = RoundToTickAbove(minSL, sym);
+         if(sl <= ask) return false;
         }
+      
       sl = NormalizeDouble(sl, dg);
       return true;
      }
-   bool              NormalizeSLForPosition(const string sym, const ENUM_POSITION_TYPE ptype, double &sl)
+
+   // Find trailing configuration by symbol
+   CTrailConfig* FindTrailBySymbol(const string symbol)
      {
-      double bid=0.0, ask=0.0; SymbolInfoDouble(sym, SYMBOL_BID, bid); SymbolInfoDouble(sym, SYMBOL_ASK, ask);
-      double minDist = MinStopDistance(sym); double frz = FreezeDistance(sym); double needDist = MathMax(minDist, frz); int dg = PriceDigits(sym);
-      if(ptype==POSITION_TYPE_BUY)
+      for(int i = 0; i < m_trails.Total(); i++)
         {
-         if(sl<=0.0) return false;
-         double maxSL = bid - needDist;
-         if(sl>=bid || (bid - sl) < needDist) sl = RoundToTickBelow(maxSL, sym);
-         if(sl>=bid) return false;
+         CTrailConfig* cfg = (CTrailConfig*)m_trails.At(i);
+         if(cfg != NULL && cfg.symbol == symbol)
+            return cfg;
         }
-      else if(ptype==POSITION_TYPE_SELL)
-        {
-         if(sl<=0.0) return false;
-         double minSL = ask + needDist;
-         if(sl<=ask || (sl - ask) < needDist) sl = RoundToTickAbove(minSL, sym);
-         if(sl<=ask) return false;
-        }
-      sl = NormalizeDouble(sl, dg);
-      return true;
+      return NULL;
      }
 
 public:
@@ -432,11 +434,11 @@ void CTradeManager::ConfigureTrailing(const TradeOrder &order)
      }
    cfg.enabled = order.trailing_enabled;
    cfg.type = order.trailing_type;
-   cfg.distance_points = order.trail_distance_points;
-   cfg.activation_points = order.trail_activation_points;
-   cfg.step_points = order.trail_step_points;
-   cfg.atr_period = order.atr_period;
-   cfg.atr_multiplier = order.atr_multiplier;
+   cfg.distance_points = (int)order.trail_distance_points;
+   cfg.activation_points = (int)order.trail_activation_points;
+   cfg.step_points = (int)order.trail_step_points;
+   cfg.atr_period = (int)order.atr_period;
+   cfg.atr_multiplier = (int)order.atr_multiplier;
   }
 
 //+------------------------------------------------------------------+
