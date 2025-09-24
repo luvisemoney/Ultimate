@@ -282,9 +282,6 @@ public:
       result.reason = "ML validation passed";
       return result;
    }
-   string GetName() override { return "MLPolish"; }
-   void SetThreshold(double threshold) override {}
-   double GetSuccessRate() override { return 0.82; }
 };
 
 // Gate 7: Live Clean
@@ -312,9 +309,6 @@ public:
       result.reason = "Live market conditions validated";
       return result;
    }
-   string GetName() override { return "LiveClean"; }
-   void SetThreshold(double threshold) override {}
-   double GetSuccessRate() override { return 0.88; }
 };
 
 // Gate 8: Final Verify
