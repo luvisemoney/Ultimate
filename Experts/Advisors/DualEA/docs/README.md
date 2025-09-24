@@ -232,6 +232,33 @@ Terminal/Common/Files/DualEA/
 - **Advanced Risk Management**: Drawdown controls and circuit breakers
 - **Multi-timeframe Coordination**: Cross-timeframe strategy coordination
 
+## 🔧 Unified System Architecture (NEW)
+The DualEA system features a **Unified Architecture** that eliminates redundancy by consolidating insights management and gating pipeline into three core components:
+
+**Core Components:**
+- **ConfigManager**: Centralized configuration for gates, insights, and system settings
+- **EventBus**: Cross-component communication with priority-based event logging  
+- **SystemMonitor**: Real-time health monitoring and performance metrics
+
+**Key Benefits:**
+- Single source of truth for configuration and monitoring
+- Event-driven architecture with unified logging
+- Real-time performance tracking and health scoring
+- Backward compatibility with legacy mode support
+
+**Quick Start:**
+```cpp
+// Initialize unified system (enabled by default)
+CGateManager* gateManager = new CGateManager(symbol, timeframe, learning, true);
+
+// Access unified components for advanced configuration
+CConfigManager* config = CConfigManager::GetInstance();
+config->SetVerboseLogging(true);
+config->SetNoConstraintsMode(false);
+```
+
+See [UnifiedSystemGuide.md](UnifiedSystemGuide.md) for detailed integration documentation.
+
 ## Key Features
 
 ### 8-Stage Gate System (PaperEA v2)
@@ -264,51 +291,37 @@ Terminal/Common/Files/DualEA/
 - **Insights Generation**: Performance analytics per strategy/symbol/timeframe
 - **Common Files**: Cross-EA data sharing via MT5 Common Files directory
 
-## Insights Handshake and Live Auto-Reload
+## System Configuration and Monitoring
 
-To avoid frequent rebuilds while still giving LiveEA immediate access to fresh insights:
+### Gate Configuration Parameters
+The unified system supports comprehensive gate configuration through `ConfigManager`:
 
-- PaperEA writes `DualEA/insights.ready` after a successful rebuild of `insights.json`.
-- LiveEA can request a rebuild by creating `DualEA/insights.reload` and watches for `insights.ready` via `OnTimer`.
-- LiveEA inputs:
-  - `InsightsAutoReload` (bool): enable the watcher/requester.
-  - `InsightsLiveFreshMinutes` (int): freshness threshold for `insights.json` before requesting a rebuild.
-  - `InsightsReadyPollSec` (int): timer poll frequency.
-- PaperEA staleness policy inputs:
-  - `InsightsStaleHours = 48` (auto rebuild if aged beyond this; 0=disable age check)
-  - `InsightsMinSourceAdvanceHours = 48` (require sources to be ≥ this much newer than `insights.json`)
-  - `InsightsMinIntervalHours = 24` (minimum interval between rebuilds per symbol|timeframe slice, tracked in-memory)
-  - `InsightsRebuildTimeoutMs = 1800000` (30 minutes, cooperative timeout)
-- Builder logging is behind a verbosity flag and uses a very large chunk size to reduce progress spam; final success/failure logs are always emitted.
+```cpp
+// News filtering
+UseNewsFilter, NewsBufferBeforeMin, NewsBufferAfterMin, NewsImpactMin
 
-## Gating Pipeline (Early + Risk4) and Telemetry
+// Trading windows  
+UsePromotionGate, PromoStartHour, PromoEndHour
 
-Both EAs expose the same gate helpers and inputs for parity:
+// Market regime detection
+UseRegimeGate, RegimeATRPeriod, RegimeMinATRPct, RegimeMaxATRPct
 
-- News gate: `UseNewsFilter`, `NewsBufferBeforeMin`, `NewsBufferAfterMin`, `NewsImpactMin`, `NewsUseFile`, `NewsFileRelPath`.
-- Promotion window: `UsePromotionGate`, `PromoLiveOnly`, `PromoStartHour`, `PromoEndHour`.
-- Regime gate (ATR%): `UseRegimeGate`, `RegimeATRPeriod`, `RegimeMinATRPct`, `RegimeMaxATRPct`.
-- Circuit cooldown: `CircuitCooldownSec`.
+// Circuit breakers and insights
+CircuitCooldownSec, NoConstraintsMode
+InsightsAutoReload, InsightsLiveFreshMinutes, InsightsStaleHours
+```
 
-Pipeline phases and call sites:
+### Execution Pipeline
+1. **Early Phase**: Market condition validation and news filtering
+2. **8-Stage Gate Processing**: Signal refinement through unified gate system
+3. **Risk Management**: Position sizing and portfolio risk assessment
+4. **Execution**: Trade placement with full audit trail and telemetry
 
-1) Early phase (pre-selector/insights)
-   - LiveEA function: `EvaluateAndMaybeExecute_PreSelector()`
-   - PaperEA call: `EarlyGatesAllow()` early in `OnTick()` before any selection/execution
-   - Behavior: block immediately unless `NoConstraintsMode` is enabled (LiveEA uses `NoConstraintsMode`; PaperEA typically runs with it true for data collection)
-
-2) Risk4 phase (pre-execution)
-   - LiveEA function: `EvaluateAndMaybeExecute_PreExecute()`
-   - PaperEA call: `Risk4GatesAllow()` immediately before any execution-like action (simulate parity; PaperEA primarily logs/tracks)
-
-Telemetry and logs:
-
-- Each gate emits a `[TAG] allow|block latency_ms=N` line and a telemetry event with `phase` and `p6_latency_ms`.
-- Tags: `[NEWS]`, `[PROMO]`, `[REGIME]`, `[CIRCUIT]`.
-
-Parity note:
-
-- LiveEA and PaperEA share identical inputs and helper implementations for these gates for consistent behavior and observability. LiveEA wires them via `EvaluateAndMaybeExecute_*` functions; PaperEA uses `EarlyGatesAllow()` in `OnTick()` and exposes `Risk4GatesAllow()` for placement near any execution-equivalent points.
+### Observability Features
+- **Event-Driven Logging**: All system events flow through `EventBus` with priority levels
+- **Real-time Metrics**: Gate success rates, processing times, and system health scoring
+- **Performance Tracking**: Automated threshold optimization based on historical success rates
+- **Cross-EA Compatibility**: Identical configuration and behavior between PaperEA and LiveEA
 
 ## Current Capabilities (PaperEA)
 - Modular strategies via `IStrategy` base class stored in `CArrayObj`.
