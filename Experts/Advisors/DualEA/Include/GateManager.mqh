@@ -5,7 +5,9 @@
 #define __GATEMANAGER_MQH__
 
 #include "LearningBridge.mqh"
-#include "Gates4to7.mqh"
+#include "ConfigManager.mqh"
+#include "EventBus.mqh"
+#include "SystemMonitor.mqh"
 
 // Gate result structure
 struct GateResult
@@ -34,6 +36,7 @@ struct TradingSignal
    double volatility;
    double correlation;
    string regime;
+   string market_regime; // Alias for regime
 };
 
 // Base gate interface
@@ -103,12 +106,14 @@ class CMarketSoapGate : public IGate
 private:
    double m_max_volatility;
    double m_min_liquidity;
+   double m_max_correlation;
    
 public:
-   CMarketSoapGate(double max_vol = 0.02, double min_liq = 1000000)
+   CMarketSoapGate(double max_vol = 0.02, double min_liq = 1000000, double max_corr = 0.8)
    {
       m_max_volatility = max_vol;
       m_min_liquidity = min_liq;
+      m_max_correlation = max_corr;
    }
    
    string GetName() override { return "MarketSoap"; }
@@ -155,9 +160,6 @@ public:
       return result;
    }
    
-   string GetName() override { return "MarketSoap"; }
-   void SetThreshold(double threshold) override { m_max_volatility = threshold; }
-   double GetSuccessRate() override { return 0.78; }
 };
 
 // Gate 3: Strategy Scrub (Strategy Validation)
@@ -171,8 +173,18 @@ public:
    CStrategyScrubGate(double min_wr = 0.55, int min_trades = 10)
       : m_min_win_rate(min_wr), m_min_trades(min_trades)
    {
-      // For now, we'll use confidence as proxy
+   }
+   
+   string GetName() override { return "StrategyScrub"; }
+   void SetThreshold(double threshold) override { m_min_win_rate = threshold; }
+   double GetSuccessRate() override { return 0.82; }
+   
+   GateResult Process(TradingSignal &signal) override
+   {
+      GateResult result;
+      result.processed_at = TimeCurrent();
       
+      // For now, we'll use confidence as proxy
       if(signal.confidence < m_min_win_rate)
       {
          result.passed = false;
@@ -189,10 +201,6 @@ public:
       result.reason = "Strategy validated";
       return result;
    }
-   
-   string GetName() override { return "StrategyScrub"; }
-   void SetThreshold(double threshold) override { m_min_win_rate = threshold; }
-   double GetSuccessRate() override { return 0.82; }
 };
 
 // Gate 4: Risk Wash
@@ -201,6 +209,7 @@ class CRiskWashGate : public IGate
 public:
    string GetName() override { return "RiskWash"; }
    void SetThreshold(double threshold) override { /* Risk threshold adjustment */ }
+   double GetSuccessRate() override { return 0.85; }
    
    GateResult Process(TradingSignal &signal) override
    {
@@ -220,9 +229,6 @@ public:
       result.reason = "Risk assessment passed";
       return result;
    }
-   string GetName() override { return "RiskWash"; }
-   void SetThreshold(double threshold) override {}
-   double GetSuccessRate() override { return 0.85; }
 };
 
 // Gate 5: Performance Wax
@@ -231,6 +237,7 @@ class CPerformanceWaxGate : public IGate
 public:
    string GetName() override { return "PerformanceWax"; }
    void SetThreshold(double threshold) override { /* Performance threshold adjustment */ }
+   double GetSuccessRate() override { return 0.79; }
    
    GateResult Process(TradingSignal &signal) override
    {
@@ -252,9 +259,6 @@ public:
       result.reason = "Performance validation passed";
       return result;
    }
-   string GetName() override { return "PerformanceWax"; }
-   void SetThreshold(double threshold) override {}
-   double GetSuccessRate() override { return 0.79; }
 };
 
 // Gate 6: ML Polish
@@ -263,6 +267,7 @@ class CMLPolishGate : public IGate
 public:
    string GetName() override { return "MLPolish"; }
    void SetThreshold(double threshold) override { /* ML threshold adjustment */ }
+   double GetSuccessRate() override { return 0.82; }
    
    GateResult Process(TradingSignal &signal) override
    {
@@ -290,6 +295,7 @@ class CLiveCleanGate : public IGate
 public:
    string GetName() override { return "LiveClean"; }
    void SetThreshold(double threshold) override { /* Live threshold adjustment */ }
+   double GetSuccessRate() override { return 0.88; }
    
    GateResult Process(TradingSignal &signal) override
    {
@@ -326,17 +332,19 @@ public:
       result.reason = "Final verification passed";
       return result;
    }
-   string GetName() override { return "FinalVerify"; }
-   void SetThreshold(double threshold) override {}
+   
    double GetSuccessRate() override { return 0.95; }
 };
 
-// Main gate manager
+// Main gate manager with unified system integration
 class CGateManager
 {
 private:
    IGate *m_gates[8];
    CLearningBridge *m_learning;
+   CConfigManager *m_config;
+   CEventBus *m_event_bus;
+   CSystemMonitor *m_monitor;
    
    // Helper method to safely access gate
    IGate* GetGate(int index) const
@@ -347,15 +355,62 @@ private:
    }
    string m_symbol;
    int m_timeframe;
+   bool m_unified_mode; // Enable unified system features
    
 public:
-   CGateManager(string symbol, int timeframe, CLearningBridge *learning)
+   CGateManager(string symbol, int timeframe, CLearningBridge *learning, bool unified_mode = true)
    {
       m_symbol = symbol;
       m_timeframe = timeframe;
       m_learning = learning;
+      m_unified_mode = unified_mode;
+      
+      // Initialize unified system components if enabled
+      if(m_unified_mode)
+      {
+         m_config = CConfigManager::GetInstance();
+         m_event_bus = CEventBus::GetInstance();
+         m_monitor = CSystemMonitor::GetInstance();
+         
+         // Configure event bus logging based on config
+         m_event_bus->SetVerboseLogging(m_config->IsVerboseLogging());
+         
+         // Publish initialization event
+         string init_msg = StringFormat("Initialized for %s", symbol);
+         m_event_bus->PublishSystemEvent("GateManager", init_msg);
+      }
+      else
+      {
+         m_config = NULL;
+         m_event_bus = NULL;
+         m_monitor = NULL;
+      }
       
       // Initialize all 8 gates
+      InitializeGates();
+   }
+   
+   ~CGateManager()
+   {
+      if(m_unified_mode && m_event_bus != NULL)
+      {
+         string shutdown_msg = StringFormat("Shutting down for %s", m_symbol);
+         m_event_bus->PublishSystemEvent("GateManager", shutdown_msg);
+      }
+      
+      for(int i = 0; i < 8; i++)
+      {
+         if(m_gates[i] != NULL)
+         {
+            delete m_gates[i];
+            m_gates[i] = NULL;
+         }
+      }
+   }
+   
+   // Initialize gates with configuration
+   void InitializeGates()
+   {
       m_gates[0] = new CSignalRinseGate();
       m_gates[1] = new CMarketSoapGate();
       m_gates[2] = new CStrategyScrubGate();
@@ -364,12 +419,6 @@ public:
       m_gates[5] = new CMLPolishGate();
       m_gates[6] = new CLiveCleanGate();
       m_gates[7] = new CFinalVerifyGate();
-   }
-   
-   ~CGateManager()
-   {
-      for(int i = 0; i < 8; i++)
-         if(m_gates[i] != NULL) delete m_gates[i];
    }
    
    // Process signal through all gates
@@ -394,11 +443,57 @@ public:
       for(int i = 0; i < 8; i++)
       {
          IGate *gate = GetGate(i);
-         if(gate == NULL) continue;
+         GateResult result;
          
-         // Process through the gate
-         GateResult result = gate->Process(current_signal);
+         if(gate == NULL) 
+         {
+            result.passed = false;
+            result.reason = "Gate is null";
+            result.processed_at = TimeCurrent();
+         }
+         else
+         {
+            // Check if gate is enabled in configuration
+            bool gate_enabled = true;
+            if(m_unified_mode && m_config != NULL)
+            {
+               GateConfig gate_config = m_config->GetGateConfig(i);
+               gate_enabled = gate_config.enabled;
+            }
             
+            if(!gate_enabled)
+            {
+               result.passed = true;
+               result.reason = "Gate disabled in configuration";
+               result.processed_at = TimeCurrent();
+            }
+            else if(m_config != NULL && m_config->IsNoConstraintsMode())
+            {
+               result.passed = true;
+               result.reason = "No constraints mode enabled";
+               result.processed_at = TimeCurrent();
+            }
+            else
+            {
+               // Measure processing time
+               datetime start_time = GetMicrosecondCount();
+               
+               // Process through the gate (re-enabled)
+               result = gate->Process(current_signal);
+               
+               // Calculate processing time
+               double processing_time = (GetMicrosecondCount() - start_time) / 1000.0;
+               
+               // Publish gate event if unified mode is enabled
+               if(m_unified_mode && m_event_bus != NULL)
+               {
+                  m_event_bus->PublishGateEvent(gate->GetName(), result.passed, result.reason);
+                  string perf_metric = StringFormat("%s_processing_time", gate->GetName());
+                  m_event_bus->PublishPerformanceEvent(perf_metric, processing_time);
+               }
+            }
+         }
+         
          // Record gate result
          decision.gate_results[i] = result.passed;
          decision.gate_reasons[i] = result.reason;
@@ -435,8 +530,25 @@ public:
       decision.correlation_score = current_signal.correlation;
       decision.market_regime = current_signal.regime;
       
+      // Record decision in learning system
       if(m_learning != NULL)
+      {
          m_learning->RecordDecision(decision);
+         
+         if(m_unified_mode && m_event_bus != NULL)
+         {
+            string decision_msg = StringFormat("Decision recorded: %s", decision.signal_id);
+            m_event_bus->PublishSystemEvent("LearningBridge", decision_msg);
+         }
+      }
+      
+      // Publish trade execution event if unified mode is enabled
+      if(m_unified_mode && m_event_bus != NULL)
+      {
+         string trade_data = StringFormat("%s|%s|%s", decision.signal_id, decision.symbol, 
+                           (decision.executed ? "EXECUTED" : "REJECTED"));
+         m_event_bus->Publish(EVENT_TRADE_EXECUTED, "GateManager", trade_data, 2);
+      }
          
       return true;
    }
@@ -446,9 +558,115 @@ public:
    {
       if(m_learning == NULL) return;
       
-      // TODO: Implement gate threshold updates
-      // This method is temporarily disabled to resolve compilation issues
-      Print("UpdateFromLearning called - implementation pending");
+      if(m_unified_mode && m_config != NULL && m_monitor != NULL)
+      {
+         // Update thresholds based on performance metrics
+         for(int i = 0; i < 8; i++)
+         {
+            double success_rate = m_monitor->GetGateSuccessRate(i);
+            GateConfig config = m_config->GetGateConfig(i);
+            
+            // Adjust threshold based on success rate vs target
+            if(success_rate < config.success_rate_target - 0.05)
+            {
+               // Lower threshold if success rate is too low
+               config.threshold *= 0.95;
+               m_config->SetGateConfig(i, config);
+               
+               if(m_gates[i] != NULL)
+                  m_gates[i]->SetThreshold(config.threshold);
+               
+               if(m_event_bus != NULL)
+               {
+                  string msg = StringFormat("Threshold lowered to %.4f", config.threshold);
+                  string full_msg = StringFormat("%s: %s", config.name, msg);
+                  m_event_bus->PublishSystemEvent("GateManager", full_msg);
+               }
+            }
+            else if(success_rate > config.success_rate_target + 0.05)
+            {
+               // Raise threshold if success rate is too high
+               config.threshold *= 1.05;
+               m_config->SetGateConfig(i, config);
+               
+               if(m_gates[i] != NULL)
+                  m_gates[i]->SetThreshold(config.threshold);
+               
+               if(m_event_bus != NULL)
+               {
+                  string msg = StringFormat("Threshold raised to %.4f", config.threshold);
+                  string full_msg = StringFormat("%s: %s", config.name, msg);
+                  m_event_bus->PublishSystemEvent("GateManager", full_msg);
+               }
+            }
+         }
+      }
+      else
+      {
+         // Legacy implementation for backward compatibility
+         Print("UpdateFromLearning: Using legacy mode");
+      }
+   }
+   
+   // Configuration methods for unified system
+   void SetUnifiedMode(bool enabled) { m_unified_mode = enabled; }
+   bool IsUnifiedMode() { return m_unified_mode; }
+   
+   // Get gate configuration
+   GateConfig GetGateConfiguration(int gate_index)
+   {
+      if(m_unified_mode && m_config != NULL)
+         return m_config->GetGateConfig(gate_index);
+      
+      GateConfig empty;
+      return empty;
+   }
+   
+   // Set gate configuration
+   void SetGateConfiguration(int gate_index, const GateConfig& config)
+   {
+      if(m_unified_mode && m_config != NULL)
+      {
+         m_config->SetGateConfig(gate_index, config);
+         
+         if(m_gates[gate_index] != NULL)
+            m_gates[gate_index]->SetThreshold(config.threshold);
+      }
+   }
+   
+   // Get system health
+   SystemHealth GetSystemHealth()
+   {
+      if(m_unified_mode && m_monitor != NULL)
+         return m_monitor->GetSystemHealth();
+      
+      SystemHealth empty;
+      return empty;
+   }
+   
+   // Print unified system status
+   void PrintSystemStatus()
+   {
+      if(m_unified_mode)
+      {
+         if(m_monitor != NULL)
+         {
+            m_monitor->PrintHealthReport();
+            m_monitor->PrintGateStatistics();
+         }
+         
+         if(m_config != NULL)
+         {
+            Print("\n=== Configuration Status ===");
+            Print("Unified Mode: Enabled");
+            Print("No Constraints Mode: ", m_config->IsNoConstraintsMode());
+            Print("Verbose Logging: ", m_config->IsVerboseLogging());
+         }
+      }
+      else
+      {
+         Print("GateManager: Running in legacy mode");
+      }
    }
 };
 

@@ -84,11 +84,22 @@ private:
    CArrayObj m_decisions;
    int m_max_records;
    
+   // Market regime tracking
+   string m_current_regime;
+   double m_regime_confidence;
+   datetime m_last_regime_update;
+   
 public:
    CLearningBridge(string data_path, int max_records=10000)
    {
       m_data_path = data_path;
       m_max_records = max_records;
+      
+      // Initialize regime tracking
+      m_current_regime = "unknown";
+      m_regime_confidence = 0.0;
+      m_last_regime_update = 0;
+      
       LoadLearningData();
    }
    
@@ -122,8 +133,116 @@ public:
    // Update market regime based on current market conditions
    void UpdateMarketRegime()
    {
-      // This would analyze market conditions and update internal state
-      // For now, it's a placeholder that does nothing
+      // Advanced market regime detection using multiple indicators
+      string current_symbol = Symbol();
+      ENUM_TIMEFRAMES current_tf = Period();
+      
+      // Initialize regime as unknown
+      m_current_regime = "unknown";
+      double regime_confidence = 0.0;
+      
+      // Factor 1: Trend strength using ADX
+      int adx_handle = iADX(current_symbol, current_tf, 14);
+      double adx_buffer[1];
+      if(CopyBuffer(adx_handle, 0, 0, 1, adx_buffer) == 1)
+        {
+         double adx_value = adx_buffer[0];
+         if(adx_value > 25)
+           {
+            m_current_regime = "trending";
+            regime_confidence += 0.3;
+           }
+         else if(adx_value < 15)
+           {
+            m_current_regime = "ranging";
+            regime_confidence += 0.2;
+           }
+        }
+      
+      // Factor 2: Volatility analysis using ATR
+      int atr_handle = iATR(current_symbol, current_tf, 14);
+      double atr_buffer[1];
+      if(CopyBuffer(atr_handle, 0, 0, 1, atr_buffer) == 1)
+        {
+         double current_price = SymbolInfoDouble(current_symbol, SYMBOL_BID);
+         double volatility_pct = (atr_buffer[0] / current_price) * 100.0;
+         
+         if(volatility_pct > 2.0) // High volatility
+           {
+            if(m_current_regime == "trending")
+              m_current_regime = "volatile_trending";
+            else
+              m_current_regime = "volatile";
+            regime_confidence += 0.25;
+           }
+         else if(volatility_pct < 0.5) // Low volatility
+           {
+            if(m_current_regime == "ranging")
+              m_current_regime = "low_vol_ranging";
+            else
+              m_current_regime = "consolidation";
+            regime_confidence += 0.2;
+           }
+        }
+      
+      // Factor 3: Market session analysis
+      datetime current_time = TimeCurrent();
+      MqlDateTime dt;
+      TimeToStruct(current_time, dt);
+      
+      string session_type = "off_hours";
+      if(dt.hour >= 8 && dt.hour <= 12) // London session
+        {
+         session_type = "london";
+         regime_confidence += 0.15;
+        }
+      else if(dt.hour >= 13 && dt.hour <= 17) // NY session
+        {
+         session_type = "newyork";
+         regime_confidence += 0.2;
+        }
+      else if(dt.hour >= 0 && dt.hour <= 6) // Asian session
+        {
+         session_type = "asian";
+         regime_confidence += 0.1;
+        }
+      
+      // Factor 4: RSI momentum for overbought/oversold conditions
+      int rsi_handle = iRSI(current_symbol, current_tf, 14, PRICE_CLOSE);
+      double rsi_buffer[1];
+      if(CopyBuffer(rsi_handle, 0, 0, 1, rsi_buffer) == 1)
+        {
+         double rsi_value = rsi_buffer[0];
+         if(rsi_value > 70)
+           {
+            m_current_regime += "_overbought";
+            regime_confidence += 0.1;
+           }
+         else if(rsi_value < 30)
+           {
+            m_current_regime += "_oversold";
+            regime_confidence += 0.1;
+           }
+        }
+      
+      // Update internal state with regime information
+      m_regime_confidence = MathMin(1.0, regime_confidence);
+      m_last_regime_update = TimeCurrent();
+      
+      // Store regime metadata for analysis
+      MetadataSet("market_regime", m_current_regime);
+      MetadataSet("regime_confidence", DoubleToString(m_regime_confidence, 2));
+      MetadataSet("session_type", session_type);
+      MetadataSet("last_regime_update", TimeToString(m_last_regime_update));
+      
+      // Log regime change if significant
+      static string last_logged_regime = "";
+      if(last_logged_regime != m_current_regime && m_regime_confidence > 0.5)
+        {
+         PrintFormat("Market Regime Updated: %s (confidence: %.2f, session: %s)", 
+                     m_current_regime, m_regime_confidence, session_type);
+         last_logged_regime = m_current_regime;
+        }
    }
    
    // Get successful signals for transfer to live trading

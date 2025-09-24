@@ -284,6 +284,9 @@ public:
    // Trailing management
    void              ConfigureTrailing(const TradeOrder &order);
    void              UpdateTrailingStops();
+   
+   // Find trail configuration by symbol (implementation moved from private section)
+   CTrailConfig*     FindTrailConfig(const string symbol);
   };
 
 //+------------------------------------------------------------------+
@@ -657,4 +660,18 @@ void CTradeManager::UpdateTrailingStops()
            }
         }
      }
+  }
+
+//+------------------------------------------------------------------+
+//| Find trail configuration by symbol                              |
+//+------------------------------------------------------------------+
+CTrailConfig* CTradeManager::FindTrailConfig(const string symbol)
+  {
+   for(int i = 0; i < m_trails.Total(); i++)
+     {
+      CTrailConfig* config = (CTrailConfig*)m_trails.At(i);
+      if(config != NULL && config.symbol == symbol)
+        return config;
+     }
+   return NULL;
   }
