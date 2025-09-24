@@ -11,8 +11,8 @@ This repo currently focuses on the Paper EA with a production‑ready architectu
 ### Architecture (Mermaid)
 
 **Legend:**
-- <span style="color:#4CAF50;font-weight:bold">Green</span>: Implemented
-- <span style="color:#FFC107;font-weight:bold">Yellow</span>: In Progress
+- <span style="color:#4CAF50;font-weight:bold">Green</span>: Implemented & Working
+- <span style="color:#FFC107;font-weight:bold">Yellow</span>: Implemented but Needs Integration/Testing
 - <span style="color:#F44336;font-weight:bold">Red</span>: Planned/Not Implemented
 
 ```mermaid
@@ -22,93 +22,108 @@ flowchart TD
   classDef inprogress fill:#FFC107,color:#222,stroke:#333,stroke-width:2px
   classDef planned fill:#F44336,color:#fff,stroke:#333,stroke-width:2px
 
-  %% Paper side orchestration
-  subgraph Paper
-    PEA[PaperEA]:::implemented
-    REG[Strategy Registry]:::implemented
-    STR[Strategies]:::implemented
-    SEL[Selector & Gates]:::implemented
-    TM[Trade Manager]:::implemented
-    PM[Position Manager]:::implemented
-    EXP[Explore Caps]:::implemented
-    TLP[Telemetry Paper]:::implemented
+  %% Paper EA System (v2 - Enhanced)
+  subgraph Paper[PaperEA v2 System]
+    PEA[PaperEA_v2.mq5]:::implemented
+    GM[GateManager - 8 Gates]:::implemented
+    LB[LearningBridge]:::implemented
+    TM[TradeManager]:::implemented
+    TEL[Telemetry]:::implemented
   end
 
-  %% Knowledge Base in Common Files
-  subgraph KB[Common Files DualEA]
+  %% Strategy System
+  subgraph Strategies[Strategy System]
+    REG[Strategy Registry]:::implemented
+    STR[23 Strategy Files]:::implemented
+    SEL[StrategySelector]:::implemented
+  end
+
+  %% Knowledge Base & Data Files
+  subgraph KB[Knowledge Base - Common Files]
     FEAT[features.csv]:::implemented
     TRD[knowledge_base.csv]:::implemented
-    EVT[knowledge_base_events.csv]:::implemented
-    EC[explore_counts.csv]:::implemented
-    ECD[explore_counts_day.csv]:::implemented
-    TLM_P[telemetry_paper logs]:::inprogress
-    TLM_L[telemetry_live logs]:::planned
     INS[insights.json]:::implemented
     POL[policy.json]:::implemented
-    IRL[insights.reload]:::implemented
-    PRL[policy.reload]:::implemented
+    IRL[insights.reload]:::planned
+    PRL[policy.reload]:::planned
   end
 
-  %% ML trainer
-  subgraph ML[Trainer Python]
+  %% ML Training System
+  subgraph ML[ML Training System]
     TRN[train.py]:::implemented
     PEXP[policy_export.py]:::implemented
+    DSET[dataset.py]:::implemented
+    FEAT_PY[features.py]:::implemented
+    MODEL[model.py]:::implemented
+    ARTIFACTS[artifacts/]:::implemented
   end
 
-  %% Live EA
-  subgraph Live
-    LEA[LiveEA]:::inprogress
-    TLL[Telemetry Live]:::inprogress
+  %% Live EA System
+  subgraph Live[LiveEA System]
+    LEA[LiveEA.mq5]:::inprogress
+    PM[PositionManager]:::inprogress
+    SM[SessionManager]:::inprogress
+    CM[CorrelationManager]:::inprogress
+    VS[VolatilitySizer]:::inprogress
+    IL[InsightsLoader]:::implemented
   end
 
-  %% Data flows from PaperEA
-  PEA --> REG
-  PEA --> STR
+  %% Scripts & Tools
+  subgraph Scripts[Scripts & Tools]
+    IBD[InsightsRebuild.mq5]:::implemented
+    POL_DUMP[PolicyDump.mq5]:::implemented
+    BUILD[Build Scripts]:::implemented
+  end
+
+  %% Data Flow - Paper EA
+  PEA --> GM
+  PEA --> LB
   PEA --> TM
-  PEA --> PM
+  PEA --> TEL
+  GM --> LB
+  
+  %% Strategy Integration
   PEA --> SEL
-  PEA --> TLP
-  TLP --> TLM_P
-  PEA -->|logs| TRD
-  PEA -->|events| EVT
-  STR -->|export features| FEAT
-  PEA -->|features| FEAT
+  SEL --> STR
+  STR --> REG
 
-  %% Exploration caps
-  SEL --> EXP
-  EXP --> EC
-  EXP --> ECD
+  %% Data Export from Paper EA
+  PEA -->|trade data| TRD
+  STR -->|features| FEAT
+  TEL -->|telemetry| FEAT
 
-  %% Insights build and gating
-  IBD[Insights Builder]:::implemented
-  IRL -->|OnTimer trigger| IBD
-  FEAT -->|read| IBD
-  TRD -->|read| IBD
-  IBD -->|write| INS
-  INS -->|load| SEL
-
-  %% ML policy training
+  %% ML Training Pipeline
   FEAT --> TRN
   TRD --> TRN
+  TRN --> ARTIFACTS
   TRN --> PEXP
-  PEXP -->|write| POL
-  PEXP -->|touch| PRL
+  PEXP --> POL
 
-  %% Consumption in Paper and Live
-  POL --> PEA
-  PRL --> PEA
+  %% Insights Generation
+  FEAT --> IBD
+  TRD --> IBD
+  IBD --> INS
+
+  %% Live EA Consumption
   INS --> LEA
   POL --> LEA
-  PRL --> LEA
   LEA --> PM
-  LEA -->|results| TRD
-  LEA -->|events| EVT
-  LEA --> TLL
-  TLL --> TLM_L
+  LEA --> SM
+  LEA --> CM
+  LEA --> VS
+  IL --> LEA
+
+  %% Live EA Data Export (when active)
+  LEA -.->|trade data| TRD
+  LEA -.->|features| FEAT
 ```
 
-**Flow direction is now top-down for easier reading.**
-**See color legend above for implementation status.**
+**Key Implementation Notes:**
+- **PaperEA v2**: Fully implemented with 8-stage gate system, learning bridge, and telemetry
+- **LiveEA**: Core structure implemented but needs integration testing and policy consumption
+- **ML Pipeline**: Complete training and policy export system with TensorFlow/Keras models
+- **Knowledge Base**: File-based system using Common Files for cross-EA data sharing
+- **Strategies**: 23 implemented strategies with registry system
 
 ## Project Structure
 ```
@@ -116,53 +131,138 @@ MQL5/
 ├── Experts/
 │   └── Advisors/
 │       └── DualEA/
-│           ├── PaperEA/                # (Implemented, production-ready)
-│           │   ├── PaperEA.mq5
-│           │   └── build_paperea.bat
-│           ├── LiveEA/                 # (In progress: core loop, gating, policy integration)
-│           │   ├── LiveEA.mq5
+│           ├── PaperEA/                # Paper Trading System
+│           │   ├── PaperEA_v2.mq5     # Enhanced Paper EA with 8-stage gates
+│           │   └── PaperEA_backtest.ini
+│           ├── LiveEA/                 # Live Trading System  
+│           │   ├── LiveEA.mq5         # Live EA with advanced gating
+│           │   ├── LiveEA_StrategyBridge.mqh
+│           │   ├── Telemetry.mqh
 │           │   └── build_liveea.bat
-│           ├── Include/
-│           │   ├── IStrategy.mqh           # (Implemented)
-│           │   ├── StrategySelector.mqh    # (Implemented, needs Phase 5/6/7/8 extensions)
-│           │   ├── TradeManager.mqh        # (Implemented, robust error handling)
-│           │   ├── PositionManager.mqh     # (Planned: integration pending, module implemented)
-│           │   ├── KnowledgeBase.mqh       # (Implemented, robust file I/O)
-│           │   ├── Telemetry.mqh           # (In progress: needs standardization, LiveEA wiring)
-│           │   ├── InsightsLoader.mqh      # (Implemented)
-│           │   ├── Strategies/
-│           │   │   └── ... (8 strategy files)   # (Implemented, modular)
-│           │   └── Indicators/                  # (Implemented)
-│           ├── ML/                      # Python trainer + policy export (Implemented)
-│           │   ├── train.py
-│           │   ├── policy_export.py
-│           │   ├── features.py, model.py, dataset.py
-│           │   ├── artifacts/
-│           │   └── run_train_and_export.bat
-│           └── docs/                    # (Implemented, needs ongoing updates)
-│               ├── DualEA_Action_Framework.md
-│               ├── DualEA_Handbook.md
-│               ├── DualEA_Lifecycle_Handbook.md
-│               ├── PolicySchema.md
-│               ├── PositionManager_Guide.md
-│               └── ...
-├── Scripts/
-│   └── DualEA/
-│       ├── InsightsRebuild.mq5          # (Implemented, used for insights.json rebuild)
-│       ├── PolicyReload.mq5             # (Implemented)
-│       ├── ValidateInsights.mq5         # (Implemented, needs CI wiring)
-│       └── KBAppendSmoke.mq5            # (Implemented, smoke test for KB append)
-└── Files/ (repo-local; runtime writes go to MT5 Common\Files\DualEA)
-  # (Implemented, all runtime outputs are in Common Files)
+│           ├── Include/                # Core System Components
+│           │   ├── IStrategy.mqh           # Strategy interface
+│           │   ├── StrategySelector.mqh    # Strategy selection & scoring
+│           │   ├── TradeManager.mqh        # Trade execution management
+│           │   ├── PositionManager.mqh     # Position management
+│           │   ├── KnowledgeBase.mqh       # Data persistence layer
+│           │   ├── GateManager.mqh         # 8-stage gate system
+│           │   ├── LearningBridge.mqh      # Learning data bridge
+│           │   ├── Telemetry.mqh           # Telemetry system
+│           │   ├── TelemetryStandard.mqh   # Standard telemetry
+│           │   ├── InsightsLoader.mqh      # Insights JSON loader
+│           │   ├── SessionManager.mqh      # Session management
+│           │   ├── CorrelationManager.mqh  # Correlation analysis
+│           │   ├── VolatilitySizer.mqh     # Volatility-based sizing
+│           │   ├── Strategies/             # Strategy Implementations
+│           │   │   ├── Registry.mqh        # Strategy registry
+│           │   │   ├── ADXStrategy.mqh
+│           │   │   ├── BollAveragesStrategy.mqh
+│           │   │   ├── MeanReversionBBStrategy.mqh
+│           │   │   ├── SuperTrendADXKamaStrategy.mqh
+│           │   │   ├── RSI2BBReversionStrategy.mqh
+│           │   │   ├── DonchianATRBreakoutStrategy.mqh
+│           │   │   └── ... (17 more strategies)
+│           │   └── Indicators/             # Technical Indicators
+│           │       ├── ATR.mqh
+│           │       ├── Donchian.mqh
+│           │       ├── KAMA.mqh
+│           │       └── ... (7 more indicators)
+│           ├── ML/                      # Machine Learning Pipeline
+│           │   ├── train.py            # Model training script
+│           │   ├── policy_export.py    # Policy generation
+│           │   ├── dataset.py          # Data loading utilities
+│           │   ├── features.py         # Feature engineering
+│           │   ├── model.py            # Model definitions
+│           │   ├── policy.py           # Policy utilities
+│           │   ├── artifacts/          # Model artifacts
+│           │   │   ├── tf_model.keras  # Trained model
+│           │   │   ├── scaler.pkl      # Feature scaler
+│           │   │   └── features.json   # Feature definitions
+│           │   └── requirements.txt    # Python dependencies
+│           ├── Scripts/                # Utility Scripts
+│           │   ├── InsightsRebuild.mq5 # Rebuild insights from data
+│           │   └── PolicyDump.mq5      # Policy debugging
+│           ├── docs/                   # Documentation
+│           │   ├── README.md           # This file
+│           │   ├── CORE_IMPLEMENTATION_PLAN.md
+│           │   ├── DualEA_Handbook.md
+│           │   └── ... (11 more docs)
+│           ├── config/                 # Configuration
+│           │   └── learning_config.json
+│           ├── logs/                   # Log files
+│           ├── results/                # Test results
+│           └── build_*.bat             # Build scripts
 ```
 
-**Notes:**
-- `PaperEA` is fully implemented and production-ready for data collection and ML pipeline.
-- `LiveEA` is in progress: core loop, gating, and policy integration are partially complete; risk/circuit breakers, advanced telemetry, and PositionManager integration are planned.
-- `PositionManager.mqh` module is implemented but not yet integrated (pending feature flag wiring in LiveEA).
-- `Telemetry.mqh` is being standardized and extended for LiveEA.
-- All scripts under `Scripts/DualEA/` are implemented; CI integration and scheduled validation are recommended next steps.
-- Documentation is up to date but should be maintained as features evolve.
+### Common Files Structure (Shared Data)
+```
+Terminal/Common/Files/DualEA/
+├── features.csv           # Feature data from strategies (with rotation)
+├── knowledge_base.csv     # Trade execution records
+├── insights.json          # Performance analytics per strategy/symbol/timeframe
+├── policy.json           # ML-generated trading policy with confidence thresholds
+├── insights.reload       # Trigger file for insights rebuild (planned)
+└── policy.reload         # Trigger file for policy reload (planned)
+```
+
+## Current Implementation Status
+
+### ✅ Fully Implemented & Working
+- **PaperEA v2**: Complete paper trading system with 8-stage gate processing
+- **GateManager**: 8 gates (Signal Rinse, Market Soap, Strategy Scrub, Risk Wash, Performance Wax, ML Polish, Live Clean, Final Verify)
+- **Strategy System**: 23 trading strategies with modular architecture
+- **Knowledge Base**: File-based persistence with CSV rotation and robust I/O
+- **ML Training Pipeline**: Complete TensorFlow/Keras training with feature engineering
+- **Policy Export**: ML model to policy.json conversion with scaling parameters
+- **Insights System**: Performance analytics generation from trade data
+- **Build System**: Automated compilation and deployment scripts
+
+### 🔄 Implemented but Needs Integration/Testing  
+- **LiveEA Core**: Main structure with advanced gating system implemented
+- **Position Management**: Core functionality implemented, needs LiveEA integration
+- **Session Management**: Trading session controls implemented
+- **Correlation Management**: Portfolio correlation analysis implemented
+- **Volatility Sizing**: ATR-based position sizing implemented
+- **Telemetry System**: Data collection framework, needs standardization
+
+### 🔴 Planned/Not Implemented
+- **Live Policy Consumption**: LiveEA reading and applying ML policies
+- **Real-time Insights Reload**: Automatic insights refresh triggers
+- **Policy Reload Triggers**: Dynamic policy updates without EA restart
+- **Advanced Risk Management**: Drawdown controls and circuit breakers
+- **Multi-timeframe Coordination**: Cross-timeframe strategy coordination
+
+## Key Features
+
+### 8-Stage Gate System (PaperEA v2)
+1. **Signal Rinse**: Basic signal validation and confidence filtering
+2. **Market Soap**: Market context analysis (volatility, correlation, regime)
+3. **Strategy Scrub**: Strategy-specific validation and parameter adjustment
+4. **Risk Wash**: Risk-based position sizing and validation
+5. **Performance Wax**: Backtest-based performance validation
+6. **ML Polish**: Machine learning confidence scoring
+7. **Live Clean**: Live market condition validation
+8. **Final Verify**: Final trade validation before execution
+
+### Machine Learning Pipeline
+- **Feature Engineering**: 50+ technical indicators and market features
+- **Model Training**: TensorFlow/Keras with LSTM and Dense model support
+- **Policy Generation**: Automated policy.json creation with confidence thresholds
+- **Yahoo Finance Integration**: Market data enrichment for training
+- **Time Series Validation**: Proper temporal splits for backtesting
+
+### Strategy Library (23 Strategies)
+- **Trend Following**: ADX, SuperTrend, Donchian Breakout
+- **Mean Reversion**: Bollinger Bands, RSI2, VWAP Reversion  
+- **Momentum**: Awesome Oscillator, Bears/Bulls Power
+- **Multi-Asset**: Forex, Gold, Indices specialized strategies
+- **Advanced**: Multi-indicator fusion, Opening Range Breakout
+
+### Data Management
+- **Knowledge Base**: Centralized trade logging with CSV rotation
+- **Features Export**: Long-format feature data for ML training
+- **Insights Generation**: Performance analytics per strategy/symbol/timeframe
+- **Common Files**: Cross-EA data sharing via MT5 Common Files directory
 
 ## Insights Handshake and Live Auto-Reload
 
