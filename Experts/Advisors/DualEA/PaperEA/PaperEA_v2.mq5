@@ -536,7 +536,7 @@ int OnInit()
       else
       {
          // Configure selector weights
-         g_selector.ConfigureWeights(SelW_MR, SelW_Exp, SelW_WR, SelW_DD);
+         g_selector.ConfigureWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
          g_selector.ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
          g_selector.SetStrictThresholds(SelStrictThresholds);
          Print("Strategy Selector initialized with custom weights");
@@ -544,7 +544,6 @@ int OnInit()
          // Initialize the complete strategy registry
          bool registry_success = InitializeStrategyRegistry();
          if(!registry_success)
-{{ ... }}
          {
             Print("WARNING: Strategy registry initialization failed - limited strategy selection available");
          }
@@ -1917,7 +1916,7 @@ void ExecutePaperTrade(CSignalDecision &decision)
    paper_pos.strategy = decision.strategy;
    paper_pos.signal_id = decision.signal_id;
    paper_pos.entry_price = decision.final_price;
-   paper_pos.volume = decision.volume;
+   paper_pos.volume = decision.final_volume;
    paper_pos.position_type = decision.order_type == ORDER_TYPE_BUY ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
    paper_pos.entry_time = TimeCurrent();
    paper_pos.magic_number = decision.magic_number;
@@ -2212,6 +2211,8 @@ void ExportEnhancedFeatures(const CSignalDecision &decision, const string strate
    // Create comprehensive feature set
    string features[];
    ArrayResize(features, 15);
+   datetime now = TimeCurrent();
+   MqlDateTime _dt; TimeToStruct(now, _dt); int _hour = _dt.hour;
    
    features[0] = "strategy:" + strategy_name;
    features[1] = "symbol:" + decision.symbol;
@@ -2223,14 +2224,14 @@ void ExportEnhancedFeatures(const CSignalDecision &decision, const string strate
    features[7] = "volatility:" + DoubleToString(GetVolatility(), 4);
    features[8] = "correlation:" + DoubleToString(GetCorrelation(), 3);
    features[9] = "market_regime:" + GetMarketRegime();
-   features[10] = "session_hour:" + IntegerToString(TimeHour(TimeCurrent()));
+   features[10] = "session_hour:" + IntegerToString(_hour);
    features[11] = "spread_points:" + DoubleToString((SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / _Point, 1);
    features[12] = "equity:" + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2);
    features[13] = "balance:" + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2);
    features[14] = "margin_level:" + DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL), 2);
    
    // Export to features system
-   g_features.ExportFeatures(decision.symbol, strategy_name, TimeCurrent(), features);
+   g_features.ExportFeatures(decision.symbol, strategy_name, now, features);
 }
 
 //+------------------------------------------------------------------+
@@ -2273,9 +2274,9 @@ void OnTimer()
       if(CheckPointer(g_gate_manager) != POINTER_INVALID)
          g_gate_manager.UpdateFromLearning();
       
-      // Update strategy selector insights
+      // Refresh recent overlays for selector (if enabled)
       if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
-         g_selector.UpdateInsights();
+         g_selector.EnsureRecentLoaded(SelRecentDays);
       
       // Transfer successful signals to live EA (if learning bridge available)
       if(CheckPointer(g_learning_bridge) != POINTER_INVALID)
