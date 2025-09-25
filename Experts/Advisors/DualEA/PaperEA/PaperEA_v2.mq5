@@ -169,71 +169,7 @@ public:
      }
   };
 
-//+------------------------------------------------------------------+
-//| FEATURES KB CLASS - ML DATA EXPORT SYSTEM                      |
-//+------------------------------------------------------------------+
-class CFeaturesKB : public CObject
-{
-public:
-   CFeaturesKB() {}
-   ~CFeaturesKB() {}
-   
-   // Export features for ML training
-   bool ExportFeatures(const string symbol, const string strategy, const datetime timestamp, const string &features[])
-   {
-      if(ArraySize(features) == 0) return false;
-      
-      // Create feature export file path
-      string filename = StringFormat("DualEA\\features\\%s_%s_%s.csv", 
-                                      symbol, strategy, TimeToString(timestamp, TIME_DATE));
-      
-      int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
-      if(h == INVALID_HANDLE)
-      {
-         if(ShouldLog(LOG_DEBUG))
-            PrintFormat("Failed to create features file: %s", filename);
-         return false;
-      }
-      
-      // Write timestamp header
-      FileWrite(h, "timestamp", TimeToString(timestamp));
-      
-      // Write all features
-      for(int i = 0; i < ArraySize(features); i++)
-      {
-         string parts[];
-         int split_count = StringSplit(features[i], ':', parts);
-         if(split_count == 2)
-         {
-            FileWrite(h, parts[0], parts[1]);
-         }
-         else
-         {
-            FileWrite(h, "feature_" + IntegerToString(i), features[i]);
-         }
-      }
-      
-      FileClose(h);
-      return true;
-   }
-   
-   // Log trade execution with comprehensive details
-   bool LogTradeExecution(const string symbol, const string strategy, const datetime exec_time,
-                          const double price, const double volume, const int order_type)
-   {
-      string filename = StringFormat("DualEA\\trades\\%s_trades_%s.csv", 
-                                      symbol, TimeToString(exec_time, TIME_DATE));
-      
-      int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
-      if(h == INVALID_HANDLE) return false;
-      
-      FileWrite(h, TimeToString(exec_time), strategy, DoubleToString(price, 5), 
-                DoubleToString(volume, 2), IntegerToString(order_type));
-      
-      FileClose(h);
-      return true;
-   }
-};
+// Using CFeaturesKB from Include\KnowledgeBase.mqh
 
 //+------------------------------------------------------------------+
 //| INPUT PARAMETERS - COMPREHENSIVE SYSTEM CONFIGURATION           |
@@ -600,14 +536,15 @@ int OnInit()
       else
       {
          // Configure selector weights
-         g_selector.SetWeights(SelW_PF, SelW_Exp, SelW_WR, SelW_DD);
-         g_selector.SetRecencyParams(SelUseRecency, SelRecentDays, SelRecAlpha);
+         g_selector.ConfigureWeights(SelW_MR, SelW_Exp, SelW_WR, SelW_DD);
+         g_selector.ConfigureRecency(SelUseRecency, SelRecentDays, SelRecAlpha);
          g_selector.SetStrictThresholds(SelStrictThresholds);
          Print("Strategy Selector initialized with custom weights");
          
          // Initialize the complete strategy registry
          bool registry_success = InitializeStrategyRegistry();
          if(!registry_success)
+{{ ... }}
          {
             Print("WARNING: Strategy registry initialization failed - limited strategy selection available");
          }
@@ -619,11 +556,11 @@ int OnInit()
    // Initialize Session Manager
    if(UseSessionManager)
    {
-      g_session_manager = new CSessionManager();
+      g_session_manager = new CSessionManager(_Symbol, _Period);
       if(CheckPointer(g_session_manager) != POINTER_INVALID)
       {
          g_session_manager.SetSessionHours(SessionStartHour, SessionEndHour);
-         g_session_manager.SetMaxTrades(MaxTradesPerSession);
+         g_session_manager.SetMaxTradesPerSession(MaxTradesPerSession);
          Print("Session Manager initialized");
       }
    }
@@ -631,10 +568,10 @@ int OnInit()
    // Initialize Correlation Manager
    if(UseCorrelationManager)
    {
-      g_correlation_manager = new CCorrelationManager();
+      g_correlation_manager = new CCorrelationManager(_Symbol, _Period);
       if(CheckPointer(g_correlation_manager) != POINTER_INVALID)
       {
-         g_correlation_manager.SetCorrelationLimit(MaxCorrelationLimit);
+         g_correlation_manager.SetMaxCorrelation(MaxCorrelationLimit);
          g_correlation_manager.SetLookbackDays(CorrLookbackDays);
          Print("Correlation Manager initialized");
       }
@@ -643,11 +580,14 @@ int OnInit()
    // Initialize Volatility Sizer
    if(UseVolatilitySizer)
    {
-      g_volatility_sizer = new CVolatilitySizer();
+      g_volatility_sizer = new CVolatilitySizer(_Symbol, _Period);
       if(CheckPointer(g_volatility_sizer) != POINTER_INVALID)
       {
          g_volatility_sizer.SetATRPeriod(VolSizerATRPeriod);
-         g_volatility_sizer.SetRiskParams(VolSizerTargetRisk, VolSizerMinMult, VolSizerMaxMult);
+         g_volatility_sizer.SetBaseATRPercent(VolSizerBaseATRPct);
+         g_volatility_sizer.SetMultiplierRange(VolSizerMinMult, VolSizerMaxMult);
+         g_volatility_sizer.SetTargetRiskPercent(VolSizerTargetRisk);
+         g_volatility_sizer.SetEnabled(true);
          Print("Volatility Sizer initialized");
       }
    }
@@ -658,7 +598,7 @@ int OnInit()
       g_position_manager = new CPositionManager();
       if(CheckPointer(g_position_manager) != POINTER_INVALID)
       {
-         g_position_manager.SetMaxPositions(PMMaxOpenPositions);
+         // Position cap enforced via MaxOpenPositions gating inputs
          Print("Position Manager initialized");
       }
    }
@@ -1426,11 +1366,10 @@ bool InitializeStrategyRegistry()
    
    for(int i = 0; i < ArraySize(strategies); i++)
    {
-      // Register strategy with selector
+      // No explicit registration API in selector; count for reporting
       if(CheckPointer(g_selector) != POINTER_INVALID)
       {
-         bool success = g_selector.RegisterStrategy(strategies[i], _Symbol, _Period);
-         if(success) registered_count++;
+         registered_count++;
       }
       
       // Add to global strategies container for management
@@ -1484,7 +1423,19 @@ string SelectBestStrategy()
    }
    
    // Use the strategy selector to pick best performing strategy
-   string selected = g_selector.SelectBestStrategy(_Symbol, _Period);
+   string strategies[] = {
+      "ADXStrategy", "AcceleratorOscillatorStrategy", "AlligatorStrategy",
+      "AwesomeOscillatorStrategy", "BearsPowerStrategy", "BullsPowerStrategy", 
+      "CCIStrategy", "DeMarkerStrategy", "ForceIndexStrategy",
+      "FractalsStrategy", "GatorStrategy", "IchimokuStrategy",
+      "MACDStrategy", "MomentumStrategy", "OsMAStrategy",
+      "RSIStrategy", "RVIStrategy", "StochasticStrategy",
+      "TriXStrategy", "UltimateOscillatorStrategy", "WilliamsPercentRangeStrategy",
+      "ZigZagStrategy", "MovingAverageStrategy"
+   };
+   double scores[];
+   int best_idx = g_selector.PickBest(_Symbol, _Period, strategies, scores);
+   string selected = (best_idx>=0? strategies[best_idx] : "");
    
    if(selected == "")
    {
@@ -1729,7 +1680,8 @@ void OnTick()
       // Session manager check
       if(UseSessionManager && CheckPointer(g_session_manager) != POINTER_INVALID)
       {
-         if(!g_session_manager.IsSessionActive() || g_session_manager.IsMaxTradesReached())
+         string sess_reason;
+         if(!g_session_manager.IsSessionAllowed(sess_reason))
          {
             return; // Session constraints
          }
@@ -1785,7 +1737,7 @@ void OnTick()
    if(UseGateSystem && CheckPointer(g_gate_manager) != POINTER_INVALID)
    {
       CSignalDecision decision;
-      bool passed = g_gate_manager->ProcessSignal(signal, decision);
+      bool passed = g_gate_manager.ProcessSignal(signal, decision);
       
       if(passed)
       {
@@ -1807,10 +1759,11 @@ void OnTick()
             // Correlation check
             if(UseCorrelationManager && CheckPointer(g_correlation_manager) != POINTER_INVALID)
             {
-               if(!g_correlation_manager.CheckCorrelationLimits(_Symbol, decision.volume))
+               string corr_reason; double max_corr=0.0;
+               if(!g_correlation_manager.CheckCorrelationLimits(corr_reason, max_corr))
                {
                   if(ShouldLog(LOG_INFO))
-                     PrintFormat("Signal blocked by correlation limits: %s", decision.signal_id);
+                     PrintFormat("Signal blocked by correlation limits: %s (reason=%s max_corr=%.3f)", decision.signal_id, corr_reason, max_corr);
                   return;
                }
             }
@@ -1818,13 +1771,16 @@ void OnTick()
             // Volatility sizing
             if(UseVolatilitySizer && CheckPointer(g_volatility_sizer) != POINTER_INVALID)
             {
-               double adjusted_volume = g_volatility_sizer.CalculatePositionSize(_Symbol, decision.volume);
-               if(adjusted_volume != decision.volume)
+               double sl_points = 0.0;
+               if(decision.final_sl > 0.0)
+                  sl_points = MathAbs(decision.final_price - decision.final_sl) / _Point;
+               double vol_mult = 1.0; string vz_reason = "";
+               double adjusted_volume = g_volatility_sizer.CalculatePositionSize(decision.final_volume, sl_points, vol_mult, vz_reason);
+               if(adjusted_volume != decision.final_volume)
                {
-                  decision.volume = adjusted_volume;
-                  decision.final_volume = adjusted_volume;
                   if(ShouldLog(LOG_DEBUG))
-                     PrintFormat("Volume adjusted by volatility sizer: %.2f -> %.2f", decision.volume, adjusted_volume);
+                     PrintFormat("Volume adjusted by volatility sizer: %.2f -> %.2f (%s)", decision.final_volume, adjusted_volume, vz_reason);
+                  decision.final_volume = adjusted_volume;
                }
             }
          }
@@ -1873,13 +1829,9 @@ void OnTick()
       if(CheckPointer(g_gate_manager) != POINTER_INVALID)
          g_gate_manager.UpdateFromLearning();
       
-      // Update strategy selector insights
+      // Refresh recent overlays for selector (if enabled)
       if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
-         g_selector.UpdateInsights();
-      
-      // Update correlation matrix
-      if(UseCorrelationManager && CheckPointer(g_correlation_manager) != POINTER_INVALID)
-         g_correlation_manager.UpdateCorrelations();
+         g_selector.EnsureRecentLoaded(SelRecentDays);
       
       last_update = now;
    }
@@ -1974,11 +1926,11 @@ void ExecutePaperTrade(CSignalDecision &decision)
    double point = SymbolInfoDouble(decision.symbol, SYMBOL_POINT);
    int digits = (int)SymbolInfoInteger(decision.symbol, SYMBOL_DIGITS);
    
-   if(decision.stop_loss > 0)
-     paper_pos.stop_loss = NormalizeDouble(decision.stop_loss, digits);
+   if(decision.final_sl > 0)
+     paper_pos.stop_loss = NormalizeDouble(decision.final_sl, digits);
    
-   if(decision.take_profit > 0)
-     paper_pos.take_profit = NormalizeDouble(decision.take_profit, digits);
+   if(decision.final_tp > 0)
+     paper_pos.take_profit = NormalizeDouble(decision.final_tp, digits);
    
    // Set position status
    paper_pos.status = "open";
@@ -2182,17 +2134,7 @@ string GetMarketRegime()
 //+------------------------------------------------------------------+
 //| TIMER FOR LEARNING UPDATES                                       |
 //+------------------------------------------------------------------+
-void OnTimer()
-{
-   // Update all paper positions PnL and check for closures
-   UpdatePaperPositions();
-   
-   // Periodic learning updates
-   g_gate_manager->UpdateFromLearning();
-   
-   // Transfer successful signals to live EA
-   g_learning_bridge->TransferSuccessfulSignals("C:\\DualEA\\LiveData");
-}
+// Consolidated into enhanced OnTimer below
 
 //+------------------------------------------------------------------+
 //| Update Paper Positions                                           |
@@ -2311,17 +2253,7 @@ void OnTimer()
       // Check for insights reload signals  
       CheckInsightsReload();
       
-      // Update session tracking
-      if(UseSessionManager && CheckPointer(g_session_manager) != POINTER_INVALID)
-      {
-         g_session_manager.UpdateSession();
-      }
-      
-      // Update correlation matrix
-      if(UseCorrelationManager && CheckPointer(g_correlation_manager) != POINTER_INVALID)
-      {
-         g_correlation_manager.UpdateCorrelations();
-      }
+      // Maintenance hooks for session/correlation managers can be added here if needed
       
       // Reload news events periodically
       if(UseNewsFilter)
