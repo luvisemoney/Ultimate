@@ -199,7 +199,7 @@ public:
       return m_loaded;
      }
 
-   double GetPolicyProb(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe) const
+   double GetPolicyProb(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe)
      {
       // Sanity: invalid timeframe -> unknown
       if((int)timeframe <= 0) return -1.0;
@@ -226,7 +226,7 @@ public:
       return -1.0; // No slice found
      }
 
-   bool HasSlice(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe) const
+   bool HasSlice(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe)
      {
       if(!m_loaded) return false;
       
@@ -236,7 +236,7 @@ public:
      }
    
    // Get full policy slice data
-   bool GetPolicySlice(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe, PolicySlice &slice) const
+   bool GetPolicySlice(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe, PolicySlice &slice)
      {
       if(!m_loaded) return false;
       
@@ -256,14 +256,13 @@ public:
      }
    
    // Get policy scaling factors
-   bool GetPolicyScaling(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe,
-                         double &sl_scale, double &tp_scale, double &trail_atr_mult) const
+   bool GetPolicyScaling(string strategy, string symbol, ENUM_TIMEFRAMES timeframe,
+                        double &sl_scale, double &tp_scale, double &trail_atr_mult)
      {
       PolicySlice slice;
       if(GetPolicySlice(strategy, symbol, timeframe, slice))
         {
          sl_scale = slice.sl_scale;
-         tp_scale = slice.tp_scale;
          trail_atr_mult = slice.trail_atr_mult;
          return true;
         }
@@ -276,7 +275,7 @@ public:
      }
    
    // Get loaded status and statistics
-   bool IsLoaded() const { return m_loaded; }
+   bool IsLoaded() { return m_loaded; }
    int GetSliceCount() const { return ArraySize(m_slices); }
    string GetPolicyPath() const { return m_policy_path; }
    
