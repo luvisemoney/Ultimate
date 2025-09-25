@@ -20,6 +20,11 @@ public:
    double original_sl;         // Original stop loss
    double original_tp;         // Original take profit
    double original_volume;     // Original lot size
+   // Additional metadata used by PaperEA
+   string strategy;            // Strategy name
+   int order_type;             // ORDER_TYPE_* for execution
+   int magic_number;           // Magic number for tagging
+   double confidence;          // Signal confidence
    
    // Gate processing results
    bool gate_results[8];       // Results for each gate (0-7)
@@ -35,6 +40,8 @@ public:
    double final_volume;        // Final lot size
    double outcome;             // Trade result (profit/loss)
    datetime close_time;        // When trade closed
+   datetime execution_time;    // Execution time
+   double execution_price;     // Actual filled price
    
    // Learning data
    string market_regime;       // Market condition at time
@@ -53,6 +60,10 @@ public:
       original_sl = 0;
       original_tp = 0;
       original_volume = 0;
+      strategy = "";
+      order_type = 0;
+      magic_number = 0;
+      confidence = 0.0;
       executed = false;
       final_price = 0;
       final_sl = 0;
@@ -60,6 +71,8 @@ public:
       final_volume = 0;
       outcome = 0;
       close_time = 0;
+      execution_time = 0;
+      execution_price = 0.0;
       market_regime = "";
       volatility = 0;
       correlation_score = 0;
@@ -83,12 +96,11 @@ private:
    string m_data_path;
    CArrayObj m_decisions;
    int m_max_records;
-   
-   // Market regime tracking
+   string m_metadata_keys[];
+   string m_metadata_values[];
    string m_current_regime;
    double m_regime_confidence;
    datetime m_last_regime_update;
-   
 public:
    CLearningBridge(string data_path, int max_records=10000)
    {
@@ -100,14 +112,60 @@ public:
       m_regime_confidence = 0.0;
       m_last_regime_update = 0;
       
+      ArrayResize(m_metadata_keys, 0);
+      ArrayResize(m_metadata_values, 0);
+      
       LoadLearningData();
    }
    
-   ~CLearningBridge()
+   // Metadata helpers --------------------------------------------------
+   void MetadataSet(const string key, const string value)
    {
-      SaveLearningData();
+      if(StringLen(key) == 0)
+         return;
+      int count = ArraySize(m_metadata_keys);
+      for(int i = 0; i < count; i++)
+      {
+         if(m_metadata_keys[i] == key)
+         {
+            m_metadata_values[i] = value;
+            return;
+         }
+      }
+      ArrayResize(m_metadata_keys, count + 1);
+      ArrayResize(m_metadata_values, count + 1);
+      m_metadata_keys[count] = key;
+      m_metadata_values[count] = value;
    }
    
+   string MetadataGet(const string key, const string def_value = "") const
+   {
+      int count = ArraySize(m_metadata_keys);
+      for(int i = 0; i < count; i++)
+      {
+         if(m_metadata_keys[i] == key)
+            return m_metadata_values[i];
+      }
+      return def_value;
+   }
+   
+   bool MetadataHas(const string key) const
+   {
+      int count = ArraySize(m_metadata_keys);
+      for(int i = 0; i < count; i++)
+      {
+         if(m_metadata_keys[i] == key)
+            return true;
+      }
+      return false;
+   }
+
+   void MetadataClear()
+   {
+      ArrayResize(m_metadata_keys, 0);
+      ArrayResize(m_metadata_values, 0);
+   }
+
    // Record a decision (alias for RecordSignal for compatibility)
    void RecordDecision(CSignalDecision &decision)
    {

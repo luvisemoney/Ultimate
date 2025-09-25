@@ -193,24 +193,25 @@ public:
    // Convenience methods for common events
    void PublishGateEvent(const string& gate_name, bool passed, const string& reason)
    {
-      string data = gate_name + "|" + (passed ? "PASS" : "FAIL") + "|" + reason;
+      string data = StringFormat("%s|%s|%s", gate_name, (passed ? "PASS" : "FAIL"), reason);
       Publish(EVENT_GATE_PROCESSED, "GateManager", data, 1);
    }
    
    void PublishSignalEvent(const string& signal_id, const string& symbol, double confidence)
    {
-      string data = signal_id + "|" + symbol + "|" + DoubleToString(confidence, 3);
+      string data = StringFormat("%s|%s|%s", signal_id, symbol, DoubleToString(confidence, 3));
       Publish(EVENT_SIGNAL_GENERATED, "SignalGenerator", data, 1);
    }
    
    void PublishInsightsEvent(const string& action, const string& details)
    {
-      Publish(EVENT_INSIGHTS_UPDATED, "InsightsManager", action + "|" + details, 1);
+      string data = StringFormat("%s|%s", action, details);
+      Publish(EVENT_INSIGHTS_UPDATED, "InsightsManager", data, 1);
    }
    
    void PublishTradeEvent(const string& trade_id, const string& action, double result)
    {
-      string data = trade_id + "|" + action + "|" + DoubleToString(result, 2);
+      string data = StringFormat("%s|%s|%s", trade_id, action, DoubleToString(result, 2));
       Publish(EVENT_TRADE_EXECUTED, "TradeManager", data, 2);
    }
    

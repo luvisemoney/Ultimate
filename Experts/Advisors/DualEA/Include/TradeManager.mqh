@@ -665,11 +665,11 @@ void CTradeManager::UpdateTrailingStops()
 //+------------------------------------------------------------------+
 //| Find trail configuration by symbol                              |
 //+------------------------------------------------------------------+
-CTrailConfig* CTradeManager::FindTrailConfig(const string symbol)
+CTradeManager::CTrailConfig* CTradeManager::FindTrailConfig(const string symbol)
   {
    for(int i = 0; i < m_trails.Total(); i++)
      {
-      CTrailConfig* config = (CTrailConfig*)m_trails.At(i);
+      CTradeManager::CTrailConfig* config = (CTradeManager::CTrailConfig*)m_trails.At(i);
       if(config != NULL && config.symbol == symbol)
         return config;
      }

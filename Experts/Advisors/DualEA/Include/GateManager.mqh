@@ -81,11 +81,14 @@ public:
          return result;
       }
       
-      double spread = 0;
-      double ask = 0;
-      SymbolInfoDouble(signal.symbol, SYMBOL_SPREAD, spread);
+      long spread_points = 0;
+      double point = 0.0;
+      double ask = 0.0;
+      SymbolInfoInteger(signal.symbol, SYMBOL_SPREAD, spread_points);
+      SymbolInfoDouble(signal.symbol, SYMBOL_POINT, point);
       SymbolInfoDouble(signal.symbol, SYMBOL_ASK, ask);
-      double spread_ratio = spread / ask;
+      double spread_price = (double)spread_points * point;
+      double spread_ratio = (ask > 0.0 ? spread_price / ask : 1e9);
       
       if(spread_ratio > m_max_spread_ratio)
       {
@@ -373,11 +376,11 @@ public:
          m_monitor = CSystemMonitor::GetInstance();
          
          // Configure event bus logging based on config
-         m_event_bus->SetVerboseLogging(m_config->IsVerboseLogging());
+         m_event_bus.SetVerboseLogging(m_config.IsVerboseLogging());
          
          // Publish initialization event
          string init_msg = StringFormat("Initialized for %s", symbol);
-         m_event_bus->PublishSystemEvent("GateManager", init_msg);
+         m_event_bus.PublishSystemEvent("GateManager", init_msg);
       }
       else
       {
@@ -395,7 +398,7 @@ public:
       if(m_unified_mode && m_event_bus != NULL)
       {
          string shutdown_msg = StringFormat("Shutting down for %s", m_symbol);
-         m_event_bus->PublishSystemEvent("GateManager", shutdown_msg);
+         m_event_bus.PublishSystemEvent("GateManager", shutdown_msg);
       }
       
       for(int i = 0; i < 8; i++)
@@ -407,7 +410,7 @@ public:
          }
       }
    }
-   
+
    // Initialize gates with configuration
    void InitializeGates()
    {
@@ -457,7 +460,7 @@ public:
             bool gate_enabled = true;
             if(m_unified_mode && m_config != NULL)
             {
-               GateConfig gate_config = m_config->GetGateConfig(i);
+               GateConfig gate_config = m_config.GetGateConfig(i);
                gate_enabled = gate_config.enabled;
             }
             
@@ -467,7 +470,7 @@ public:
                result.reason = "Gate disabled in configuration";
                result.processed_at = TimeCurrent();
             }
-            else if(m_config != NULL && m_config->IsNoConstraintsMode())
+            else if(m_config != NULL && m_config.IsNoConstraintsMode())
             {
                result.passed = true;
                result.reason = "No constraints mode enabled";
@@ -476,20 +479,21 @@ public:
             else
             {
                // Measure processing time
-               datetime start_time = GetMicrosecondCount();
+               ulong start_time = GetMicrosecondCount();
                
                // Process through the gate (re-enabled)
-               result = gate->Process(current_signal);
+               result = gate.Process(current_signal);
                
                // Calculate processing time
-               double processing_time = (GetMicrosecondCount() - start_time) / 1000.0;
+               double processing_time = (double)(GetMicrosecondCount() - start_time) / 1000.0;
                
                // Publish gate event if unified mode is enabled
                if(m_unified_mode && m_event_bus != NULL)
                {
-                  m_event_bus->PublishGateEvent(gate->GetName(), result.passed, result.reason);
-                  string perf_metric = StringFormat("%s_processing_time", gate->GetName());
-                  m_event_bus->PublishPerformanceEvent(perf_metric, processing_time);
+                  string gate_name = gate.GetName();
+                  m_event_bus.PublishGateEvent(gate_name, result.passed, result.reason);
+                  string perf_metric = StringFormat("%s_processing_time", gate_name);
+                  m_event_bus.PublishPerformanceEvent(perf_metric, processing_time);
                }
             }
          }
@@ -531,23 +535,23 @@ public:
       decision.market_regime = current_signal.regime;
       
       // Record decision in learning system
-      if(m_learning != NULL)
-      {
-         m_learning->RecordDecision(decision);
-         
-         if(m_unified_mode && m_event_bus != NULL)
+         if(m_learning != NULL)
          {
-            string decision_msg = StringFormat("Decision recorded: %s", decision.signal_id);
-            m_event_bus->PublishSystemEvent("LearningBridge", decision_msg);
+            m_learning.RecordDecision(decision);
+            
+            if(m_unified_mode && m_event_bus != NULL)
+            {
+               string decision_msg = StringFormat("Decision recorded: %s", decision.signal_id);
+               m_event_bus.PublishSystemEvent("LearningBridge", decision_msg);
+            }
          }
-      }
       
       // Publish trade execution event if unified mode is enabled
       if(m_unified_mode && m_event_bus != NULL)
       {
          string trade_data = StringFormat("%s|%s|%s", decision.signal_id, decision.symbol, 
                            (decision.executed ? "EXECUTED" : "REJECTED"));
-         m_event_bus->Publish(EVENT_TRADE_EXECUTED, "GateManager", trade_data, 2);
+         m_event_bus.Publish(EVENT_TRADE_EXECUTED, "GateManager", trade_data, 2);
       }
          
       return true;
@@ -563,40 +567,40 @@ public:
          // Update thresholds based on performance metrics
          for(int i = 0; i < 8; i++)
          {
-            double success_rate = m_monitor->GetGateSuccessRate(i);
-            GateConfig config = m_config->GetGateConfig(i);
+            double success_rate = m_monitor.GetGateSuccessRate(i);
+            GateConfig config = m_config.GetGateConfig(i);
             
             // Adjust threshold based on success rate vs target
             if(success_rate < config.success_rate_target - 0.05)
             {
                // Lower threshold if success rate is too low
                config.threshold *= 0.95;
-               m_config->SetGateConfig(i, config);
+               m_config.SetGateConfig(i, config);
                
                if(m_gates[i] != NULL)
-                  m_gates[i]->SetThreshold(config.threshold);
+                  m_gates[i].SetThreshold(config.threshold);
                
                if(m_event_bus != NULL)
                {
                   string msg = StringFormat("Threshold lowered to %.4f", config.threshold);
                   string full_msg = StringFormat("%s: %s", config.name, msg);
-                  m_event_bus->PublishSystemEvent("GateManager", full_msg);
+                  m_event_bus.PublishSystemEvent("GateManager", full_msg);
                }
             }
             else if(success_rate > config.success_rate_target + 0.05)
             {
                // Raise threshold if success rate is too high
                config.threshold *= 1.05;
-               m_config->SetGateConfig(i, config);
+               m_config.SetGateConfig(i, config);
                
                if(m_gates[i] != NULL)
-                  m_gates[i]->SetThreshold(config.threshold);
+                  m_gates[i].SetThreshold(config.threshold);
                
                if(m_event_bus != NULL)
                {
                   string msg = StringFormat("Threshold raised to %.4f", config.threshold);
                   string full_msg = StringFormat("%s: %s", config.name, msg);
-                  m_event_bus->PublishSystemEvent("GateManager", full_msg);
+                  m_event_bus.PublishSystemEvent("GateManager", full_msg);
                }
             }
          }
@@ -616,7 +620,7 @@ public:
    GateConfig GetGateConfiguration(int gate_index)
    {
       if(m_unified_mode && m_config != NULL)
-         return m_config->GetGateConfig(gate_index);
+         return m_config.GetGateConfig(gate_index);
       
       GateConfig empty;
       return empty;
@@ -627,10 +631,10 @@ public:
    {
       if(m_unified_mode && m_config != NULL)
       {
-         m_config->SetGateConfig(gate_index, config);
+         m_config.SetGateConfig(gate_index, config);
          
          if(m_gates[gate_index] != NULL)
-            m_gates[gate_index]->SetThreshold(config.threshold);
+            m_gates[gate_index].SetThreshold(config.threshold);
       }
    }
    
@@ -638,7 +642,7 @@ public:
    SystemHealth GetSystemHealth()
    {
       if(m_unified_mode && m_monitor != NULL)
-         return m_monitor->GetSystemHealth();
+         return m_monitor.GetSystemHealth();
       
       SystemHealth empty;
       return empty;
@@ -651,16 +655,16 @@ public:
       {
          if(m_monitor != NULL)
          {
-            m_monitor->PrintHealthReport();
-            m_monitor->PrintGateStatistics();
+            m_monitor.PrintHealthReport();
+            m_monitor.PrintGateStatistics();
          }
          
          if(m_config != NULL)
          {
             Print("\n=== Configuration Status ===");
             Print("Unified Mode: Enabled");
-            Print("No Constraints Mode: ", m_config->IsNoConstraintsMode());
-            Print("Verbose Logging: ", m_config->IsVerboseLogging());
+            Print("No Constraints Mode: ", m_config.IsNoConstraintsMode());
+            Print("Verbose Logging: ", m_config.IsVerboseLogging());
          }
       }
       else

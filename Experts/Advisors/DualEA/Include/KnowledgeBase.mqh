@@ -47,6 +47,24 @@ public:
    // --- Methods for data handling
    bool              WriteRecord(const TradeRecord &record);
    bool              LogTrade(const string strategy_name, const int retcode, const ulong deal, const ulong order_id);
+   // Convenience logging used by PaperEA_v2
+   bool              LogTradeExecution(const string symbol, const string strategy, const datetime exec_time,
+                                       const double price, const double volume, const int order_type)
+                     {
+                        // Append a single trade execution row into Common Files under DualEA/trades
+                        FolderCreate("DualEA\\trades", FILE_COMMON);
+                        string filename = StringFormat("DualEA\\trades\\%s_trades_%s.csv", symbol, TimeToString(exec_time, TIME_DATE));
+                        int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                        if(h == INVALID_HANDLE)
+                        {
+                           PrintFormat("KnowledgeBase: failed to open trades file: %s (err=%d)", filename, GetLastError());
+                           return false;
+                        }
+                        FileWrite(h, TimeToString(exec_time), strategy, DoubleToString(price, 5),
+                                  DoubleToString(volume, 2), IntegerToString(order_type));
+                        FileClose(h);
+                        return true;
+                     }
 
 private:
    bool              OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV);
@@ -143,6 +161,50 @@ class CFeaturesKB
               FileWriteString(h, line);
               FileClose(h);
               return true;
+                    }
+
+    // Export features for ML training in a compact CSV form per strategy/symbol/date
+    bool          ExportFeatures(const string symbol, const string strategy, const datetime timestamp, const string &features[])
+                    {
+                     if(ArraySize(features) == 0) return false;
+                     // Ensure base directory exists
+                     FolderCreate("DualEA\\features", FILE_COMMON);
+                     string filename = StringFormat("DualEA\\features\\%s_%s_%s.csv", symbol, strategy, TimeToString(timestamp, TIME_DATE));
+                     int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                     if(h == INVALID_HANDLE)
+                       {
+                        PrintFormat("KnowledgeBase: failed to create features file: %s (err=%d)", filename, GetLastError());
+                        return false;
+                       }
+                     // Write header row
+                     FileWrite(h, "timestamp", TimeToString(timestamp));
+                     // Write provided feature key:value pairs
+                     for(int i = 0; i < ArraySize(features); ++i)
+                       {
+                        string parts[]; int cnt = StringSplit(features[i], ':', parts);
+                        if(cnt == 2) { FileWrite(h, parts[0], parts[1]); }
+                        else { FileWrite(h, StringFormat("feature_%d", i), features[i]); }
+                       }
+                     FileClose(h);
+                     return true;
+                    }
+
+    // Append a single trade execution record to a per-symbol CSV in Common Files
+    bool          LogTradeExecution(const string symbol, const string strategy, const datetime exec_time,
+                                    const double price, const double volume, const int order_type)
+                    {
+                     FolderCreate("DualEA\\trades", FILE_COMMON);
+                     string filename = StringFormat("DualEA\\trades\\%s_trades_%s.csv", symbol, TimeToString(exec_time, TIME_DATE));
+                     int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                     if(h == INVALID_HANDLE)
+                       {
+                        PrintFormat("KnowledgeBase: failed to open trades file: %s (err=%d)", filename, GetLastError());
+                        return false;
+                       }
+                     FileWrite(h, TimeToString(exec_time), strategy, DoubleToString(price, 5),
+                               DoubleToString(volume, 2), IntegerToString(order_type));
+                     FileClose(h);
+                     return true;
                     }
   };
 

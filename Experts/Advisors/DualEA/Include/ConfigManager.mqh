@@ -78,6 +78,16 @@ private:
       initialized = false;
       InitializeDefaults();
    }
+
+   int FindGateIndex(const string &gate_name) const
+   {
+      for(int i = 0; i < 8; i++)
+      {
+         if(gate_configs[i].name == gate_name)
+            return i;
+      }
+      return -1;
+   }
    
    void InitializeDefaults()
    {
@@ -146,12 +156,10 @@ public:
    
    GateConfig GetGateConfig(const string& gate_name)
    {
-      for(int i = 0; i < 8; i++)
-      {
-         if(gate_configs[i].name == gate_name)
-            return gate_configs[i];
-      }
-      
+      int index = FindGateIndex(gate_name);
+      if(index >= 0)
+         return gate_configs[index];
+
       GateConfig empty;
       return empty;
    }
@@ -204,28 +212,46 @@ public:
         }
       
       FileWriteString(h, "{\n");
-      FileWriteString(h, "  \"gate_thresholds\": {\n");
+      FileWriteString(h, "  \"gate_configs\": {\n");
       
-      for(int i = 0; i < ArraySize(m_gate_names); i++)
+      for(int i = 0; i < 8; i++)
         {
-         string line = StringFormat("    \"%s\": %.6f", m_gate_names[i], m_gate_thresholds[i]);
-         if(i < ArraySize(m_gate_names) - 1) line += ",";
+         GateConfig config = gate_configs[i];
+         string line = StringFormat(
+            "    \"%s\": { \"enabled\": %s, \"threshold\": %.6f, \"cooldown_sec\": %d, \"success_rate_target\": %.4f }",
+            config.name,
+            config.enabled ? "true" : "false",
+            config.threshold,
+            config.cooldown_sec,
+            config.success_rate_target
+         );
+         if(i < 7) line += ",";
          line += "\n";
          FileWriteString(h, line);
         }
       
       FileWriteString(h, "  },\n");
-      FileWriteString(h, "  \"strategy_configs\": {\n");
-      
-      for(int i = 0; i < ArraySize(m_strategy_names); i++)
-        {
-         string line = StringFormat("    \"%s\": \"%s\"", m_strategy_names[i], m_strategy_configs[i]);
-         if(i < ArraySize(m_strategy_names) - 1) line += ",";
-         line += "\n";
-         FileWriteString(h, line);
-        }
-      
-      FileWriteString(h, "  }\n");
+
+      string system_line = StringFormat(
+         "  \"system\": { \"no_constraints_mode\": %s, \"verbose_logging\": %s, \"data_path\": \"%s\", \"max_records\": %d },\n",
+         system_config.no_constraints_mode ? "true" : "false",
+         system_config.verbose_logging ? "true" : "false",
+         system_config.data_path,
+         system_config.max_records
+      );
+      FileWriteString(h, system_line);
+
+      string insights_line = StringFormat(
+         "  \"insights\": { \"auto_reload\": %s, \"freshness_minutes\": %d, \"poll_interval_sec\": %d, \"stale_hours\": %d, \"min_source_advance_hours\": %d, \"min_interval_hours\": %d, \"rebuild_timeout_ms\": %d }\n",
+         insights_config.auto_reload ? "true" : "false",
+         insights_config.freshness_minutes,
+         insights_config.poll_interval_sec,
+         insights_config.stale_hours,
+         insights_config.min_source_advance_hours,
+         insights_config.min_interval_hours,
+         insights_config.rebuild_timeout_ms
+      );
+      FileWriteString(h, insights_line);
       FileWriteString(h, "}\n");
       FileClose(h);
       
@@ -251,26 +277,58 @@ public:
         {
          line = FileReadString(h);
          
-         // Parse gate thresholds
-         int pos = StringFind(line, "\"");
-         if(pos >= 0)
+         // Parse gate config entries
+         int name_start = StringFind(line, "\"");
+         if(name_start >= 0)
            {
-            int end_pos = StringFind(line, "\"", pos + 1);
-            if(end_pos > pos)
+            int name_end = StringFind(line, "\"", name_start + 1);
+            if(name_end > name_start)
               {
-               string gate_name = StringSubstr(line, pos + 1, end_pos - pos - 1);
+               string gate_name = StringSubstr(line, name_start + 1, name_end - name_start - 1);
+               GateConfig config = GetGateConfig(gate_name);
                
-               int colon_pos = StringFind(line, ":", end_pos);
-               if(colon_pos >= 0)
+               // Enabled flag
+               int enabled_pos = StringFind(line, "\"enabled\":");
+               if(enabled_pos >= 0)
                  {
-                  string value_str = StringSubstr(line, colon_pos + 1);
-                  StringReplace(value_str, " ", "");
-                  StringReplace(value_str, ",", "");
-                  double threshold = StringToDouble(value_str);
-                  
-                  if(threshold > 0.0)
-                    SetGateThreshold(gate_name, threshold);
+                  string enabled_str = StringSubstr(line, enabled_pos + 10);
+                  if(StringFind(enabled_str, "true") >= 0) config.enabled = true;
+                  else if(StringFind(enabled_str, "false") >= 0) config.enabled = false;
                  }
+               
+               // Threshold
+               int threshold_pos = StringFind(line, "\"threshold\":");
+               if(threshold_pos >= 0)
+                 {
+                  string threshold_str = StringSubstr(line, threshold_pos + 12);
+                  config.threshold = StringToDouble(threshold_str);
+                 }
+               
+               // Cooldown
+               int cooldown_pos = StringFind(line, "\"cooldown_sec\":");
+               if(cooldown_pos >= 0)
+                 {
+                  string cooldown_str = StringSubstr(line, cooldown_pos + 15);
+                  config.cooldown_sec = (int)StringToInteger(cooldown_str);
+                 }
+               
+               // Success rate target
+               int target_pos = StringFind(line, "\"success_rate_target\":");
+               if(target_pos >= 0)
+                 {
+                  string target_str = StringSubstr(line, target_pos + 22);
+                  config.success_rate_target = StringToDouble(target_str);
+                 }
+               
+               int gate_index = FindGateIndex(gate_name);
+               if(gate_index >= 0)
+               {
+                  SetGateConfig(gate_index, config);
+               }
+               else if(gate_name != "")
+               {
+                  Print("ConfigManager: Unknown gate name in config file: ", gate_name);
+               }
               }
            }
         }

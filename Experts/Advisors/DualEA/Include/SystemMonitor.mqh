@@ -106,13 +106,13 @@ private:
    
    void SubscribeToEvents()
    {
-      event_bus.Subscribe(EVENT_GATE_PROCESSED, this);
-      event_bus.Subscribe(EVENT_SIGNAL_GENERATED, this);
-      event_bus.Subscribe(EVENT_INSIGHTS_UPDATED, this);
-      event_bus.Subscribe(EVENT_TRADE_EXECUTED, this);
-      event_bus.Subscribe(EVENT_SYSTEM_STATUS, this);
-      event_bus.Subscribe(EVENT_ERROR_OCCURRED, this);
-      event_bus.Subscribe(EVENT_PERFORMANCE_METRIC, this);
+      event_bus.Subscribe(EVENT_GATE_PROCESSED, GetPointer(this));
+      event_bus.Subscribe(EVENT_SIGNAL_GENERATED, GetPointer(this));
+      event_bus.Subscribe(EVENT_INSIGHTS_UPDATED, GetPointer(this));
+      event_bus.Subscribe(EVENT_TRADE_EXECUTED, GetPointer(this));
+      event_bus.Subscribe(EVENT_SYSTEM_STATUS, GetPointer(this));
+      event_bus.Subscribe(EVENT_ERROR_OCCURRED, GetPointer(this));
+      event_bus.Subscribe(EVENT_PERFORMANCE_METRIC, GetPointer(this));
    }
    
 public:
