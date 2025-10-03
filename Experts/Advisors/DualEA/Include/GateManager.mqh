@@ -447,6 +447,8 @@ public:
       {
          IGate *gate = GetGate(i);
          GateResult result;
+         // Ensure tweaks are zero-initialized to avoid undefined adjustments when bypassing gates
+         for(int __k=0; __k<5; __k++) result.tweaks[__k]=0.0;
          
          if(gate == NULL) 
          {
@@ -522,8 +524,8 @@ public:
          }
       }
       
-      // If we get here, all gates passed
-      decision.executed = true;
+      // Finalize decision based on accumulated gate results
+      decision.executed = all_gates_passed;
       decision.final_price = current_signal.price;
       decision.final_sl = current_signal.sl;
       decision.final_tp = current_signal.tp;
@@ -554,7 +556,7 @@ public:
          m_event_bus.Publish(EVENT_TRADE_EXECUTED, "GateManager", trade_data, 2);
       }
          
-      return true;
+      return all_gates_passed;
    }
    
    // Update gate thresholds based on learning

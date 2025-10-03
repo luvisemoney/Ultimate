@@ -98,6 +98,7 @@ private:
    int m_max_records;
    string m_metadata_keys[];
    string m_metadata_values[];
+   bool m_directory_initialized;  // Flag to prevent repeated directory checks
    string m_current_regime;
    double m_regime_confidence;
    datetime m_last_regime_update;
@@ -106,6 +107,7 @@ public:
    {
       m_data_path = data_path;
       m_max_records = max_records;
+      m_directory_initialized = false;  // Directory not yet verified
       
       // Initialize regime tracking
       m_current_regime = "unknown";
@@ -399,9 +401,18 @@ public:
    // Transfer successful paper trades to live EA
    void TransferSuccessfulSignals(string target_path)
    {
-      CFileTxt file;
-      if(file.Open(target_path + "\\paper_signals.txt", FILE_WRITE|FILE_TXT))
+      // Ensure target directory exists
+      if(!EnsureDirectoryExists(target_path))
       {
+         PrintFormat("LearningBridge: Cannot transfer signals - directory creation failed: %s", target_path);
+         return;
+      }
+      
+      string file_path = target_path + "\\paper_signals.txt";
+      CFileTxt file;
+      if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+      {
+         int transferred_count = 0;
          for(int i = 0; i < m_decisions.Total(); i++)
          {
             CSignalDecision *dec = (CSignalDecision*)m_decisions.At(i);
@@ -409,13 +420,22 @@ public:
             // Only transfer successful paper trades
             if(dec.executed && dec.outcome > 0)
             {
-               string line = StringFormat("%s,%s,%.5f,%.5f,%.5f,%.2f", 
+               string line = StringFormat("%s,%s,%.5f,%.5f,%.5f,%.2f\n", 
                   dec.signal_id, dec.symbol, dec.final_price, 
                   dec.final_sl, dec.final_tp, dec.final_volume);
                file.WriteString(line);
+               transferred_count++;
             }
          }
          file.Close();
+         
+         if(transferred_count > 0)
+            PrintFormat("LearningBridge: Transferred %d successful signals to %s", transferred_count, file_path);
+      }
+      else
+      {
+         PrintFormat("LearningBridge: Failed to transfer signals to %s (Error: %d)", 
+                     file_path, GetLastError());
       }
    }
    
@@ -423,28 +443,113 @@ private:
    void LoadLearningData()
    {
       // Load historical decisions from file
-      CFileTxt file;
-      if(file.Open(m_data_path + "\\learning_data.txt", FILE_READ|FILE_TXT))
+      // CRITICAL FIX: Check file existence and create directory structure if needed
+      string file_path = m_data_path + "\\learning_data.txt";
+      
+      // Ensure directory exists - create if missing
+      if(!EnsureDirectoryExists(m_data_path))
       {
-         while(!file.IsEnding())
+         PrintFormat("LearningBridge: Failed to create directory: %s", m_data_path);
+         return;
+      }
+      
+      // Check if file exists (use FILE_COMMON for Strategy Tester)
+      if(!FileIsExist(file_path, FILE_COMMON))
+      {
+         // Create empty initialized file with header
+         CFileTxt file;
+         if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+         {
+            file.WriteString("# DualEA Learning Data - Auto-generated\n");
+            file.WriteString("# Format: signal_id,symbol,price,sl,tp,volume,executed\n");
+            file.Close();
+            PrintFormat("LearningBridge: Created new learning data file: %s", file_path);
+         }
+         return; // Nothing to load from new file
+      }
+      
+      // File exists - load data
+      CFileTxt file;
+      if(file.Open(file_path, FILE_READ|FILE_TXT|FILE_COMMON))
+      {
+         int loaded_count = 0;
+         while(!file.IsEnding() && loaded_count < m_max_records)
          {
             string line = file.ReadString();
-            if(line != "")
+            // Skip comments and empty lines
+            if(line == "" || StringGetCharacter(line, 0) == '#')
+               continue;
+               
+            CSignalDecision *decision = ParseDecisionFromString(line);
+            if(decision != NULL)
             {
-               CSignalDecision *decision = ParseDecisionFromString(line);
-               if(decision != NULL)
-                  m_decisions.Add(decision);
+               m_decisions.Add(decision);
+               loaded_count++;
             }
          }
          file.Close();
+         
+         if(loaded_count > 0)
+            PrintFormat("LearningBridge: Loaded %d historical decisions from %s", loaded_count, file_path);
       }
+      else
+      {
+         PrintFormat("LearningBridge: Warning - Could not open file for reading: %s (Error: %d)", 
+                     file_path, GetLastError());
+      }
+   }
+   
+   bool EnsureDirectoryExists(const string path)
+   {
+      // Skip if already verified
+      if(m_directory_initialized)
+         return true;
+      
+      // CRITICAL FIX: Use FILE_COMMON for Strategy Tester compatibility
+      // Strategy Tester requires FILE_COMMON flag for directory operations
+      
+      // Try to create directory with FILE_COMMON flag
+      if(FolderCreate(path, FILE_COMMON))
+      {
+         PrintFormat("LearningBridge: Created directory: %s (Common Files)", path);
+         m_directory_initialized = true;
+         return true;
+      }
+      
+      // FolderCreate returns false if already exists (which is ok) or if failed
+      // Check error code
+      int error = GetLastError();
+      if(error == 0 || error == 5019) // 0 = success, 5019 = already exists
+      {
+         ResetLastError();
+         m_directory_initialized = true;
+         return true;
+      }
+      
+      // If FILE_COMMON failed, log and return false
+      PrintFormat("LearningBridge: Failed to create directory %s (Error: %d)", path, error);
+      PrintFormat("   Hint: Use relative paths like 'DualEA\\PaperData' instead of absolute paths");
+      return false;
    }
    
    void SaveLearningData()
    {
-      CFileTxt file;
-      if(file.Open(m_data_path + "\\learning_data.txt", FILE_WRITE|FILE_TXT))
+      // Ensure directory exists before saving
+      if(!EnsureDirectoryExists(m_data_path))
       {
+         PrintFormat("LearningBridge: Cannot save - directory creation failed: %s", m_data_path);
+         return;
+      }
+      
+      string file_path = m_data_path + "\\learning_data.txt";
+      CFileTxt file;
+      if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+      {
+         // Write header
+         file.WriteString("# DualEA Learning Data - Auto-updated\n");
+         file.WriteString("# Format: signal_id,symbol,price,sl,tp,volume,executed\n");
+         
+         // Write decisions
          for(int i = 0; i < m_decisions.Total(); i++)
          {
             CSignalDecision *decision = (CSignalDecision*)m_decisions.At(i);
@@ -453,17 +558,34 @@ private:
          }
          file.Close();
       }
+      else
+      {
+         PrintFormat("LearningBridge: Failed to save learning data to %s (Error: %d)", 
+                     file_path, GetLastError());
+      }
    }
    
    void SaveSignalToFile(CSignalDecision &decision)
    {
       // Save individual signal to file
+      // Ensure directory exists before saving
+      if(!EnsureDirectoryExists(m_data_path))
+      {
+         return;
+      }
+      
+      string file_path = m_data_path + "\\signals.txt";
       CFileTxt file;
-      if(file.Open(m_data_path + "\\signals.txt", FILE_WRITE|FILE_TXT))
+      if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
       {
          string line = FormatDecisionToString(&decision);
          file.WriteString(line);
          file.Close();
+      }
+      else
+      {
+         PrintFormat("LearningBridge: Failed to save signal to %s (Error: %d)", 
+                     file_path, GetLastError());
       }
    }
    

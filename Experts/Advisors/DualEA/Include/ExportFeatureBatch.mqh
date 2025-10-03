@@ -1,5 +1,7 @@
 // MQL5 integration: Export features per trade as protobuf, call DLL
-#import "C:\DualEA_FeatureBatches\feature_export.dll"
+// NOTE: Ensure feature_export.dll exists and has proper dependencies (MSVC Runtime)
+// For x64 MT5, DLL must be 64-bit compiled
+#import "C:\\DualEA_FeatureBatches\\feature_export.dll"
 int ExportFeatureBatch(const uchar &pb_bytes[], int pb_len, uchar &out_path[], int out_path_len);
 #import
 
