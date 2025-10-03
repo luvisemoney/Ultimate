@@ -1555,29 +1555,12 @@ bool CheckRegimeGate()
 // Check and enforce memory limits to prevent resource exhaustion
 bool CheckMemoryLimits()
 {
-   // Check paper positions limit
-   if(ArraySize(g_paper_positions) > 1000) // Reasonable limit
+   // Check real MT5 positions limit
+   int total_positions = PositionsTotal();
+   if(total_positions > 100) // Reasonable limit for real positions
    {
-      PrintFormat("⚠️ Paper positions limit reached: %d positions", ArraySize(g_paper_positions));
-      
-      // Clean up closed positions
-      int cleaned = 0;
-      for(int i = ArraySize(g_paper_positions) - 1; i >= 0; i--)
-      {
-         if(g_paper_positions[i] != NULL && g_paper_positions[i].status == "closed")
-         {
-            delete g_paper_positions[i];
-            g_paper_positions[i] = NULL;
-            cleaned++;
-         }
-      }
-      
-      if(cleaned > 0)
-         PrintFormat("Cleaned up %d closed paper positions", cleaned);
-      
-      // If still too many, reject new positions
-      if(ArraySize(g_paper_positions) > 1000)
-         return false;
+      PrintFormat("⚠️ Position limit reached: %d real MT5 positions", total_positions);
+      return false;
    }
    
    // Check tracking arrays limits
@@ -1648,8 +1631,8 @@ void OnTick()
       last_insights_check = now;
    }
    
-   // Update paper positions PnL
-   UpdatePaperPositions();
+   // Paper positions PnL updated automatically by MT5
+   // No need for manual UpdatePaperPositions()
    
    // ===================[ TRADE FREQUENCY GATING ]===================
    if(now - last_paper_trade_time < PaperTradeCooldownSec)
@@ -1705,7 +1688,7 @@ void OnTick()
       }
       
       // Max positions check
-      if(MaxOpenPositions > 0 && ArraySize(g_paper_positions) >= MaxOpenPositions)
+      if(MaxOpenPositions > 0 && PositionsTotal() >= MaxOpenPositions)
       {
          return; // Max positions reached
       }
@@ -1869,13 +1852,13 @@ void OnTick()
             g_kb.LogTradeExecution(decision.symbol, selected_strategy, decision.execution_time,
                                    decision.final_price, decision.final_volume, decision.order_type);
             
-            // Additional metadata for adjusted trades
-            if(decision.is_adjusted)
+            // Additional metadata for adjusted trades logged via telemetry
+            if(decision.is_adjusted && CheckPointer(g_telemetry) != POINTER_INVALID)
             {
                string adjustment_details = StringFormat("attempts=%d,orig_vol=%.2f,final_vol=%.2f,orig_price=%.5f,final_price=%.5f",
                   decision.adjustment_attempts, decision.original_volume, decision.final_volume,
                   decision.original_price, decision.final_price);
-               g_kb.LogEvent(decision.symbol, "adaptive_optimization", trade_type, adjustment_details);
+               PrintFormat("🔧 Adaptive Trade: %s - %s", trade_type, adjustment_details);
             }
          }
          
@@ -1934,44 +1917,75 @@ void OnTick()
       int positions_closed = 0;
       int positions_adjusted = 0;
       
-      // Review all open paper positions
-      for(int i = 0; i < ArraySize(g_paper_positions); i++)
+      // Review all real MT5 positions
+      for(int i = 0; i < PositionsTotal(); i++)
       {
-         if(g_paper_positions[i] == NULL) continue;
-         if(g_paper_positions[i].status != "open") continue;
+         ulong ticket = PositionGetTicket(i);
+         if(!PositionSelectByTicket(ticket)) continue;
+         
+         string pos_symbol = PositionGetString(POSITION_SYMBOL);
+         long pos_magic = PositionGetInteger(POSITION_MAGIC);
+         
+         // Only review positions from this EA
+         if(pos_magic != MagicNumber) continue;
          
          positions_reviewed++;
          
-         // Get the strategy for this position
-         IStrategy* position_strategy = NULL;
-         string strategy_name = "Unknown";
+         // Get current position data from real MT5 position
+         double current_profit = PositionGetDouble(POSITION_PROFIT);
+         double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+         double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+         double volume = PositionGetDouble(POSITION_VOLUME);
+         long pos_type = PositionGetInteger(POSITION_TYPE);
+         double sl = PositionGetDouble(POSITION_SL);
+         double tp = PositionGetDouble(POSITION_TP);
          
-         if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
+         // Calculate PnL percentage
+         double pnl_pct = 0.0;
+         if(open_price > 0)
          {
-            // Try to match strategy by name (stored in position or metadata)
-            strategy_name = "ADXStrategy";  // Default fallback
-            position_strategy = g_selector.GetStrategyByName(strategy_name);
+            pnl_pct = ((current_price - open_price) / open_price) * 100.0;
+            if(pos_type == POSITION_TYPE_SELL) pnl_pct = -pnl_pct;
          }
          
-         // Review the position
-         PositionReview review = g_position_reviewer.ReviewPaperPosition(
-            g_paper_positions[i], position_strategy, strategy_name);
+         // Simple review logic for real positions
+         bool should_close = false;
+         string close_reason = "";
          
-         // Apply the review decision
-         bool applied = g_position_reviewer.ApplyReviewDecision(g_paper_positions[i], review);
-         
-         if(applied && review.action == PA_CLOSE)
-            positions_closed++;
-         else if(applied && (review.action == PA_ADJUST_SL || review.action == PA_ADJUST_TP))
-            positions_adjusted++;
-         
-         // Log to knowledge base
-         if(CheckPointer(g_kb) != POINTER_INVALID)
+         if(pnl_pct <= -5.0)
          {
-            string review_details = StringFormat("action=%d,reason=%s,pnl_pct=%.2f,confidence=%.2f",
-               review.action, review.reason, review.current_pnl_pct, review.new_signal_confidence);
-            g_kb.LogEvent(g_paper_positions[i].symbol, "position_review", 
-                         EnumToString(review.action), review_details);
+            should_close = true;
+            close_reason = "Stop loss exceeded (5%)";
+         }
+         else if(pnl_pct >= 10.0)
+         {
+            should_close = true;
+            close_reason = "Take profit reached (10%)";
+         }
+         
+         if(should_close)
+         {
+            // Close position using MT5's built-in trade object
+            CTrade trade;
+            trade.SetExpertMagicNumber(MagicNumber);
+            
+            if(trade.PositionClose(ticket))
+            {
+               PrintFormat("📉 Position %I64u closed by reviewer: %s (PnL: %.2f%%)", 
+                          ticket, close_reason, pnl_pct);
+               positions_closed++;
+            }
+            else
+            {
+               PrintFormat("❌ Failed to close position %I64u: Error %d", ticket, GetLastError());
+            }
+         }
+         
+         // Log position review to console (KB doesn't have LogEvent method)
+         if(should_close)
+         {
+            PrintFormat("📊 Position Review: Ticket=%I64u PnL=%.2f%% Profit=%.2f Action=%s",
+               ticket, pnl_pct, current_profit, should_close ? "CLOSE" : "HOLD");
          }
       }
       
@@ -2062,16 +2076,20 @@ void ExecutePaperTrade(CSignalDecision &decision)
    
    // Create TradeOrder struct for real MT5 execution
    TradeOrder order;
-   order.symbol = decision.symbol;
-   order.order_type = decision.order_type;
-   order.volume = decision.final_volume;
+   // Set action based on order type
+   if(decision.order_type == ORDER_TYPE_BUY || decision.order_type == ORDER_TYPE_BUY_STOP || decision.order_type == ORDER_TYPE_BUY_LIMIT)
+      order.action = ACTION_BUY;
+   else if(decision.order_type == ORDER_TYPE_SELL || decision.order_type == ORDER_TYPE_SELL_STOP || decision.order_type == ORDER_TYPE_SELL_LIMIT)
+      order.action = ACTION_SELL;
+   else
+      order.action = ACTION_NONE;
+      
+   order.order_type = (ENUM_ORDER_TYPE)decision.order_type;
+   order.lots = decision.final_volume;
    order.price = decision.final_price;
-   order.sl = decision.final_sl;
-   order.tp = decision.final_tp;
-   order.deviation = 10;  // 10 points slippage tolerance
-   order.magic = decision.magic_number;
-   order.comment = decision.signal_id;
-   order.action = ACTION_DEAL;  // Market order execution
+   order.stop_loss = decision.final_sl;
+   order.take_profit = decision.final_tp;
+   order.strategy_name = decision.strategy;
    
    // EXECUTE REAL TRADE TO MT5
    bool success = g_trade_manager.ExecuteOrder(order);
@@ -2082,7 +2100,7 @@ void ExecutePaperTrade(CSignalDecision &decision)
       ulong deal_ticket = g_trade_manager.ResultDeal();
       ulong order_ticket = g_trade_manager.ResultOrder();
       double exec_price = g_trade_manager.ResultPrice();
-      double exec_volume = g_trade_manager.ResultVolume();
+      double exec_volume = order.lots;  // Volume executed
       
       // Update decision with REAL execution details
       decision.executed = true;
@@ -2099,8 +2117,8 @@ void ExecutePaperTrade(CSignalDecision &decision)
          record.trade_id = IntegerToString(deal_ticket);
          record.signal_id = decision.signal_id;
          record.execution_time = decision.execution_time;
-         record.status = "open";
-         record.strategy = decision.strategy;
+         record.is_closed = false;  // Trade just opened
+         record.strategy_name = decision.strategy;
          record.symbol = decision.symbol;
          record.timeframe = decision.timeframe;
          record.market_regime = GetMarketRegime();
@@ -2133,14 +2151,15 @@ void ExecutePaperTrade(CSignalDecision &decision)
       ArrayResize(features, 8);
       features[0] = "entry_price:" + DoubleToString(exec_price, 5);
       features[1] = "volume:" + DoubleToString(exec_volume, 2);
-      features[2] = "order_type:" + EnumToString(decision.order_type);
+      features[2] = "order_type:" + EnumToString((ENUM_ORDER_TYPE)decision.order_type);
       features[3] = "strategy:" + decision.strategy;
       features[4] = "signal_confidence:" + DoubleToString(decision.confidence, 3);
       features[5] = "market_regime:" + GetMarketRegime();
       features[6] = "volatility:" + DoubleToString(GetVolatility(), 4);
       features[7] = "correlation:" + DoubleToString(GetCorrelation(), 3);
       
-      ExportTradeFeatures(decision.symbol, decision.strategy, TimeCurrent(), features);
+      // Export to ML pipeline via DLL
+      ExportTradeFeatures(decision.symbol, decision.strategy, (long)TimeCurrent(), features);
    }
    else
    {
@@ -2257,8 +2276,8 @@ void ExportEnhancedFeaturesAdaptive(CAdaptiveDecision &decision, const string st
    features[18] = "gate_passed_count:" + IntegerToString(CountPassedGates(decision));
    features[19] = "timestamp:" + TimeToString(now);
    
-   // Log to features system
-   g_features.LogFeatures(features);
+   // Export to features system
+   g_features.ExportFeatures(decision.symbol, strategy_name, now, features);
 }
 
 // Helper to count passed gates
@@ -2502,8 +2521,8 @@ void ExportEnhancedFeatures(const CSignalDecision &decision, const string strate
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   // Update all paper positions PnL and check for closures
-   UpdatePaperPositions();
+   // Real positions updated automatically by MT5
+   // No need for UpdatePaperPositions()
    
    // ===================[ PERIODIC SYSTEM MAINTENANCE ]===================
    static datetime last_maintenance = 0;
@@ -2553,13 +2572,8 @@ void OnTimer()
    
    if(HeartbeatEnabled && (now - last_heartbeat > HeartbeatMinutes * 60))
    {
-      // System health check
-      int active_positions = 0;
-      for(int i = 0; i < ArraySize(g_paper_positions); i++)
-      {
-         if(g_paper_positions[i] != NULL && g_paper_positions[i].status == "open")
-            active_positions++;
-      }
+      // System health check using real MT5 positions
+      int active_positions = PositionsTotal();
       
       if(HeartbeatVerbose)
       {
