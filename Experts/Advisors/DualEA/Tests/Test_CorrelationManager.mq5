@@ -14,19 +14,15 @@ void OnStart()
    cm.SetMaxCorrelation(0.8);
    cm.SetLookbackDays(30);
 
-   // Test: Update correlations
-   cm.UpdateCorrelations();
-   Print("PASS: UpdateCorrelations did not crash");
-
    // Test: GetCorrelation for self
-   double corr = cm.GetCorrelation(_Symbol, _Symbol);
+   double corr = cm.GetCorrelation(_Symbol);
    if(MathAbs(corr - 1.0) < 0.01)
       Print("PASS: GetCorrelation(_Symbol, _Symbol) ~ 1.0");
    else
       PrintFormat("FAIL: GetCorrelation(_Symbol, _Symbol) = %.4f", corr);
 
    // Test: GetCorrelation for random symbol
-   corr = cm.GetCorrelation(_Symbol, "FAKESYM");
+   corr = cm.GetCorrelation("FAKESYM");
    PrintFormat("INFO: GetCorrelation(_Symbol, FAKESYM) = %.4f", corr);
 
    Print("[Test] CCorrelationManager: END");

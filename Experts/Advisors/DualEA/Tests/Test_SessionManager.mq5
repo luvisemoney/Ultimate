@@ -21,7 +21,7 @@ void OnStart()
       PrintFormat("FAIL: IsSessionAllowed returned false (%s)", reason);
 
    // Simulate max trades
-   for(int i=0; i<3; ++i) sm.IncrementTradeCount();
+   for(int i=0; i<3; ++i) sm.RecordTrade();
    if(!sm.IsSessionAllowed(reason))
       Print("PASS: IsSessionAllowed blocks after max trades");
    else

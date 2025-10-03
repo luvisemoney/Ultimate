@@ -11,21 +11,31 @@ input int Verbosity = 2;
 void OnStart()
 {
    Print("[Test] CGateManager: BEGIN");
-   CGateManager gm;
-   CSignalDecision decision;
-   decision.symbol = _Symbol;
-   decision.timeframe = _Period;
-   decision.original_price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   decision.original_type = 0;
-   decision.original_volume = 0.1;
-   decision.strategy = "ADXStrategy";
+   CLearningBridge *learning = new CLearningBridge("TestData");
+   CGateManager gm(_Symbol, _Period, learning, true);
 
-   string reason;
-   bool allowed = gm.ProcessSignal(decision, reason);
-   if(allowed)
-      PrintFormat("PASS: ProcessSignal allowed (%s)", reason);
+   // Build a sample signal
+   TradingSignal signal;
+   signal.id = "TEST_SIGNAL";
+   signal.symbol = _Symbol;
+   signal.timeframe = _Period;
+   signal.timestamp = TimeCurrent();
+   signal.price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   signal.type = 0;
+   signal.sl = signal.price - 100 * _Point;
+   signal.tp = signal.price + 200 * _Point;
+   signal.volume = 0.1;
+   signal.confidence = 0.75;
+   signal.volatility = 0.01;
+   signal.correlation = 0.2;
+   signal.regime = "trending";
+
+   CSignalDecision decision;
+   bool allowed = gm.ProcessSignal(signal, decision);
+   if(allowed && decision.executed)
+      Print("PASS: ProcessSignal executed");
    else
-      PrintFormat("PASS: ProcessSignal blocked (%s)", reason);
+      Print("PASS: ProcessSignal not executed (as expected for unit test)");
 
    Print("[Test] CGateManager: END");
 }

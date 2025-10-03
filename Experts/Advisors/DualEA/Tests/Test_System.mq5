@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
-//| Test_Integration.mq5                                             |
-//| Integration test: selector, gating, sizer, session, correlation  |
+//| Test_System.mq5                                                  |
+//| System-level E2E test: full pipeline, logging, export, errors    |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
 #include "..\\Include\\StrategySelector.mqh"
@@ -9,19 +9,25 @@
 #include "..\\Include\\CorrelationManager.mqh"
 #include "..\\Include\\VolatilitySizer.mqh"
 #include "..\\Include\\LearningBridge.mqh"
+#include "..\\Include\\KnowledgeBase.mqh"
+#include "..\\Include\\PolicyEngine.mqh"
+#include "..\\Include\\ExportFeatureBatch.mqh"
 
 input int Verbosity = 2;
 
 void OnStart()
 {
-   Print("[Test] Integration: BEGIN");
-   // Setup
+   Print("[Test] System: BEGIN");
+   // Full pipeline setup
    CStrategySelector selector;
    CLearningBridge *learning = new CLearningBridge("TestData");
    CGateManager gm(_Symbol, _Period, learning, true);
    CSessionManager sm(_Symbol, _Period);
    CCorrelationManager cm(_Symbol, _Period);
    CVolatilitySizer vs(_Symbol, _Period);
+   CFeaturesKB features;
+   CKnowledgeBase kb;
+   CPolicyEngine policy;
 
    sm.SetSessionHours(9, 17);
    sm.SetMaxTradesPerSession(3);
@@ -33,9 +39,9 @@ void OnStart()
    vs.SetTargetRiskPercent(1.0);
    vs.SetEnabled(true);
 
-   // Simulate a signal
+   // Simulate a signal through the full pipeline
    TradingSignal signal;
-   signal.id = "INT_TEST";
+   signal.id = "SYS_TEST";
    signal.symbol = _Symbol;
    signal.timeframe = _Period;
    signal.timestamp = TimeCurrent();
@@ -54,21 +60,17 @@ void OnStart()
    if(!allowed) Print("PASS: GateManager blocked");
    else Print("PASS: GateManager allowed");
 
-   // Session check
    string reason;
    if(sm.IsSessionAllowed(reason)) Print("PASS: SessionManager allowed");
    else PrintFormat("FAIL: SessionManager blocked (%s)", reason);
 
-   // Correlation check
    double corr = cm.GetCorrelation(_Symbol);
    PrintFormat("INFO: CorrelationManager self-corr = %.2f", corr);
 
-   // Sizer
    double sl_points = 50, vol_mult = 1.0;
    double sized = vs.CalculatePositionSize(decision.original_volume, sl_points, vol_mult, reason);
    PrintFormat("INFO: VolatilitySizer sized = %.2f (%s)", sized, reason);
 
-   // Selector
    string strats[] = {"ADXStrategy", "RSIStrategy"};
    double scores[];
    int idx = selector.PickBest(_Symbol, _Period, strats, scores);
@@ -77,5 +79,20 @@ void OnStart()
    else
       Print("FAIL: Selector did not pick");
 
-   Print("[Test] Integration: END");
+   // Feature export
+   string feats[] = {"dummy:1"};
+   bool feat_ok = features.ExportFeatures(_Symbol, decision.strategy, TimeCurrent(), feats);
+   if(feat_ok) Print("PASS: FeaturesKB export");
+   else Print("FAIL: FeaturesKB export");
+
+   // Trade log
+   bool log_ok = kb.LogTradeExecution(_Symbol, decision.strategy, TimeCurrent(), decision.original_price, decision.original_volume, decision.original_type);
+   if(log_ok) Print("PASS: KnowledgeBase trade log");
+   else Print("FAIL: KnowledgeBase trade log");
+
+   // Policy engine (smoke)
+   double prob = policy.GetPolicyProb("ADXStrategy", _Symbol, _Period);
+   PrintFormat("INFO: PolicyEngine GetPolicyProb = %.4f", prob);
+
+   Print("[Test] System: END");
 }
