@@ -32,6 +32,13 @@
 // Centralized gate orchestration macros
 #include "..\\Include\\GatingPipeline.mqh"
 
+// Adaptive Signal Optimization System
+#include "..\Include\AdaptiveSignalOptimizer.mqh"
+#include "..\Include\PolicyUpdater.mqh"
+#include "..\Include\PositionReviewer.mqh"
+#include "..\Include\GateLearningSystem.mqh"
+#include "..\Include\UnifiedTradeLogger.mqh"
+
 // Unified System Components
 #include "..\Include\ConfigManager.mqh"
 #include "..\Include\EventBus.mqh"
@@ -49,125 +56,19 @@
 
 // Strategy selector
 #include "..\\Include\\StrategySelector.mqh"
-
 // Learning and Export Systems
 #include "..\Include\LearningBridge.mqh"
 #include "..\Include\GateManager.mqh"
 #include "..\Include\ExportFeatureBatch.mqh"
 
-//+------------------------------------------------------------------+
-//| Paper Position Class                                             |
-//+------------------------------------------------------------------+
-class CPaperPosition : public CObject
-  {
-public:
-   string            symbol;
-   string            strategy;
-   string            signal_id;
-   double            entry_price;
-   double            volume;
-   ENUM_POSITION_TYPE position_type;
-   datetime          entry_time;
-   int               magic_number;
-   double            stop_loss;
-   double            take_profit;
-   string            status;
-   double            unrealized_pnl;
-   double            max_profit;
-   double            max_loss;
-   datetime          close_time;
-   double            close_price;
-   string            close_reason;
-   
-   CPaperPosition()
-     {
-      symbol = "";
-      strategy = "";
-      signal_id = "";
-      entry_price = 0.0;
-      volume = 0.0;
-      position_type = POSITION_TYPE_BUY;
-      entry_time = 0;
-      magic_number = 0;
-      stop_loss = 0.0;
-      take_profit = 0.0;
-      status = "open";
-      unrealized_pnl = 0.0;
-      max_profit = 0.0;
-      max_loss = 0.0;
-      close_time = 0;
-      close_price = 0.0;
-      close_reason = "";
-     }
-     
-   void UpdatePnL()
-     {
-      if(status != "open") return;
-      
-      double current_price = (position_type == POSITION_TYPE_BUY) ? 
-                            SymbolInfoDouble(symbol, SYMBOL_BID) : 
-                            SymbolInfoDouble(symbol, SYMBOL_ASK);
-      
-      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
-      double contract_size = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-      
-      if(position_type == POSITION_TYPE_BUY)
-        unrealized_pnl = (current_price - entry_price) * volume * contract_size / point;
-      else
-        unrealized_pnl = (entry_price - current_price) * volume * contract_size / point;
-      
-      // Update max profit/loss tracking
-      if(unrealized_pnl > max_profit) max_profit = unrealized_pnl;
-      if(unrealized_pnl < max_loss) max_loss = unrealized_pnl;
-      
-      // Check for stop loss or take profit
-      if(stop_loss > 0.0)
-        {
-         bool hit_sl = false;
-         if(position_type == POSITION_TYPE_BUY && current_price <= stop_loss) hit_sl = true;
-         if(position_type == POSITION_TYPE_SELL && current_price >= stop_loss) hit_sl = true;
-         
-         if(hit_sl)
-           {
-            ClosePosition(stop_loss, "stop_loss");
-            return;
-           }
-        }
-      
-      if(take_profit > 0.0)
-        {
-         bool hit_tp = false;
-         if(position_type == POSITION_TYPE_BUY && current_price >= take_profit) hit_tp = true;
-         if(position_type == POSITION_TYPE_SELL && current_price <= take_profit) hit_tp = true;
-         
-         if(hit_tp)
-           {
-            ClosePosition(take_profit, "take_profit");
-            return;
-           }
-        }
-     }
-     
-   void ClosePosition(double price, string reason)
-     {
-      status = "closed";
-      close_time = TimeCurrent();
-      close_price = price;
-      close_reason = reason;
-      
-      // Calculate final PnL
-      double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
-      double contract_size = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-      
-      if(position_type == POSITION_TYPE_BUY)
-        unrealized_pnl = (close_price - entry_price) * volume * contract_size / point;
-      else
-        unrealized_pnl = (entry_price - close_price) * volume * contract_size / point;
-      
-      PrintFormat("Paper position closed: %s %s %.2f lots, PnL: %.2f, Reason: %s", 
-                  EnumToString(position_type), symbol, volume, unrealized_pnl, reason);
-     }
-  };
+// ===================[ PAPER vs LIVE EA CLARIFICATION ]===================
+// IMPORTANT: "Paper" refers to DEMO ACCOUNT, NOT simulated trades!
+// - PaperEA executes REAL MT5 trades via OrderSend() on DEMO accounts
+// - LiveEA executes REAL MT5 trades via OrderSend() on LIVE accounts  
+// - Both use identical execution logic through TradeManager
+// - All positions tracked by MT5's native position system
+// - Use PositionSelect(), PositionGetDouble(), OnTradeTransaction() for real position data
+// ===================[ NO SIMULATION - REAL EXECUTION ONLY ]===================
 
 // Using CFeaturesKB from Include\KnowledgeBase.mqh
 
@@ -254,10 +155,10 @@ input double ATRMinPercentile      = 0.0;
 input double ATRMaxPercentile      = 100.0;
 input double ATRRegimeMinATRPct    = 0.0;
 input double ATRRegimeMaxATRPct    = 1000.0;
-input bool   UseCircuitBreakers   = false;
-input double CBDailyLossLimitPct  = 0.0;
-input double CBDrawdownLimitPct   = 0.0;
-input int    CBCooldownMinutes    = 0;
+input bool   UseCircuitBreakers   = true;  // ENABLED for safety
+input double CBDailyLossLimitPct  = 5.0;  // 5% max daily loss
+input double CBDrawdownLimitPct   = 10.0; // 10% max drawdown
+input int    CBCooldownMinutes    = 60;   // 1 hour cooldown
 
 // ===================[ NEWS & SESSION FILTERING ]===================
 input bool   UseNewsFilter       = true;
@@ -270,12 +171,12 @@ input bool   UsePromotionGate    = false;
 input bool   PromoLiveOnly       = false;
 input int    PromoStartHour      = 0;
 input int    PromoEndHour        = 24;
-input bool   UseRegimeGate       = false;
+input bool   UseRegimeGate       = true;   // ENABLED for adaptive parameters
 input int    RegimeATRPeriod     = 14;
-input double RegimeMinATRPct     = 0.0;
-input double RegimeMaxATRPct     = 1000.0;
-input bool   RegimeTagTelemetry   = false;
-input string RegimeMethod         = "atr";
+input double RegimeMinATRPct     = 0.5;   // Low volatility threshold
+input double RegimeMaxATRPct     = 2.5;   // High volatility threshold
+input bool   RegimeTagTelemetry   = true;  // Track regime in telemetry
+input string RegimeMethod         = "combined"; // Use ATR + ADX
 input int    RegimeADXPeriod      = 14;
 input double RegimeADXTrendThreshold = 25.0;
 input int    CircuitCooldownSec  = 0;
@@ -301,7 +202,7 @@ input bool   UsePolicyGating       = true;
 input bool   DefaultPolicyFallback = true;
 input bool   FallbackDemoOnly      = true;
 input bool   FallbackWhenNoPolicy  = true;
-input bool   UsePolicyEngine       = false;
+input bool   UsePolicyEngine       = true;  // ENABLED for ML optimization
 
 // ===================[ TRADING HOURS & SESSIONS ]===================
 input bool   UseTradingHours       = false;
@@ -345,7 +246,7 @@ input bool   HeartbeatVerbose = true;
 
 // ===================[ LEGACY GATE PARAMETERS ]===================
 input bool     UseGateSystem = true;
-input string   LearningDataPath = "C:\\DualEA\\PaperData";
+input string   LearningDataPath = "DualEA\\PaperData"; // Relative to Common Files (Strategy Tester compatible)
 input int      MaxLearningRecords = 10000;
 
 // ===================[ TRADE FREQUENCY GATING ]===================
@@ -365,7 +266,7 @@ CLearningBridge *g_learning_bridge = NULL;
 CGateManager *g_gate_manager = NULL;
 CTradeManager *g_trade_manager = NULL;
 CTelemetryStandard *g_telemetry = NULL;
-CPaperPosition *g_paper_positions[];
+// g_paper_positions removed - using REAL MT5 positions via PositionSelect()
 
 // ===================[ TIMER/COOLDOWN FOR TRADE FREQUENCY GATING ]===================
 static datetime last_paper_trade_time = 0;
@@ -453,6 +354,13 @@ CVolatilitySizer* g_volatility_sizer = NULL;
 CPolicyEngine*     g_policy_engine    = NULL;
 CInsightsRealtime* g_ins_rt = NULL;
 
+// ===================[ ADAPTIVE OPTIMIZATION SYSTEM ]===================
+CAdaptiveSignalOptimizer* g_adaptive_optimizer = NULL;
+CPolicyUpdater* g_policy_updater = NULL;
+CPositionReviewer* g_position_reviewer = NULL;
+CGateLearningSystem* g_gate_learning = NULL;
+CUnifiedTradeLogger* g_trade_logger = NULL;
+
 // ===================[ SELECTOR, POSITION MANAGER, FEATURES LOGGER, KNOWLEDGE BASE, TRADE MANAGER ]===================
 CStrategySelector*       g_selector = NULL;
 CPositionManager*        g_position_manager = NULL;
@@ -484,7 +392,20 @@ static datetime g_last_paper_action = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   // ===================[ INSTANCE COLLISION DETECTION ]===================
+   // Check if another instance with same magic is already running on this chart
+   static bool g_instance_initialized = false;
+   if(g_instance_initialized)
+   {
+      PrintFormat("⚠️ ERROR: Multiple PaperEA_v2 instances detected on %s %s with Magic %d", 
+                  _Symbol, EnumToString(_Period), MagicNumber);
+      PrintFormat("   This causes file contention and duplicate processing. Please use unique Magic numbers.");
+      return(INIT_FAILED);
+   }
+   g_instance_initialized = true;
+   
    Print("=== PaperEA v2 Enhanced Initialization Starting ===");
+   PrintFormat("Instance ID: %s-%s-M%d", _Symbol, EnumToString(_Period), MagicNumber);
    
    // ===================[ CORE SYSTEM INITIALIZATION ]===================
    
@@ -499,6 +420,24 @@ int OnInit()
    // Initialize standard telemetry wrapper
    g_tel_standard = new CTelemetryStandard(g_telemetry_base);
    g_telemetry = g_tel_standard; // Maintain backward compatibility
+   // Unified System: sync config + event bus + monitor
+   {
+      CConfigManager *cfg = CConfigManager::GetInstance();
+      if(CheckPointer(cfg) != POINTER_INVALID)
+      {
+         cfg.SetNoConstraintsMode(NoConstraintsMode);
+         cfg.SetVerboseLogging(Verbosity >= 2);
+         cfg.SetDataPath(LearningDataPath);
+      }
+      CEventBus *bus = CEventBus::GetInstance();
+      if(CheckPointer(bus) != POINTER_INVALID)
+      {
+         bus.SetVerboseLogging(cfg != NULL ? cfg.IsVerboseLogging() : (Verbosity >= 2));
+         bus.PublishSystemEvent("PaperEA_v2", "Unified system online");
+      }
+      CSystemMonitor *mon = CSystemMonitor::GetInstance();
+      if(CheckPointer(mon) == POINTER_INVALID) Print("WARNING: SystemMonitor init failed");
+   }
    
    // Initialize Knowledge Base for comprehensive logging
    g_kb = new CKnowledgeBase();
@@ -612,7 +551,10 @@ int OnInit()
       {
          // Load initial policy
          bool policy_loaded = Policy_Load();
-         Print("Policy Engine initialized, policy loaded: ", policy_loaded ? "YES" : "NO");
+         if(policy_loaded)
+           PrintFormat("Policy Engine initialized, policy loaded: YES (min_conf=%.2f)", g_policy_min_conf);
+         else
+           Print("Policy Engine initialized, policy loaded: NO");
       }
    }
    
@@ -646,6 +588,50 @@ int OnInit()
    {
       Print("ERROR: Failed to initialize Trade Manager");
       return(INIT_FAILED);
+   }
+   
+   // ===================[ ADAPTIVE OPTIMIZATION SYSTEM INITIALIZATION ]===================
+   
+   // Initialize Policy Updater (auto-creates and updates policy.json)
+   if(UsePolicyEngine || UsePolicyGating)
+   {
+      g_policy_updater = new CPolicyUpdater(g_learning_bridge, 60); // Update every 60 minutes
+      if(CheckPointer(g_policy_updater) != POINTER_INVALID)
+      {
+         PrintFormat("✅ Policy Updater initialized: auto-updating policy.json");
+      }
+   }
+   
+   // Initialize Adaptive Signal Optimizer
+   g_adaptive_optimizer = new CAdaptiveSignalOptimizer(g_learning_bridge, g_gate_manager, 3, true);
+   if(CheckPointer(g_adaptive_optimizer) == POINTER_INVALID)
+   {
+      Print("WARNING: Failed to initialize Adaptive Signal Optimizer - using standard gate processing");
+   }
+   else
+   {
+      PrintFormat("✅ Adaptive Signal Optimizer initialized: 23 strategies, ML-enabled");
+   }
+   
+   // Initialize Position Reviewer (5-minute reviews)
+   g_position_reviewer = new CPositionReviewer(g_gate_manager, g_adaptive_optimizer, 300);
+   if(CheckPointer(g_position_reviewer) != POINTER_INVALID)
+   {
+      PrintFormat("✅ Position Reviewer initialized: Reviews every 5 minutes");
+   }
+   
+   // Initialize Gate Learning System (hybrid learning: immediate + batch)
+   g_gate_learning = new CGateLearningSystem(true, 0.05);  // auto_adjust=true, learning_rate=5%
+   if(CheckPointer(g_gate_learning) != POINTER_INVALID)
+   {
+      PrintFormat("✅ Gate Learning System initialized: Hybrid updates enabled");
+   }
+   
+   // Initialize Unified Trade Logger (JSON lifecycle tracking)
+   g_trade_logger = new CUnifiedTradeLogger();
+   if(CheckPointer(g_trade_logger) != POINTER_INVALID)
+   {
+      PrintFormat("✅ Unified Trade Logger initialized: Daily JSON logs");
    }
    
    // ===================[ SESSION STATE INITIALIZATION ]===================
@@ -747,20 +733,15 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    Print("=== PaperEA v2 Enhanced Deinitialization Starting ===");
+   CEventBus *bus = CEventBus::GetInstance();
+   if(CheckPointer(bus) != POINTER_INVALID) bus.PublishSystemEvent("PaperEA_v2", "Deinitializing");
    
    // Kill timer
    EventKillTimer();
    
-   // ===================[ CLEANUP PAPER POSITIONS ]===================
-   for(int i = 0; i < ArraySize(g_paper_positions); i++)
-   {
-      if(g_paper_positions[i] != NULL)
-      {
-         delete g_paper_positions[i];
-         g_paper_positions[i] = NULL;
-      }
-   }
-   ArrayResize(g_paper_positions, 0);
+   // ===================[ REAL MT5 POSITIONS ]===================
+   // No cleanup needed - MT5 handles position lifecycle
+   // All open positions remain in MT5 terminal until manually closed
    
    // ===================[ CLEANUP ADVANCED MANAGERS ]===================
    if(g_session_manager != NULL)
@@ -825,6 +806,44 @@ void OnDeinit(const int reason)
    {
       delete g_features;
       g_features = NULL;
+   }
+   
+   // ===================[ CLEANUP ADAPTIVE OPTIMIZATION SYSTEM ]===================
+   if(g_trade_logger != NULL)
+   {
+      g_trade_logger.PrintReport();
+      delete g_trade_logger;
+      g_trade_logger = NULL;
+   }
+   
+   if(g_gate_learning != NULL)
+   {
+      g_gate_learning.PrintReport();
+      g_gate_learning.SaveLearningData();  // Final save before shutdown
+      delete g_gate_learning;
+      g_gate_learning = NULL;
+   }
+   
+   if(g_position_reviewer != NULL)
+   {
+      g_position_reviewer.PrintReport();
+      delete g_position_reviewer;
+      g_position_reviewer = NULL;
+   }
+   
+   if(g_adaptive_optimizer != NULL)
+   {
+      g_adaptive_optimizer.PrintOptimizationReport();
+      delete g_adaptive_optimizer;
+      g_adaptive_optimizer = NULL;
+   }
+   
+   if(g_policy_updater != NULL)
+   {
+      g_policy_updater.PrintReport();
+      g_policy_updater.ForceUpdate();  // Final policy update before shutdown
+      delete g_policy_updater;
+      g_policy_updater = NULL;
    }
    
    // ===================[ CLEANUP LEGACY SYSTEMS ]===================
@@ -1089,8 +1108,7 @@ bool Policy_Load()
    {
       g_policy_loaded = true;
       g_policy_min_conf = 0.5; // Default fallback
-      if(ShouldLog(LOG_INFO))
-         PrintFormat("Policy loaded: min_conf=%.2f", g_policy_min_conf);
+      // Logging moved to caller to avoid duplicate messages
    }
    
    return g_policy_loaded;
@@ -1732,11 +1750,53 @@ void OnTick()
       return; // No signal generated
    }
    
-   // ===================[ COMPREHENSIVE GATING SYSTEM ]===================
+   // ===================[ ADAPTIVE SIGNAL OPTIMIZATION SYSTEM ]===================
    if(UseGateSystem && CheckPointer(g_gate_manager) != POINTER_INVALID)
    {
-      CSignalDecision decision;
-      bool passed = g_gate_manager.ProcessSignal(signal, decision);
+      CAdaptiveDecision decision;
+      bool passed = false;
+      string blocking_reason = "";
+      
+      // Use Adaptive Optimizer if available, otherwise fall back to standard gates
+      if(CheckPointer(g_adaptive_optimizer) != POINTER_INVALID)
+      {
+         // ADAPTIVE OPTIMIZATION: Try to adjust blocked signals
+         passed = g_adaptive_optimizer.OptimizeSignal(signal, decision, selected_strategy, blocking_reason);
+         
+         if(passed && decision.is_adjusted)
+         {
+            // Signal was adjusted successfully!
+            if(ShouldLog(LOG_INFO))
+               PrintFormat("🎯 Signal OPTIMIZED after %d attempts: %s → %s", 
+                          decision.adjustment_attempts, signal.id, decision.signal_id);
+         }
+         else if(passed && !decision.is_adjusted)
+         {
+            // Original signal passed without adjustment
+            if(ShouldLog(LOG_DEBUG))
+               PrintFormat("✅ Signal passed gates unchanged: %s", decision.signal_id);
+         }
+         else
+         {
+            // All optimization attempts failed
+            if(ShouldLog(LOG_INFO))
+               PrintFormat("🚫 Signal optimization failed: %s - %s", signal.id, blocking_reason);
+            return;
+         }
+      }
+      else
+      {
+         // Fallback to standard gate processing
+         CSignalDecision standard_decision;
+         passed = g_gate_manager.ProcessSignal(signal, standard_decision);
+         
+         // Copy to adaptive decision for compatibility
+         if(passed)
+         {
+            g_adaptive_optimizer.CopyDecision(standard_decision, decision);
+            decision.is_adjusted = false;
+         }
+      }
       
       if(passed)
       {
@@ -1787,20 +1847,42 @@ void OnTick()
          // ===================[ EXECUTE PAPER TRADE ]===================
          ExecutePaperTrade(decision);
          
-         // ===================[ COMPREHENSIVE LOGGING ]===================
+         // ===================[ COMPREHENSIVE LOGGING WITH ADAPTIVE TRACKING ]===================
          LogDecisionTelemetry(decision);
          
-         // Log to Knowledge Base
-         if(CheckPointer(g_kb) != POINTER_INVALID)
+         // Log adaptive decision details with complete gate journey
+         if(decision.is_adjusted)
          {
-            g_kb.LogTradeExecution(decision.symbol, selected_strategy, decision.execution_time,
-                                   decision.final_price, decision.final_volume, decision.order_type);
+            LogAdaptiveDecisionDetails(decision, selected_strategy);
          }
          
-         // Export features for ML
+         // Print complete gate-by-gate journey
+         if(CheckPointer(g_adaptive_optimizer) != POINTER_INVALID && decision.complete_journey_length > 0)
+         {
+            g_adaptive_optimizer.PrintCompleteGateJourney(decision);
+         }
+         
+         // Log to Knowledge Base with adjusted_trade flag
+         if(CheckPointer(g_kb) != POINTER_INVALID)
+         {
+            string trade_type = decision.is_adjusted ? "adjusted_trade" : "regular_trade";
+            g_kb.LogTradeExecution(decision.symbol, selected_strategy, decision.execution_time,
+                                   decision.final_price, decision.final_volume, decision.order_type);
+            
+            // Additional metadata for adjusted trades
+            if(decision.is_adjusted)
+            {
+               string adjustment_details = StringFormat("attempts=%d,orig_vol=%.2f,final_vol=%.2f,orig_price=%.5f,final_price=%.5f",
+                  decision.adjustment_attempts, decision.original_volume, decision.final_volume,
+                  decision.original_price, decision.final_price);
+               g_kb.LogEvent(decision.symbol, "adaptive_optimization", trade_type, adjustment_details);
+            }
+         }
+         
+         // Export features for ML with adjusted flag
          if(CheckPointer(g_features) != POINTER_INVALID)
          {
-            ExportEnhancedFeatures(decision, selected_strategy);
+            ExportEnhancedFeaturesAdaptive(decision, selected_strategy);
          }
          
          // Update last trade time
@@ -1828,11 +1910,74 @@ void OnTick()
       if(CheckPointer(g_gate_manager) != POINTER_INVALID)
          g_gate_manager.UpdateFromLearning();
       
+      // Auto-update policy file (ML learning)
+      if(CheckPointer(g_policy_updater) != POINTER_INVALID)
+         g_policy_updater.CheckAndUpdate();
+      
+      // BATCH LEARNING UPDATE (hourly)
+      if(CheckPointer(g_gate_learning) != POINTER_INVALID)
+         g_gate_learning.PerformBatchLearning();
+      
       // Refresh recent overlays for selector (if enabled)
       if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
          g_selector.EnsureRecentLoaded(SelRecentDays);
       
       last_update = now;
+   }
+   
+   // ===================[ POSITION REVIEW SYSTEM (Every 5 minutes) ]===================
+   if(CheckPointer(g_position_reviewer) != POINTER_INVALID && g_position_reviewer.IsReviewTime())
+   {
+      PrintFormat("\n⏰ ==== POSITION REVIEW CYCLE - %s ====", TimeToString(now));
+      
+      int positions_reviewed = 0;
+      int positions_closed = 0;
+      int positions_adjusted = 0;
+      
+      // Review all open paper positions
+      for(int i = 0; i < ArraySize(g_paper_positions); i++)
+      {
+         if(g_paper_positions[i] == NULL) continue;
+         if(g_paper_positions[i].status != "open") continue;
+         
+         positions_reviewed++;
+         
+         // Get the strategy for this position
+         IStrategy* position_strategy = NULL;
+         string strategy_name = "Unknown";
+         
+         if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
+         {
+            // Try to match strategy by name (stored in position or metadata)
+            strategy_name = "ADXStrategy";  // Default fallback
+            position_strategy = g_selector.GetStrategyByName(strategy_name);
+         }
+         
+         // Review the position
+         PositionReview review = g_position_reviewer.ReviewPaperPosition(
+            g_paper_positions[i], position_strategy, strategy_name);
+         
+         // Apply the review decision
+         bool applied = g_position_reviewer.ApplyReviewDecision(g_paper_positions[i], review);
+         
+         if(applied && review.action == PA_CLOSE)
+            positions_closed++;
+         else if(applied && (review.action == PA_ADJUST_SL || review.action == PA_ADJUST_TP))
+            positions_adjusted++;
+         
+         // Log to knowledge base
+         if(CheckPointer(g_kb) != POINTER_INVALID)
+         {
+            string review_details = StringFormat("action=%d,reason=%s,pnl_pct=%.2f,confidence=%.2f",
+               review.action, review.reason, review.current_pnl_pct, review.new_signal_confidence);
+            g_kb.LogEvent(g_paper_positions[i].symbol, "position_review", 
+                         EnumToString(review.action), review_details);
+         }
+      }
+      
+      PrintFormat("📊 Review Complete: %d positions reviewed | %d closed | %d adjusted",
+                 positions_reviewed, positions_closed, positions_adjusted);
+      PrintFormat("==========================================\n");
    }
 }
 
@@ -1900,77 +2045,111 @@ TradingSignal GenerateSignal()
 }
 
 //+------------------------------------------------------------------+
-//| TRADE EXECUTION                                                  |
+//| TRADE EXECUTION - REAL MT5 ORDERS                                 |
 //+------------------------------------------------------------------+
 void ExecutePaperTrade(CSignalDecision &decision)
 {
-   // Execute paper trade with full position tracking and learning integration
-   Print("Executing paper trade: " + decision.signal_id + 
-         " at " + DoubleToString(decision.final_price, 5));
+   // Execute REAL trade to MT5 (on demo account)
+   PrintFormat("🎯 Executing REAL MT5 trade: %s at %.5f", 
+               decision.signal_id, decision.final_price);
    
-   // Create paper position structure
-   CPaperPosition* paper_pos = new CPaperPosition();
+   // Validate trade manager
+   if(CheckPointer(g_trade_manager) == POINTER_INVALID)
+   {
+      PrintFormat("❌ ERROR: TradeManager not initialized!");
+      return;
+   }
    
-   // Initialize position parameters
-   paper_pos.symbol = decision.symbol;
-   paper_pos.strategy = decision.strategy;
-   paper_pos.signal_id = decision.signal_id;
-   paper_pos.entry_price = decision.final_price;
-   paper_pos.volume = decision.final_volume;
-   paper_pos.position_type = decision.order_type == ORDER_TYPE_BUY ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
-   paper_pos.entry_time = TimeCurrent();
-   paper_pos.magic_number = decision.magic_number;
+   // Create TradeOrder struct for real MT5 execution
+   TradeOrder order;
+   order.symbol = decision.symbol;
+   order.order_type = decision.order_type;
+   order.volume = decision.final_volume;
+   order.price = decision.final_price;
+   order.sl = decision.final_sl;
+   order.tp = decision.final_tp;
+   order.deviation = 10;  // 10 points slippage tolerance
+   order.magic = decision.magic_number;
+   order.comment = decision.signal_id;
+   order.action = ACTION_DEAL;  // Market order execution
    
-   // Calculate stop loss and take profit
-   double point = SymbolInfoDouble(decision.symbol, SYMBOL_POINT);
-   int digits = (int)SymbolInfoInteger(decision.symbol, SYMBOL_DIGITS);
+   // EXECUTE REAL TRADE TO MT5
+   bool success = g_trade_manager.ExecuteOrder(order);
    
-   if(decision.final_sl > 0)
-     paper_pos.stop_loss = NormalizeDouble(decision.final_sl, digits);
-   
-   if(decision.final_tp > 0)
-     paper_pos.take_profit = NormalizeDouble(decision.final_tp, digits);
-   
-   // Set position status
-   paper_pos.status = "open";
-   paper_pos.unrealized_pnl = 0.0;
-   paper_pos.max_profit = 0.0;
-   paper_pos.max_loss = 0.0;
-   
-   // Add to global paper positions array
-   int pos_count = ArraySize(g_paper_positions);
-   ArrayResize(g_paper_positions, pos_count + 1);
-   g_paper_positions[pos_count] = paper_pos;
-   
-   // Update decision with execution details
-   decision.executed = true;
-   decision.execution_time = TimeCurrent();
-   decision.execution_price = decision.final_price;
-   
-   // Log execution for learning bridge
-   if(CheckPointer(g_learning_bridge) != POINTER_INVALID)
-     {
-      g_learning_bridge.RecordSignal(decision);
-      g_learning_bridge.UpdateMarketRegime();
-     }
-   
-   // Export features for ML training
-   string features[];
-   ArrayResize(features, 8);
-   features[0] = "entry_price:" + DoubleToString(paper_pos.entry_price, 5);
-   features[1] = "volume:" + DoubleToString(paper_pos.volume, 2);
-   features[2] = "position_type:" + EnumToString(paper_pos.position_type);
-   features[3] = "strategy:" + paper_pos.strategy;
-   features[4] = "signal_confidence:" + DoubleToString(decision.confidence, 3);
-   features[5] = "market_regime:" + GetMarketRegime();
-   features[6] = "volatility:" + DoubleToString(GetVolatility(), 4);
-   features[7] = "correlation:" + DoubleToString(GetCorrelation(), 3);
-   
-   ExportTradeFeatures(decision.symbol, decision.strategy, TimeCurrent(), features);
-   
-   PrintFormat("Paper position created: %s %s %.2f lots at %.5f (SL: %.5f, TP: %.5f)", 
-               EnumToString(paper_pos.position_type), paper_pos.symbol, paper_pos.volume,
-               paper_pos.entry_price, paper_pos.stop_loss, paper_pos.take_profit);
+   if(success)
+   {
+      // Get execution results from TradeManager
+      ulong deal_ticket = g_trade_manager.ResultDeal();
+      ulong order_ticket = g_trade_manager.ResultOrder();
+      double exec_price = g_trade_manager.ResultPrice();
+      double exec_volume = g_trade_manager.ResultVolume();
+      
+      // Update decision with REAL execution details
+      decision.executed = true;
+      decision.execution_time = TimeCurrent();
+      decision.execution_price = exec_price;  // Actual fill price
+      
+      PrintFormat("✅ REAL TRADE EXECUTED: Deal=%I64u Order=%I64u Price=%.5f Volume=%.2f SL=%.5f TP=%.5f",
+                  deal_ticket, order_ticket, exec_price, exec_volume, decision.final_sl, decision.final_tp);
+      
+      // Log to unified trade logger (with gate journey)
+      if(CheckPointer(g_trade_logger) != POINTER_INVALID)
+      {
+         UnifiedTradeRecord record;
+         record.trade_id = IntegerToString(deal_ticket);
+         record.signal_id = decision.signal_id;
+         record.execution_time = decision.execution_time;
+         record.status = "open";
+         record.strategy = decision.strategy;
+         record.symbol = decision.symbol;
+         record.timeframe = decision.timeframe;
+         record.market_regime = GetMarketRegime();
+         record.volatility = GetVolatility();
+         record.entry_price = exec_price;
+         record.sl = decision.final_sl;
+         record.tp = decision.final_tp;
+         record.volume = exec_volume;
+         record.confidence = decision.confidence;
+         
+         // Copy gate journey from adaptive optimizer
+         if(CheckPointer(g_adaptive_optimizer) != POINTER_INVALID)
+         {
+            // Gate journey was already recorded during optimization
+            // Just log the execution
+         }
+         
+         g_trade_logger.LogTradeExecution(record);
+      }
+      
+      // Log execution for learning bridge
+      if(CheckPointer(g_learning_bridge) != POINTER_INVALID)
+      {
+         g_learning_bridge.RecordSignal(decision);
+         g_learning_bridge.UpdateMarketRegime();
+      }
+      
+      // Export features for ML training
+      string features[];
+      ArrayResize(features, 8);
+      features[0] = "entry_price:" + DoubleToString(exec_price, 5);
+      features[1] = "volume:" + DoubleToString(exec_volume, 2);
+      features[2] = "order_type:" + EnumToString(decision.order_type);
+      features[3] = "strategy:" + decision.strategy;
+      features[4] = "signal_confidence:" + DoubleToString(decision.confidence, 3);
+      features[5] = "market_regime:" + GetMarketRegime();
+      features[6] = "volatility:" + DoubleToString(GetVolatility(), 4);
+      features[7] = "correlation:" + DoubleToString(GetCorrelation(), 3);
+      
+      ExportTradeFeatures(decision.symbol, decision.strategy, TimeCurrent(), features);
+   }
+   else
+   {
+      uint retcode = g_trade_manager.ResultRetcode();
+      PrintFormat("❌ TRADE EXECUTION FAILED: Retcode=%u Signal=%s", 
+                  retcode, decision.signal_id);
+      
+      decision.executed = false;
+   }
 }
 
 void ExecutePaperTrade(TradingSignal &signal)
@@ -2003,6 +2182,95 @@ void LogDecisionTelemetry(CSignalDecision &decision)
    );
    
    Print(log_data);
+}
+
+// Log adaptive decision details with attempt history
+void LogAdaptiveDecisionDetails(CAdaptiveDecision &decision, const string strategy_name)
+{
+   if(!decision.is_adjusted) return;
+   
+   PrintFormat("\n=== 🔧 ADAPTIVE OPTIMIZATION DETAILS ===");
+   PrintFormat("Strategy: %s | Original Signal: %s", strategy_name, decision.original_signal_id);
+   PrintFormat("Final Signal: %s | Total Attempts: %d", decision.signal_id, decision.adjustment_attempts);
+   
+   for(int i = 0; i < decision.adjustment_attempts; i++)
+   {
+      AdjustmentAttempt att = decision.attempts[i];
+      PrintFormat("  Attempt %d: Price%+.2f%% SL×%.2f TP×%.2f Vol×%.2f → %s",
+                 att.attempt_number,
+                 att.price_tweak * 100,
+                 att.sl_tweak,
+                 att.tp_tweak,
+                 att.volume_tweak,
+                 att.passed ? "✅ PASSED" : "❌ FAILED");
+   }
+   
+   PrintFormat("Final Parameters: Price=%.5f SL=%.5f TP=%.5f Vol=%.2f",
+              decision.final_price, decision.final_sl, decision.final_tp, decision.final_volume);
+   PrintFormat("========================================\n");
+   
+   // Log to telemetry if available
+   if(TelemetryEnabled && CheckPointer(g_telemetry_base) != POINTER_INVALID)
+   {
+      string details = StringFormat("strategy=%s,attempts=%d,orig_vol=%.2f,final_vol=%.2f",
+                                   strategy_name, decision.adjustment_attempts,
+                                   decision.original_volume, decision.final_volume);
+      g_telemetry_base.LogEvent(_Symbol, _Period, "adaptive_optimization", "signal_adjusted", details);
+   }
+}
+
+// Export enhanced features with adaptive tracking
+void ExportEnhancedFeaturesAdaptive(CAdaptiveDecision &decision, const string strategy_name)
+{
+   if(CheckPointer(g_features) == POINTER_INVALID) return;
+   
+   // Create comprehensive feature set
+   string features[];
+   ArrayResize(features, 20);  // Expanded for adaptive features
+   datetime now = TimeCurrent();
+   MqlDateTime _dt; TimeToStruct(now, _dt); int _hour = _dt.hour;
+   
+   features[0] = "strategy:" + strategy_name;
+   features[1] = "symbol:" + decision.symbol;
+   features[2] = "timeframe:" + IntegerToString(_Period);
+   features[3] = "entry_price:" + DoubleToString(decision.final_price, 5);
+   features[4] = "volume:" + DoubleToString(decision.final_volume, 2);
+   features[5] = "order_type:" + IntegerToString(decision.order_type);
+   features[6] = "confidence:" + DoubleToString(decision.confidence, 3);
+   features[7] = "hour:" + IntegerToString(_hour);
+   features[8] = "volatility:" + DoubleToString(decision.volatility, 4);
+   features[9] = "correlation:" + DoubleToString(decision.correlation_score, 3);
+   features[10] = "regime:" + decision.market_regime;
+   
+   // ADAPTIVE-SPECIFIC FEATURES
+   features[11] = "is_adjusted:" + (decision.is_adjusted ? "1" : "0");
+   features[12] = "adjustment_attempts:" + IntegerToString(decision.adjustment_attempts);
+   features[13] = "volume_change_pct:" + DoubleToString(
+      decision.original_volume > 0 ? (decision.final_volume - decision.original_volume) / decision.original_volume * 100 : 0, 2);
+   features[14] = "price_change_pct:" + DoubleToString(
+      decision.original_price > 0 ? (decision.final_price - decision.original_price) / decision.original_price * 100 : 0, 2);
+   features[15] = "sl_scale:" + DoubleToString(
+      decision.original_sl > 0 ? decision.final_sl / decision.original_sl : 1.0, 2);
+   features[16] = "tp_scale:" + DoubleToString(
+      decision.original_tp > 0 ? decision.final_tp / decision.original_tp : 1.0, 2);
+   features[17] = "original_signal_id:" + (decision.is_adjusted ? decision.original_signal_id : decision.signal_id);
+   features[18] = "gate_passed_count:" + IntegerToString(CountPassedGates(decision));
+   features[19] = "timestamp:" + TimeToString(now);
+   
+   // Log to features system
+   g_features.LogFeatures(features);
+}
+
+// Helper to count passed gates
+int CountPassedGates(CSignalDecision &decision)
+{
+   int count = 0;
+   for(int i = 0; i < 8; i++)
+   {
+      if(decision.gate_results[i])
+         count++;
+   }
+   return count;
 }
 
 //+------------------------------------------------------------------+
@@ -2138,16 +2406,11 @@ string GetMarketRegime()
 //+------------------------------------------------------------------+
 //| Update Paper Positions                                           |
 //+------------------------------------------------------------------+
-void UpdatePaperPositions()
-{
-   for(int i = 0; i < ArraySize(g_paper_positions); i++)
-     {
-      if(g_paper_positions[i] != NULL && g_paper_positions[i].status == "open")
-        {
-         g_paper_positions[i].UpdatePnL();
-        }
-     }
-}
+// UpdatePaperPositions() REMOVED - using REAL MT5 positions
+// Position updates handled automatically by MT5 terminal
+// Use PositionGetDouble(POSITION_PROFIT) to get current PnL
+// Use OnTradeTransaction() to track position lifecycle events
+//+------------------------------------------------------------------+
 
 //+------------------------------------------------------------------+
 //| MISSING FUNCTIONS - ENHANCED IMPLEMENTATIONS                    |
