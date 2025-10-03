@@ -4,6 +4,27 @@
 
 ---
 
+## Quick Navigation
+
+**New to DualEA?** Start here:
+1. [System Overview](#system-overview) - What is DualEA?
+2. [Quick Start](#quick-start) - Get up and running
+3. [Architecture](#architecture) - How it works
+
+**Setting up?** Check these guides:
+- [Configuration-Reference.md](Configuration-Reference.md) - All 180+ parameters explained
+- [Execution-Pipeline.md](Execution-Pipeline.md) - Understand the trade flow
+
+**Troubleshooting?** Go to:
+- [Policy-Exploration-Guide.md](Policy-Exploration-Guide.md) - Policy and exploration issues
+- [Appendices.md](Appendices.md) - Troubleshooting guide and operational procedures
+
+**Developing?** See:
+- [Phase-Implementation.md](Phase-Implementation.md) - Development roadmap and TODOs
+- [Observability-Guide.md](Observability-Guide.md) - Telemetry and monitoring
+
+---
+
 ## System Overview
 
 **DualEA** is a production-ready Expert Advisor ecosystem for MetaTrader 5:
@@ -12,6 +33,260 @@
 - **LiveEA** (1702 lines): Real trading with insights/policy gating and advanced risk management  
 - **ML Pipeline**: TensorFlow/Keras training with policy export
 - **Knowledge Base**: Shared CSV/JSON data in Common Files
+
+### System Architecture
+
+```mermaid
+graph TB
+    subgraph MT5["MetaTrader 5 Terminal"]
+        subgraph PaperEA["PaperEA_v2 (Paper Trading)"]
+            P_TICK[OnTick/OnTimer]
+            P_STRAT[21 Strategies]
+            P_GATES[8-Stage Gates]
+            P_POLICY[Policy Engine]
+            P_EXEC[Paper Execution]
+            
+            P_TICK --> P_STRAT
+            P_STRAT --> P_GATES
+            P_GATES --> P_POLICY
+            P_POLICY --> P_EXEC
+        end
+        
+        subgraph LiveEA["LiveEA (Real Trading)"]
+            L_TICK[OnTick/OnTimer]
+            L_STRAT[21 Strategies]
+            L_GATES[8-Stage Gates]
+            L_POLICY[Policy Engine]
+            L_RISK[Risk Manager]
+            L_EXEC[Real Execution]
+            
+            L_TICK --> L_STRAT
+            L_STRAT --> L_GATES
+            L_GATES --> L_POLICY
+            L_POLICY --> L_RISK
+            L_RISK --> L_EXEC
+        end
+    end
+    
+    subgraph KB["Knowledge Base (Common Files)"]
+        KB_TRADES[(knowledge_base.csv)]
+        KB_FEATURES[(features.csv)]
+        KB_INSIGHTS[(insights.json)]
+        KB_POLICY[(policy.json)]
+        KB_EXPLORE[(explore_counts.csv)]
+    end
+    
+    subgraph ML["ML Pipeline (Python)"]
+        ML_TRAIN[Train Model<br/>LSTM Classifier]
+        ML_EXPORT[Export Policy<br/>policy.json]
+        ML_VALIDATE[Validate<br/>ROC-AUC/Brier]
+    end
+    
+    subgraph Scripts["MT5 Scripts"]
+        SCRIPT_INSIGHTS[InsightsRebuild.mq5]
+        SCRIPT_VALIDATE[ValidateInsights.mq5]
+    end
+    
+    %% Data Flow
+    P_EXEC -.->|Log Trades| KB_TRADES
+    P_EXEC -.->|Export Features| KB_FEATURES
+    L_EXEC -.->|Log Trades| KB_TRADES
+    L_EXEC -.->|Export Features| KB_FEATURES
+    
+    KB_FEATURES --> ML_TRAIN
+    ML_TRAIN --> ML_VALIDATE
+    ML_VALIDATE --> ML_EXPORT
+    ML_EXPORT -.->|Deploy| KB_POLICY
+    
+    KB_TRADES --> SCRIPT_INSIGHTS
+    SCRIPT_INSIGHTS -.->|Generate| KB_INSIGHTS
+    
+    KB_INSIGHTS -.->|Load| P_GATES
+    KB_INSIGHTS -.->|Load| L_GATES
+    KB_POLICY -.->|Load| P_POLICY
+    KB_POLICY -.->|Load| L_POLICY
+    KB_EXPLORE -.->|Check Caps| P_GATES
+    KB_EXPLORE -.->|Check Caps| L_GATES
+    
+    %% Styling
+    classDef paperStyle fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    classDef liveStyle fill:#ffe1e1,stroke:#cc0000,stroke-width:2px
+    classDef mlStyle fill:#e1ffe1,stroke:#00cc00,stroke-width:2px
+    classDef kbStyle fill:#fff4e1,stroke:#cc8800,stroke-width:2px
+    classDef scriptStyle fill:#f0e1ff,stroke:#8800cc,stroke-width:2px
+    
+    class P_TICK,P_STRAT,P_GATES,P_POLICY,P_EXEC paperStyle
+    class L_TICK,L_STRAT,L_GATES,L_POLICY,L_RISK,L_EXEC liveStyle
+    class ML_TRAIN,ML_EXPORT,ML_VALIDATE mlStyle
+    class KB_TRADES,KB_FEATURES,KB_INSIGHTS,KB_POLICY,KB_EXPLORE kbStyle
+    class SCRIPT_INSIGHTS,SCRIPT_VALIDATE scriptStyle
+```
+
+### Execution Pipeline Flow
+
+```mermaid
+graph LR
+    subgraph "Signal Generation"
+        A1[OnTick/OnTimer]
+        A2[Strategy.CheckSignal]
+        A1 --> A2
+    end
+    
+    subgraph "Early Validation"
+        B1[Market Hours]
+        B2[News Blackout]
+        B3[Spread Check]
+        B4[Margin Check]
+        A2 --> B1
+        B1 --> B2
+        B2 --> B3
+        B3 --> B4
+    end
+    
+    subgraph "8-Stage Gates"
+        C1[G1: Signal Rinse]
+        C2[G2: Market Soap]
+        C3[G3: Strategy Scrub]
+        C4[G4: Risk Wash]
+        C5[G5: Performance Wax]
+        C6[G6: ML Polish]
+        C7[G7: Live Clean]
+        C8[G8: Final Verify]
+        
+        B4 --> C1
+        C1 --> C2
+        C2 --> C3
+        C3 --> C4
+        C4 --> C5
+        C5 --> C6
+        C6 --> C7
+        C7 --> C8
+    end
+    
+    subgraph "Strategy Selection"
+        D1[Insights Gating]
+        D2[Exploration Mode]
+        D3[Selector Scoring]
+        C8 --> D1
+        D1 --> D2
+        D2 --> D3
+    end
+    
+    subgraph "Policy Application"
+        E1[Load Policy Slice]
+        E2[Check Confidence]
+        E3[Apply Scaling]
+        D3 --> E1
+        E1 --> E2
+        E2 --> E3
+    end
+    
+    subgraph "Risk Management"
+        F1[Position Sizing]
+        F2[Correlation Adjust]
+        F3[Circuit Breakers]
+        E3 --> F1
+        F1 --> F2
+        F2 --> F3
+    end
+    
+    subgraph "Execution"
+        G1[Execute Trade]
+        G2[Log to KB]
+        G3[Export Features]
+        G4[Update Telemetry]
+        F3 --> G1
+        G1 --> G2
+        G2 --> G3
+        G3 --> G4
+    end
+    
+    %% Styling
+    classDef signalStyle fill:#e1f5ff,stroke:#0066cc
+    classDef gateStyle fill:#ffe1e1,stroke:#cc0000
+    classDef policyStyle fill:#e1ffe1,stroke:#00cc00
+    classDef execStyle fill:#fff4e1,stroke:#cc8800
+    
+    class A1,A2 signalStyle
+    class B1,B2,B3,B4,C1,C2,C3,C4,C5,C6,C7,C8 gateStyle
+    class D1,D2,D3,E1,E2,E3,F1,F2,F3 policyStyle
+    class G1,G2,G3,G4 execStyle
+```
+
+### Data Flow & Learning Loop
+
+```mermaid
+graph TB
+    subgraph "Data Collection Phase"
+        DC1[PaperEA/LiveEA<br/>Trade Execution]
+        DC2[knowledge_base.csv<br/>Trade Records]
+        DC3[features.csv<br/>50+ Features/Trade]
+        
+        DC1 --> DC2
+        DC1 --> DC3
+    end
+    
+    subgraph "Insights Generation"
+        IG1[InsightsRebuild.mq5]
+        IG2[Calculate Per-Slice<br/>Win Rate, R-Multiple, Sharpe]
+        IG3[insights.json]
+        
+        DC2 --> IG1
+        IG1 --> IG2
+        IG2 --> IG3
+    end
+    
+    subgraph "ML Training"
+        ML1[Load features.csv]
+        ML2[Train LSTM Model<br/>TimeSeriesSplit CV]
+        ML3[Validate<br/>ROC-AUC, Brier, Expected-R]
+        ML4[Export policy.json<br/>Per-Slice Confidence]
+        
+        DC3 --> ML1
+        ML1 --> ML2
+        ML2 --> ML3
+        ML3 --> ML4
+    end
+    
+    subgraph "Gating Application"
+        GA1[Load insights.json<br/>+ policy.json]
+        GA2[Insights Gating<br/>Block Low WinRate Slices]
+        GA3[Policy Gating<br/>Block Low Confidence]
+        GA4[Exploration Mode<br/>For New Slices]
+        
+        IG3 --> GA1
+        ML4 --> GA1
+        GA1 --> GA2
+        GA2 --> GA3
+        GA3 --> GA4
+    end
+    
+    subgraph "Trade Execution"
+        TE1[Filtered High-Quality<br/>Trades Only]
+        TE2[Better Performance]
+        TE3[More Data Collection]
+        
+        GA4 --> TE1
+        TE1 --> TE2
+        TE2 --> TE3
+    end
+    
+    %% Feedback Loop
+    TE3 -.->|Continuous Learning| DC1
+    
+    %% Styling
+    classDef collectStyle fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    classDef insightStyle fill:#f0e1ff,stroke:#8800cc,stroke-width:2px
+    classDef mlStyle fill:#e1ffe1,stroke:#00cc00,stroke-width:2px
+    classDef gateStyle fill:#ffe1e1,stroke:#cc0000,stroke-width:2px
+    classDef execStyle fill:#fff4e1,stroke:#cc8800,stroke-width:2px
+    
+    class DC1,DC2,DC3 collectStyle
+    class IG1,IG2,IG3 insightStyle
+    class ML1,ML2,ML3,ML4 mlStyle
+    class GA1,GA2,GA3,GA4 gateStyle
+    class TE1,TE2,TE3 execStyle
+```
 
 ---
 
@@ -133,8 +408,6 @@ Common/Files/DualEA/
 
 ## Configuration
 
-**📘 For complete parameter reference, see [Configuration-Reference.md](Configuration-Reference.md)**
-
 ### Key PaperEA Parameters
 
 **Trading**: `LotSize`, `MagicNumber`, `StopLossPips`, `TakeProfitPips`, `MaxOpenPositions`, `TrailEnabled`  
@@ -158,8 +431,6 @@ Inherits PaperEA params plus:
 
 ## Execution Pipeline
 
-**📘 For detailed pipeline documentation, see [Execution-Pipeline.md](Execution-Pipeline.md)**
-
 1. **Signal Generation** (OnTick/OnTimer) → Strategy.CheckSignal()
 2. **Early Validation** → Trading hours, news, spread, margin
 3. **8-Stage Gates** → Progressive filtering with learning
@@ -172,8 +443,6 @@ Inherits PaperEA params plus:
 ---
 
 ## Exploration Mode
-
-**📘 For complete policy and exploration guide, see [Policy-Exploration-Guide.md](Policy-Exploration-Guide.md)**
 
 **Purpose**: Bootstrap insights for new strategy/symbol/TF slices.
 
@@ -250,7 +519,13 @@ python policy_export.py --model artifacts/tf_model.keras --scaler artifacts/scal
 
 Copy `policy.json` to `Common/Files/DualEA/policy.json` and restart LiveEA (or touch `policy.reload` for hot-reload when implemented).
 
-/block with reason and latency
+---
+
+## Monitoring & Telemetry
+
+### Event Types
+
+- `gate_decision`: Pass/block with reason and latency
 - `trade_execution`: Trade placements
 - `policy_load`: Policy reload events
 - `insights_rebuild`: Insights regeneration
@@ -303,13 +578,25 @@ run Scripts/InsightsRebuild.mq5
 
 ## Documentation
 
-- **README.md**: This file
+### Core Documentation
+- **README_PRODUCTION.md**: This file (quick reference)
+- **README.md**: Original comprehensive README with full phase details
+
+### Detailed Guides
+- **[Configuration-Reference.md](Configuration-Reference.md)**: Complete guide to all 180+ input parameters, configuration patterns, and best practices
+- **[Execution-Pipeline.md](Execution-Pipeline.md)**: Detailed execution flow from signal generation through post-execution, including paper vs live trading
+- **[Observability-Guide.md](Observability-Guide.md)**: Telemetry system, event types, SystemMonitor, debugging techniques, and performance monitoring
+- **[Policy-Exploration-Guide.md](Policy-Exploration-Guide.md)**: ML policy gating, fallback modes, exploration system, and troubleshooting
+- **[Phase-Implementation.md](Phase-Implementation.md)**: Complete roadmap for Phases 1-11 with status, TODOs, and implementation priorities
+- **[Appendices.md](Appendices.md)**: Red-team artifacts, data schemas, CI/CD integration, operational procedures, and troubleshooting
+
+### Legacy Documentation
 - **UnifiedSystemGuide.md**: ConfigManager/EventBus/SystemMonitor integration
 - **KB-Schemas.md**: CSV/JSON schemas
 - **PolicySchema.md**: policy.json structure
 - **Phase3.md**: LiveEA implementation plan
 - **Operations.md**: Ops runbook
-- **DualEA_Handbook.md**: Comprehensive guide
+- **DualEA_Handbook.md**: Comprehensive handbook
 
 ---
 
