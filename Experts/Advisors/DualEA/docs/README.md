@@ -1,131 +1,16 @@
-# DualEA (Paper + Live) — Modular Multi‑Strategy EA with Knowledge Base and Roadmap
+# DualEA — Production Multi-Strategy Trading System
+## Paper EA + Live EA with ML Policy Engine
 
-## Overview
-DualEA is a modular Expert Advisor system for MetaTrader 5 designed to:
-- Run a Paper EA to test strategies and indicators, logging all activity to a shared Knowledge Base.
-- Evolve into a Live EA that reads insights and ML policy from the Knowledge Base to gate and size real trades.
-- Support advanced trade management (pending orders, SL/TP, trailing) and per‑strategy modularity.
+## System Overview
 
-This repo currently focuses on the Paper EA with a production‑ready architecture for logging and advanced trade management. A multi‑phase roadmap below describes the path to Live EA, ML/LSTM policy learning, and institutional safety.
+**DualEA** is a production-ready, multi-strategy Expert Advisor ecosystem for MetaTrader 5 that combines:
 
-### Architecture (Mermaid)
+1. **PaperEA_v2** (2793 lines) - Advanced paper trading system with 8-stage gate filtering, 21 strategies, ML integration
+2. **LiveEA** (1702 lines) - Real trading implementation consuming insights and ML policies from PaperEA
+3. **ML Pipeline** - Python-based TensorFlow/Keras training with LSTM models and policy export
+4. **Knowledge Base** - Shared CSV/JSON data store in Common Files for cross-system communication
 
-**Legend:**
-- <span style="color:#4CAF50;font-weight:bold">Green</span>: Implemented & Working
-- <span style="color:#FFC107;font-weight:bold">Yellow</span>: Implemented but Needs Integration/Testing
-- <span style="color:#F44336;font-weight:bold">Red</span>: Planned/Not Implemented
-
-```mermaid
-flowchart TD
-  %% Color classes
-  classDef implemented fill:#4CAF50,color:#fff,stroke:#333,stroke-width:2px
-  classDef inprogress fill:#FFC107,color:#222,stroke:#333,stroke-width:2px
-  classDef planned fill:#F44336,color:#fff,stroke:#333,stroke-width:2px
-
-  %% Paper EA System (v2 - Enhanced)
-  subgraph Paper[PaperEA v2 System]
-    PEA[PaperEA_v2.mq5]:::implemented
-    GM[GateManager - 8 Gates]:::implemented
-    LB[LearningBridge]:::implemented
-    TM[TradeManager]:::implemented
-    TEL[Telemetry]:::implemented
-  end
-
-  %% Strategy System
-  subgraph Strategies[Strategy System]
-    REG[Strategy Registry]:::implemented
-    STR[23 Strategy Files]:::implemented
-    SEL[StrategySelector]:::implemented
-  end
-
-  %% Knowledge Base & Data Files
-  subgraph KB[Knowledge Base - Common Files]
-    FEAT[features.csv]:::implemented
-    TRD[knowledge_base.csv]:::implemented
-    INS[insights.json]:::implemented
-    POL[policy.json]:::implemented
-    IRL[insights.reload]:::planned
-    PRL[policy.reload]:::planned
-  end
-
-  %% ML Training System
-  subgraph ML[ML Training System]
-    TRN[train.py]:::implemented
-    PEXP[policy_export.py]:::implemented
-    DSET[dataset.py]:::implemented
-    FEAT_PY[features.py]:::implemented
-    MODEL[model.py]:::implemented
-    ARTIFACTS[artifacts/]:::implemented
-  end
-
-  %% Live EA System
-  subgraph Live[LiveEA System]
-    LEA[LiveEA.mq5]:::inprogress
-    PM[PositionManager]:::inprogress
-    SM[SessionManager]:::inprogress
-    CM[CorrelationManager]:::inprogress
-    VS[VolatilitySizer]:::inprogress
-    IL[InsightsLoader]:::implemented
-  end
-
-  %% Scripts & Tools
-  subgraph Scripts[Scripts & Tools]
-    IBD[InsightsRebuild.mq5]:::implemented
-    POL_DUMP[PolicyDump.mq5]:::implemented
-    BUILD[Build Scripts]:::implemented
-  end
-
-  %% Data Flow - Paper EA
-  PEA --> GM
-  PEA --> LB
-  PEA --> TM
-  PEA --> TEL
-  GM --> LB
-  
-  %% Strategy Integration
-  PEA --> SEL
-  SEL --> STR
-  STR --> REG
-
-  %% Data Export from Paper EA
-  PEA -->|trade data| TRD
-  STR -->|features| FEAT
-  TEL -->|telemetry| FEAT
-
-  %% ML Training Pipeline
-  FEAT --> TRN
-  TRD --> TRN
-  TRN --> ARTIFACTS
-  TRN --> PEXP
-  PEXP --> POL
-
-  %% Insights Generation
-  FEAT --> IBD
-  TRD --> IBD
-  IBD --> INS
-
-  %% Live EA Consumption
-  INS --> LEA
-  POL --> LEA
-  LEA --> PM
-  LEA --> SM
-  LEA --> CM
-  LEA --> VS
-  IL --> LEA
-
-  %% Live EA Data Export (when active)
-  LEA -.->|trade data| TRD
-  LEA -.->|features| FEAT
-```
-
-**Key Implementation Notes:**
-- **PaperEA v2**: Fully implemented with 8-stage gate system, learning bridge, and telemetry
-- **LiveEA**: Core structure implemented but needs integration testing and policy consumption
-- **ML Pipeline**: Complete training and policy export system with TensorFlow/Keras models
-- **Knowledge Base**: File-based system using Common Files for cross-EA data sharing
-- **Strategies**: 23 implemented strategies with registry system
-
-## Project Structure
+### Core Architecture
 ```
 MQL5/
 ├── Experts/
@@ -208,29 +93,55 @@ Terminal/Common/Files/DualEA/
 ## Current Implementation Status
 
 ### ✅ Fully Implemented & Working
-- **PaperEA v2**: Complete paper trading system with 8-stage gate processing
-- **GateManager**: 8 gates (Signal Rinse, Market Soap, Strategy Scrub, Risk Wash, Performance Wax, ML Polish, Live Clean, Final Verify)
-- **Strategy System**: 23 trading strategies with modular architecture
-- **Knowledge Base**: File-based persistence with CSV rotation and robust I/O
-- **ML Training Pipeline**: Complete TensorFlow/Keras training with feature engineering
-- **Policy Export**: ML model to policy.json conversion with scaling parameters
-- **Insights System**: Performance analytics generation from trade data
-- **Build System**: Automated compilation and deployment scripts
 
-### 🔄 Implemented but Needs Integration/Testing  
-- **LiveEA Core**: Main structure with advanced gating system implemented
-- **Position Management**: Core functionality implemented, needs LiveEA integration
-- **Session Management**: Trading session controls implemented
-- **Correlation Management**: Portfolio correlation analysis implemented
-- **Volatility Sizing**: ATR-based position sizing implemented
-- **Telemetry System**: Data collection framework, needs standardization
+**PaperEA v2 System (2793 lines)**
+- 8-stage gate system with unified configuration (ConfigManager, EventBus, SystemMonitor)
+- 21 active trading strategies with asset-class registry (FX, Indices, Metals, Crypto, Energy)
+- CPaperPosition class for paper trading with real-time PnL tracking and SL/TP management
+- Advanced optimization: AdaptiveSignalOptimizer, PolicyUpdater, PositionReviewer, GateLearningSystem
+- Comprehensive input parameters (180+ settings for fine-tuning)
+- Circuit breakers, news filtering, regime detection, session management
+- Knowledge Base with CFeaturesKB (features.csv) and CKnowledgeBase (knowledge_base.csv)
+- Real-time telemetry with TelemetryStandard wrapper
+- UnifiedTradeLogger for JSON lifecycle tracking
+- TradeManager with market/pending orders, ATR/fixed trailing stops
 
-### 🔴 Planned/Not Implemented
-- **Live Policy Consumption**: LiveEA reading and applying ML policies
-- **Real-time Insights Reload**: Automatic insights refresh triggers
-- **Policy Reload Triggers**: Dynamic policy updates without EA restart
-- **Advanced Risk Management**: Drawdown controls and circuit breakers
-- **Multi-timeframe Coordination**: Cross-timeframe strategy coordination
+**LiveEA System (1702 lines)**
+- Complete insights gating from insights.json (strategy/symbol/TF performance metrics)
+- ML policy gating from policy.json with confidence thresholds and SL/TP/trail scaling
+- Risk gating: spread, session, daily loss, drawdown, margin, consecutive losses
+- News blackout filtering with CSV-based event calendar
+- Exploration mode for strategies with insufficient historical data
+- Position/Session/Correlation/Volatility managers fully integrated
+- InsightsLoader for DRY insights parsing
+- Strategy bridge for live execution
+
+**ML Pipeline (Python)**
+- train.py: TensorFlow/Keras classifier + LSTM with TimeSeriesSplit validation
+- policy_export.py: Converts trained models to policy.json with slice-based probabilities
+- features.py: Yahoo Finance enrichment, technical indicators, scaling
+- dataset.py: CSV loading with label generation from R-multiples
+- File rotation and compression for large artifacts
+- artifacts/: Saved models (.keras), scalers (.pkl), metadata (.json)
+
+**Supporting Systems**
+- GateManager: 8 gates with learning-based threshold adjustment
+- LearningBridge: Bidirectional data flow between Paper/Live, CSignalDecision records
+- StrategySelector: Performance-based strategy scoring with recency weighting
+- InsightsRebuild.mq5: One-click insights.json generation from features.csv
+- Test suite: 8 test files for integration, gates, managers, system health
+
+### 🔄 Implemented with Minor Gaps
+- **Policy hot-reload**: File watching via .reload triggers (planned but not active)
+- **LSTM sequence training**: Code exists but needs min sequence validation
+- **Multi-timeframe confirmation**: P5_MTFConfirmEnable parameter exists, needs gate implementation
+
+### 🔴 Not Implemented (Future Enhancements)
+- **Real-time Insights Auto-Rebuild**: Automatic background InsightsRebuild trigger when features.csv is stale
+- **Hot Policy Reload**: Watch policy.reload file to refresh ML policy without EA restart
+- **Multi-timeframe MTF Gate**: P5_MTFConfirmEnable parameter exists but gate logic needs implementation
+- **Advanced Correlation Pruning**: More sophisticated portfolio correlation algorithms beyond Pearson
+- **Distributed Training**: Multi-machine ML training for large datasets
 
 ## 🔧 Unified System Architecture (NEW)
 The DualEA system features a **Unified Architecture** that eliminates redundancy by consolidating insights management and gating pipeline into three core components:
@@ -278,12 +189,24 @@ See [UnifiedSystemGuide.md](UnifiedSystemGuide.md) for detailed integration docu
 - **Yahoo Finance Integration**: Market data enrichment for training
 - **Time Series Validation**: Proper temporal splits for backtesting
 
-### Strategy Library (23 Strategies)
-- **Trend Following**: ADX, SuperTrend, Donchian Breakout
-- **Mean Reversion**: Bollinger Bands, RSI2, VWAP Reversion  
-- **Momentum**: Awesome Oscillator, Bears/Bulls Power
-- **Multi-Asset**: Forex, Gold, Indices specialized strategies
-- **Advanced**: Multi-indicator fusion, Opening Range Breakout
+### Strategy Library (21 Active Strategies)
+
+**Trend Following:**
+- ADXStrategy, SuperTrendADXKamaStrategy, DonchianATRBreakoutStrategy, ForexTrendStrategy, AlligatorStrategy
+
+**Mean Reversion:**
+- BollAveragesStrategy, MeanReversionBBStrategy, RSI2BBReversionStrategy, VWAPReversionStrategy
+
+**Momentum:**
+- AwesomeOscillatorStrategy, AcceleratorOscillatorStrategy, BearsPowerStrategy, BullsPowerStrategy, KeltnerMomentumStrategy, AroonStrategy
+
+**Multi-Asset Specialized:**
+- GoldVolatilityStrategy (metals), IndicesEnergiesStrategy (equity indices), OpeningRangeBreakoutStrategy (indices/crypto)
+
+**Advanced:**
+- MultiIndicatorStrategy (fusion system), EMAPullbackStrategy (pullback entries)
+
+**Asset-Class Registry:** Strategies automatically selected based on symbol classification (FX Major/Minor, Crypto, Metal, Energy, Index)
 
 ### Data Management
 - **Knowledge Base**: Centralized trade logging with CSV rotation
@@ -323,17 +246,15 @@ InsightsAutoReload, InsightsLiveFreshMinutes, InsightsStaleHours
 - **Performance Tracking**: Automated threshold optimization based on historical success rates
 - **Cross-EA Compatibility**: Identical configuration and behavior between PaperEA and LiveEA
 
-## Current Capabilities (PaperEA)
-- Modular strategies via `IStrategy` base class stored in `CArrayObj`.
-- Trade execution via `CTradeManager`:
-  - Market and pending orders
-  - SL/TP management
-  - Trailing stop manager with fixed‑points policy (activation, distance, step)
-- Knowledge Base logging via `CKnowledgeBase`:
-  - Trade execution events → `knowledge_base_events.csv`
-  - Full trade records → `knowledge_base.csv`
-  - Both files stored under MT5 Common Files: `Common\Files\DualEA\...`
-- Features export for ML via `ExportFeatures()` → `features.csv` (schema in `docs/KB-Schemas.md`)
+## System Capabilities
+
+### PaperEA_v2 Core Features
+- **CPaperPosition**: Paper trading with real-time PnL, SL/TP hit detection
+- **CTradeManager**: Market/pending orders, trailing stops (fixed-points & ATR)
+- **21 Strategies**: Asset-class registry with automatic symbol classification
+- **8-Stage Gates**: ConfigManager/EventBus/SystemMonitor unified architecture
+- **Optimization**: AdaptiveSignalOptimizer, PolicyUpdater, PositionReviewer, GateLearningSystem
+- **Data Export**: features.csv (CFeaturesKB), knowledge_base.csv (CKnowledgeBase), JSON logs (UnifiedTradeLogger)
 - Inputs (PaperEA):
   - Position and risk: `LotSize`, `MagicNumber`, `StopLossPips`, `TakeProfitPips`, `MaxOpenPositions` (0=unlimited)
   - Trailing defaults (used if a strategy doesn’t set them): `TrailEnabled`, `TrailType=0(fixed)`, `TrailActivationPoints`, `TrailDistancePoints`, `TrailStepPoints`
