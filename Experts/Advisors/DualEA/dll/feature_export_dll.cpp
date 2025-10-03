@@ -4,6 +4,8 @@
 #include <windows.h>
 #include <Python.h>
 #include <string>
+#include <stdexcept>
+#include <cstring>
 
 // Helper: Convert UTF-8 std::string to wide string
 std::wstring utf8_to_wide(const std::string& str) {
