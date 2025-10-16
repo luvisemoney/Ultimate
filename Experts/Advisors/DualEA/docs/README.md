@@ -138,7 +138,7 @@ Terminal/Common/Files/DualEA/
 
 ### 🔴 Not Implemented (Future Enhancements)
 - **Real-time Insights Auto-Rebuild**: Automatic background InsightsRebuild trigger when features.csv is stale
-- **Hot Policy Reload**: Watch policy.reload file to refresh ML policy without EA restart
+- **LiveEA Policy Hot-Reload**: Watch `policy.reload` to refresh ML policy without EA restart (PaperEA already supports this)
 - **Multi-timeframe MTF Gate**: P5_MTFConfirmEnable parameter exists but gate logic needs implementation
 - **Advanced Correlation Pruning**: More sophisticated portfolio correlation algorithms beyond Pearson
 - **Distributed Training**: Multi-machine ML training for large datasets
@@ -349,7 +349,7 @@ Files produced:
   - Policy reload via `DualEA/policy.reload` checked in `CheckPolicyReload()`; telemetry flush after scans.
   - Timer-based scanning per Phase 6 design may be enabled as parity with LiveEA (see Phase 6) where implemented.
 - Gating and exploration caps:
-  - `NoConstraintsMode` (default true) can bypass all gates/caps for unrestricted exploration (for ML bootstrapping).
+  - `NoConstraintsMode` (default false) can bypass all gates/caps for unrestricted exploration (for ML bootstrapping).
   - Exploration caps persist in Common Files: `DualEA/explore_counts_day.csv`, `DualEA/explore_counts.csv`.
   - No‑slice‑only bypass: exploration only bypasses when a slice truly doesn’t exist; existing under‑threshold slices remain gated.
   - Reset by deleting the above CSVs in `Common\Files\DualEA`.
