@@ -87,7 +87,7 @@ Terminal/Common/Files/DualEA/
 ├── insights.json          # Performance analytics per strategy/symbol/timeframe
 ├── policy.json           # ML-generated trading policy with confidence thresholds
 ├── insights.reload       # Trigger file for insights rebuild (planned)
-└── policy.reload         # Trigger file for policy reload (planned)
+└── policy.reload         # Trigger file for policy reload (PaperEA hot-reload implemented)
 ```
 
 ## Current Implementation Status
@@ -132,7 +132,7 @@ Terminal/Common/Files/DualEA/
 - Test suite: 8 test files for integration, gates, managers, system health
 
 ### 🔄 Implemented with Minor Gaps
-- **Policy hot-reload**: File watching via .reload triggers (planned but not active)
+- **Policy hot-reload**: PaperEA active (CheckPolicyReload reads `Common\Files\DualEA\policy.reload` on timer/tick). LiveEA: not yet wired for hot-reload.
 - **LSTM sequence training**: Code exists but needs min sequence validation
 - **Multi-timeframe confirmation**: P5_MTFConfirmEnable parameter exists, needs gate implementation
 
@@ -258,51 +258,24 @@ InsightsAutoReload, InsightsLiveFreshMinutes, InsightsStaleHours
 - Inputs (PaperEA):
   - Position and risk: `LotSize`, `MagicNumber`, `StopLossPips`, `TakeProfitPips`, `MaxOpenPositions` (0=unlimited)
   - Trailing defaults (used if a strategy doesn’t set them): `TrailEnabled`, `TrailType=0(fixed)`, `TrailActivationPoints`, `TrailDistancePoints`, `TrailStepPoints`
-  - Mode toggles: `NoConstraintsMode` (bool, default true) — disables all gating and caps for maximum data collection (trading hours, selector gating, insights gating, exploration caps, and open-position limit)
+  - Mode toggles: `NoConstraintsMode` (bool, default false) — disables all gating and caps for maximum data collection (trading hours, selector gating, insights gating, exploration caps, and open-position limit)
   - Logging: `KBDebugInit` (writes INIT line), `DebugTrailing` (reserved)
   
-- Modules available (planned integration):
-  - `PositionManager` (see `Include/PositionManager.mqh`) — implemented module providing scaling/exits/brackets; integration into PaperEA/LiveEA is planned behind a `UsePositionManager` feature flag (off by default).
+- Modules:
+  - `PositionManager` (see `Include/PositionManager.mqh`) — available behind `UsePositionManager`. Defaults: PaperEA=`true`, LiveEA=`false`. Current integration initializes the manager and supports caps/correlation hooks; advanced exits/brackets will be integrated next.
 
-### Exploration Mode & Insights Gating
-- Purpose: allow limited trades to bootstrap insights for unseen slices (strategy|symbol|timeframe).
-- No‑slice‑only bypass: exploration bypass is permitted only when there is truly no existing slice. If a slice exists but fails thresholds, it is blocked (no bypass).
-- Caps and persistence:
-  - Per‑day cap: `ExploreMaxPerSlicePerDay` (default 2; 0=unlimited)
-  - Per‑week cap: `ExploreMaxPerSlice` (default 3; 0=unlimited), week bucket = Monday yyyymmdd
-  - Counters persist in Common Files:
-    - `DualEA/explore_counts_day.csv` (key,day_yyyymmdd,count)
-    - `DualEA/explore_counts.csv` (key,week_monday_yyyymmdd,count)
-- Interaction with `NoConstraintsMode`:
-  - When enabled, insights gating and exploration caps are bypassed entirely for unrestricted trading.
-- Logs (Journal):
-  - Allow: `GATE: explore allow <strat> on <symbol>/<tf> ... (day=d/D, week=w/W)`
-  - Block (cap): `GATE: blocked ... reason=explore_cap_day|explore_cap_week (day=d/D, week=w/W)`
-- Resetting caps: delete the above CSV files from `Common\Files\DualEA` to reset counts.
+### LiveEA Inputs (New)
+- **Policy fallback and gating**:
+  - `UsePolicyGating`, `DefaultPolicyFallback`, `FallbackWhenNoPolicy`, `FallbackDemoOnly`.
+  - Log reasons: `fallback_no_policy` (no slices loaded), `fallback_policy_miss` (slice not found). Both bypass exploration caps and use neutral scaling; demo-only unless `FallbackDemoOnly=false`.
+- **Insights auto-reload controls**:
+  - `InsightsAutoReload`, `InsightsLiveFreshMinutes`, `InsightsReadyPollSec` (inputs present; wiring for automated reload is being expanded in LiveEA).
+- **Position management**:
+  - `UsePositionManager` (default false) and `PMMaxOpenPositions` for portfolio caps; enables integration with `Include/PositionManager.mqh` where available.
 
-### Default Policy Fallback & Policy Gating
-- Inputs (PaperEA):
-  - `UsePolicyGating` (bool)
-  - `DefaultPolicyFallback` (bool, default true)
-  - `FallbackDemoOnly` (bool, default true)
-  - `FallbackWhenNoPolicy` (bool, default true)
-- Policy loaded detection:
-  - Policy is considered "loaded" when `policy.json` provides one or more slices (i.e., `slices > 0`).
-  - `min_confidence` from `policy.json` is used as a gating threshold, not to determine loaded state.
-- Fallback paths (neutral, safe for data collection):
-  - `fallback_no_policy`: triggers when `UsePolicyGating=true` and no policy is loaded (slices=0) and `FallbackWhenNoPolicy=true`.
-    - Allowed by default only on demo accounts (`FallbackDemoOnly=true`).
-    - Bypasses insights thresholds and exploration caps.
-    - Uses neutral scaling (no SL/TP/trailing multipliers).
-    - Log example: `FALLBACK: no policy loaded -> neutral scaling used for <strat> on <symbol>/<tf> demo=<true|false>`.
-  - `fallback_policy_miss`: triggers when `UsePolicyGating=true`, policy is loaded but the exact strategy/symbol/timeframe slice is missing.
-    - Same allow conditions and behavior as above (demo-only by default, neutral scaling, bypass caps).
-    - Log example: `FALLBACK: policy slice missing -> neutral scaling used for <strat> on <symbol>/<tf> demo=<true|false>`.
-- Policy scaling application:
-  - `ApplyPolicyScaling()` runs only when policy is loaded and an exact/aggregate slice exists (ppol>=0.0).
-  - On fallback, scaling is neutral (no adjustments applied).
-- Exploration counters:
-  - Fallback trades do not consume exploration quotas and do not increment exploration counters.
+#### Policy scaling keys
+- LiveEA expects trailing scaling under the key `trail_scale`.
+- PaperEA’s `PolicyEngine` and `docs/PolicySchema.md` use `trail_atr_mult` for ATR-based trailing. Exporters may emit both keys for compatibility until the schema is unified.
 
 ## Where Files Are Written
 We target the MT5 Common Files area so Strategy Tester, Demo/Paper, and Live share the same outputs.
@@ -350,7 +323,7 @@ Files produced:
  - What it does:
    - Creates `.venv/`, installs `ML/requirements.txt`.
    - Runs `train.py` to produce `ML/artifacts/tf_model.keras`, `scaler.pkl`, `features.json`.
-   - Runs `policy_export.py --min_conf 0.45` to write `Common\Files\DualEA\policy.json` with per-slice `p_win` and scaling fields: `sl_scale`, `tp_scale`, `trail_atr_mult`.
+   - Runs `policy_export.py --min_conf 0.45` to write `Common\Files\DualEA\policy.json` with per-slice `p_win` and scaling fields: `sl_scale`, `tp_scale`, `trail_scale` (LiveEA) or `trail_atr_mult` (PaperEA).
    - Touches `Common\Files\DualEA\policy.reload`.
 - EA behavior:
   - `PaperEA` calls `CheckPolicyReload()` in both `OnTimer()` and `OnTick()`; when `policy.reload` exists, it reloads `policy.json` and logs `Policy gating: min_conf=..., slices=N`.
@@ -456,7 +429,7 @@ This roadmap aligns with the implementation plan.
     - Phase 2: ML/LSTM Pipeline (trainer + policy export + batch runner; PaperEA policy hot‑reload integrated)
   - Phase 2a: PaperEA Execution & Telemetry (baseline complete; timer-scan parity tracked under Phase 6)
   - Phase 3 (core): LiveEA core loop with policy gating/fallbacks and scaling
-    - `LiveEA/LiveEA.mq5`: policy hot‑reload (tick+timer), `ApplyPolicyScaling()` incl. trailing scaling via `trail_atr_mult` (applies to ATR and fixed trailing), fallback gating (`fallback_no_policy`, `fallback_policy_miss`, demo‑only by default), heartbeat with fallback flags
+    - `LiveEA/LiveEA.mq5`: policy loaded from file on init; `ApplyPolicyScaling()` applies SL/TP/trailing (trailing via `trail_scale`), fallback gating (`fallback_no_policy`, `fallback_policy_miss`, demo‑only by default), heartbeat with fallback flags
 - In Progress:
   - Phase 3: LiveEA hardening (risk gates, stricter caps, optional shadow‑mode, per‑minute de‑dup)
   - Phase 6: Low‑Latency Minutely Scanner & ML‑Enriched Orchestration
