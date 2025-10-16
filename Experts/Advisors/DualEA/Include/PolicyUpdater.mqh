@@ -36,7 +36,10 @@ class CPolicyUpdater
 {
 private:
    CLearningBridge* m_learning;
-   CHashMap<string, PolicyEntry> m_policies;
+   
+   // Simple array-based policy storage (MQL5 HashMap doesn't support structs)
+   string m_policy_keys[];
+   PolicyEntry m_policy_values[];
    
    string m_policy_file_path;
    int m_update_interval_minutes;
@@ -47,12 +50,49 @@ private:
    int m_total_updates;
    int m_successful_updates;
    
-   // Generate key for policy lookup
+   // Helper methods for policy storage
+   int FindPolicyIndex(const string key)
+   {
+      for(int i = 0; i < ArraySize(m_policy_keys); i++)
+      {
+         if(m_policy_keys[i] == key) return i;
+      }
+      return -1;
+   }
+   
+   bool GetPolicy(const string key, PolicyEntry &out_policy)
+   {
+      int idx = FindPolicyIndex(key);
+      if(idx >= 0)
+      {
+         out_policy = m_policy_values[idx];
+         return true;
+      }
+      return false;
+   }
+   
+   void SetPolicy(const string key, const PolicyEntry &policy)
+   {
+      int idx = FindPolicyIndex(key);
+      if(idx >= 0)
+      {
+         m_policy_values[idx] = policy;
+      }
+      else
+      {
+         int size = ArraySize(m_policy_keys);
+         ArrayResize(m_policy_keys, size + 1);
+         ArrayResize(m_policy_values, size + 1);
+         m_policy_keys[size] = key;
+         m_policy_values[size] = policy;
+      }
+   }
+   
+   // Load policies from JSON file
    string GetPolicyKey(const string strategy, const string symbol, const int timeframe)
    {
       return StringFormat("%s_%s_%d", strategy, symbol, timeframe);
    }
-   
    // Learn optimal parameters from trade history
    void LearnFromTrades(PolicyEntry &policy)
    {
@@ -112,18 +152,15 @@ private:
       FileWriteString(handle, "{\n");
       FileWriteString(handle, "  \"version\": \"1.0\",\n");
       FileWriteString(handle, StringFormat("  \"last_updated\": \"%s\",\n", TimeToString(TimeCurrent())));
-      FileWriteString(handle, StringFormat("  \"total_policies\": %d,\n", m_policies.Count()));
+      FileWriteString(handle, StringFormat("  \"total_policies\": %d,\n", ArraySize(m_policy_keys)));
       FileWriteString(handle, "  \"policies\": [\n");
       
       // Write each policy entry
       int count = 0;
-      string keys[];
-      m_policies.CopyTo(keys, COPY_KEYS);
       
-      for(int i = 0; i < ArraySize(keys); i++)
+      for(int i = 0; i < ArraySize(m_policy_keys); i++)
       {
-         PolicyEntry policy;
-         if(m_policies.TryGetValue(keys[i], policy))
+         PolicyEntry policy = m_policy_values[i];
          {
             if(count > 0)
                FileWriteString(handle, ",\n");
@@ -219,12 +256,12 @@ public:
                policy.last_update = TimeCurrent();
                
                string key = GetPolicyKey(policy.strategy, policy.symbol, policy.timeframe);
-               m_policies.Add(key, policy);
+               SetPolicy(key, policy);
             }
          }
       }
       
-      PrintFormat("✅ Initialized %d default policy entries", m_policies.Count());
+      PrintFormat("✅ Initialized %d default policy entries", ArraySize(m_policy_keys));
    }
    
    // Record trade outcome for policy learning
@@ -234,7 +271,7 @@ public:
       string key = GetPolicyKey(strategy, symbol, timeframe);
       PolicyEntry policy;
       
-      if(!m_policies.TryGetValue(key, policy))
+      if(!GetPolicy(key, policy))
       {
          // Create new policy entry
          policy.strategy = strategy;
@@ -261,7 +298,7 @@ public:
       LearnFromTrades(policy);
       
       // Save updated policy
-      m_policies.TrySetValue(key, policy);
+      SetPolicy(key, policy);
    }
    
    // Auto-update policy file if interval elapsed
@@ -300,7 +337,7 @@ public:
                   PolicyEntry &policy)
    {
       string key = GetPolicyKey(strategy, symbol, timeframe);
-      return m_policies.TryGetValue(key, policy);
+      return GetPolicy(key, policy);
    }
    
    // Enable/disable auto-updates
@@ -313,7 +350,7 @@ public:
    // Get statistics
    void GetStatistics(int &total_policies, int &total_updates, int &successful_updates)
    {
-      total_policies = m_policies.Count();
+      total_policies = ArraySize(m_policy_keys);
       total_updates = m_total_updates;
       successful_updates = m_successful_updates;
    }
@@ -321,7 +358,7 @@ public:
    void PrintReport()
    {
       PrintFormat("\n=== 📈 Policy Learning Report ===");
-      PrintFormat("Total Policies: %d", m_policies.Count());
+      PrintFormat("Total Policies: %d", ArraySize(m_policy_keys));
       PrintFormat("Total Updates: %d", m_total_updates);
       PrintFormat("Successful Updates: %d (%.1f%%)", m_successful_updates,
                   m_total_updates > 0 ? (double)m_successful_updates/m_total_updates*100 : 0);

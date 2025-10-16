@@ -2,6 +2,73 @@
 #ifndef __GATINGPIPELINE_MQH__
 #define __GATINGPIPELINE_MQH__
 
+#include <Trade/Trade.mqh>
+
+// Warning: these macros expect the including translation unit to provide
+// the following symbols:
+//   bool CircuitBreakerAllowed(string&)
+//   bool CircuitCooldownAllowed(string&)
+//   bool NewsAllowed(string&)
+//   bool PromotionAllowed(string&)
+//   bool RegimeAllowed(string&)
+//   void LogGate(const string gate, const bool allow, const string phase, const ulong started)
+//   bool UseSessionManager
+//   bool UseCorrelationManager
+//   bool UsePositionManager
+//   bool TelemetryEnabled
+//   bool NoConstraintsMode
+//   CSessionManager *g_session_manager
+//   CCorrelationManager *g_correlation_manager
+//   CPositionManager *g_position_manager
+//   CTelemetryStandard *g_tel_standard
+//   int PMMaxOpenPositions
+
+// Provide lightweight fallbacks to avoid undefined symbol errors when a host EA
+// does not supply optional managers. Host code can override by defining before include.
+#ifndef GP_HAS_SESSION_MANAGER
+#define GP_HAS_SESSION_MANAGER 1
+#endif
+
+#ifndef GP_HAS_CORRELATION_MANAGER
+#define GP_HAS_CORRELATION_MANAGER 1
+#endif
+
+#ifndef GP_HAS_POSITION_MANAGER
+#define GP_HAS_POSITION_MANAGER 1
+#endif
+
+#ifndef GP_HAS_TELEMETRY
+#define GP_HAS_TELEMETRY 1
+#endif
+
+#ifndef GP_HAS_NO_CONSTRAINTS_FLAG
+#define GP_HAS_NO_CONSTRAINTS_FLAG 1
+#endif
+
+#ifndef GP_STATIC_BOOL
+#define GP_STATIC_BOOL(name, value) static bool name = (value)
+#endif
+
+// Note: Host EA must declare these variables as input or global before including this file:
+// - bool UseSessionManager
+// - bool UseCorrelationManager  
+// - bool UsePositionManager
+// - bool TelemetryEnabled
+// - bool NoConstraintsMode
+// - int PMMaxOpenPositions
+// - void LogGate(const string gate, const bool allow, const string phase, const ulong start_time)
+// - ulong NowMs()
+// 
+// If not declared by host, macros will use fallback inline implementations below.
+
+#ifndef LogGate
+   #define LogGate(gate, allow, phase, start_time) /* no-op */
+#endif
+
+#ifndef NowMs
+   #define NowMs() ((ulong)GetTickCount64())
+#endif
+
 //+------------------------------------------------------------------+
 //| GatingPipeline.mqh                                              |
 //| Purpose: Centralize gate orchestration (macro-based)             |

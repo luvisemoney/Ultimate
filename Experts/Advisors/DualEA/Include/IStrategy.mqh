@@ -108,6 +108,7 @@ protected:
    // Simple in-memory metadata store (parallel arrays)
    string  m_meta_keys[];
    string  m_meta_vals[];
+   string  m_name;
 
 public:
    // Base constructor initializes defaults for new fields
@@ -115,6 +116,7 @@ public:
      {
       m_id = -1;
       m_enabled = true;
+      m_name = "IStrategy";
       ArrayResize(m_meta_keys, 0);
       ArrayResize(m_meta_vals, 0);
      }
@@ -122,7 +124,8 @@ public:
    // Core lifecycle and signal hooks
    virtual void         Refresh() { }
    virtual TradeOrder   CheckSignal() { TradeOrder order; return order; }
-   virtual string       Name() { return "IStrategy"; }
+   virtual string       Name() { return m_name; }
+   virtual void         SetName(const string name) { m_name = name; }
 
    // Allow a strategy to export its indicator/context features at a timestamp
    // Concrete strategies should include KnowledgeBase.mqh and write via kb->WriteKV(ts, symbol, Name(), feature, value)

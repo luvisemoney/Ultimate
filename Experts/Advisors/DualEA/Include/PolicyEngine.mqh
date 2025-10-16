@@ -8,7 +8,7 @@
 //+------------------------------------------------------------------+
 
 #include <Files/File.mqh>
-#include <Generic/HashMap.mqh>
+ #include "LogMiddleware.mqh"
 
 struct PolicySlice
   {
@@ -28,11 +28,41 @@ private:
    string m_policy_path;
    bool m_loaded;
    PolicySlice m_slices[];
-   CHashMap<string,int> m_slice_index; // Key -> array index for fast lookup
+   string m_slice_keys[];
+   int m_slice_indices[];
    
    string GetSliceKey(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe) const
      {
       return StringFormat("%s_%s_%d", strategy, symbol, (int)timeframe);
+     }
+   
+   void ClearIndex()
+     {
+      ArrayResize(m_slice_keys, 0);
+      ArrayResize(m_slice_indices, 0);
+     }
+   
+   void AddIndex(const string key, const int value)
+     {
+      int size = ArraySize(m_slice_keys);
+      ArrayResize(m_slice_keys, size + 1);
+      ArrayResize(m_slice_indices, size + 1);
+      m_slice_keys[size] = key;
+      m_slice_indices[size] = value;
+     }
+   
+   bool TryGetIndex(const string key, int &value) const
+     {
+      int size = ArraySize(m_slice_keys);
+      for(int i = 0; i < size; ++i)
+        {
+         if(m_slice_keys[i] == key)
+           {
+            value = m_slice_indices[i];
+            return true;
+           }
+        }
+      return false;
      }
    
    bool ParseJsonLine(const string line, PolicySlice &slice)
@@ -154,7 +184,7 @@ public:
       m_policy_path = path;
       m_loaded = false;
       ArrayResize(m_slices, 0);
-      m_slice_index.Clear();
+      ClearIndex();
       
       // Try to open policy file
       int h = FileOpen(path, FILE_READ|FILE_TXT|FILE_COMMON);
@@ -163,7 +193,7 @@ public:
          h = FileOpen(path, FILE_READ|FILE_TXT); // Try user files
          if(h == INVALID_HANDLE)
            {
-            PrintFormat("PolicyEngine: Cannot open policy file %s, error %d", path, GetLastError());
+            LOG(StringFormat("PolicyEngine: Cannot open policy file %s, error %d", path, GetLastError()));
             return false;
            }
         }
@@ -185,7 +215,7 @@ public:
             
             // Add to index
             string key = GetSliceKey(slice.strategy, slice.symbol, (ENUM_TIMEFRAMES)slice.timeframe);
-            m_slice_index.Add(key, slice_count);
+            AddIndex(key, slice_count);
             
             slice_count++;
            }
@@ -194,7 +224,7 @@ public:
       FileClose(h);
       
       m_loaded = (slice_count > 0);
-      PrintFormat("PolicyEngine: Loaded %d policy slices from %s", slice_count, path);
+      LOG(StringFormat("PolicyEngine: Loaded %d policy slices from %s", slice_count, path));
       
       return m_loaded;
      }
@@ -209,7 +239,7 @@ public:
       string key = GetSliceKey(strategy, symbol, timeframe);
       int index;
       
-      if(m_slice_index.TryGetValue(key, index))
+      if(TryGetIndex(key, index))
         {
          if(index >= 0 && index < ArraySize(m_slices))
            {
@@ -232,7 +262,7 @@ public:
       
       string key = GetSliceKey(strategy, symbol, timeframe);
       int index;
-      return m_slice_index.TryGetValue(key, index);
+      return TryGetIndex(key, index);
      }
    
    // Get full policy slice data
@@ -243,7 +273,7 @@ public:
       string key = GetSliceKey(strategy, symbol, timeframe);
       int index;
       
-      if(m_slice_index.TryGetValue(key, index))
+      if(TryGetIndex(key, index))
         {
          if(index >= 0 && index < ArraySize(m_slices))
            {
@@ -263,6 +293,7 @@ public:
       if(GetPolicySlice(strategy, symbol, timeframe, slice))
         {
          sl_scale = slice.sl_scale;
+         tp_scale = slice.tp_scale;
          trail_atr_mult = slice.trail_atr_mult;
          return true;
         }

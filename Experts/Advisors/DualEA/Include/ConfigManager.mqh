@@ -3,6 +3,8 @@
 //+------------------------------------------------------------------+
 #ifndef __CONFIGMANAGER_MQH__
 #define __CONFIGMANAGER_MQH__
+ 
+ #include "LogMiddleware.mqh"
 
 // Gate configuration structure
 struct GateConfig
@@ -202,14 +204,14 @@ public:
    
    // Configuration persistence (optional - can be extended)
    void SaveToFile(const string& filename)
-   {
-      // Save configuration to JSON file
-      int h = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_COMMON);
-      if(h == INVALID_HANDLE)
-        {
-         Print("ConfigManager: Cannot create config file ", filename, ", error: ", GetLastError());
-         return;
-        }
+  {
+     // Save configuration to JSON file
+     int h = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_COMMON);
+     if(h == INVALID_HANDLE)
+       {
+        LOG(StringFormat("ConfigManager: Cannot create config file %s, error: %d", filename, GetLastError()));
+        return;
+       }
       
       FileWriteString(h, "{\n");
       FileWriteString(h, "  \"gate_configs\": {\n");
@@ -255,22 +257,22 @@ public:
       FileWriteString(h, "}\n");
       FileClose(h);
       
-      Print("Configuration saved to: ", filename);
-   }
+      LOG(StringFormat("Configuration saved to: %s", filename));
+  }
    
    void LoadFromFile(const string& filename)
-   {
-      // Load configuration from JSON file
-      int h = FileOpen(filename, FILE_READ|FILE_TXT|FILE_COMMON);
-      if(h == INVALID_HANDLE)
-        {
-         h = FileOpen(filename, FILE_READ|FILE_TXT); // Try user files
-         if(h == INVALID_HANDLE)
-           {
-            Print("ConfigManager: Cannot open config file ", filename, ", error: ", GetLastError());
-            return;
-           }
-        }
+  {
+     // Load configuration from JSON file
+     int h = FileOpen(filename, FILE_READ|FILE_TXT|FILE_COMMON);
+     if(h == INVALID_HANDLE)
+       {
+        h = FileOpen(filename, FILE_READ|FILE_TXT); // Try user files
+        if(h == INVALID_HANDLE)
+          {
+           LOG(StringFormat("ConfigManager: Cannot open config file %s, error: %d", filename, GetLastError()));
+           return;
+          }
+       }
       
       string line;
       while(!FileIsEnding(h))
@@ -326,35 +328,35 @@ public:
                   SetGateConfig(gate_index, config);
                }
                else if(gate_name != "")
-               {
-                  Print("ConfigManager: Unknown gate name in config file: ", gate_name);
-               }
+              {
+                 LOG(StringFormat("ConfigManager: Unknown gate name in config file: %s", gate_name));
+              }
               }
            }
         }
       
       FileClose(h);
-      Print("Configuration loaded from: ", filename);
-   }
+      LOG(StringFormat("Configuration loaded from: %s", filename));
+  }
    
    // Debug information
    void PrintConfiguration()
-   {
-      Print("=== DualEA Configuration ===");
-      Print("System - No Constraints: ", system_config.no_constraints_mode);
-      Print("System - Verbose Logging: ", system_config.verbose_logging);
-      Print("System - Data Path: ", system_config.data_path);
-      
-      Print("Insights - Auto Reload: ", insights_config.auto_reload);
-      Print("Insights - Freshness Minutes: ", insights_config.freshness_minutes);
-      Print("Insights - Poll Interval: ", insights_config.poll_interval_sec);
-      
-      for(int i = 0; i < 8; i++)
-      {
-         Print("Gate ", i, " (", gate_configs[i].name, ") - Enabled: ", 
-               gate_configs[i].enabled, ", Threshold: ", gate_configs[i].threshold);
-      }
-   }
+  {
+     LOG("=== DualEA Configuration ===");
+     LOG(StringFormat("System - No Constraints: %s", system_config.no_constraints_mode ? "true" : "false"));
+     LOG(StringFormat("System - Verbose Logging: %s", system_config.verbose_logging ? "true" : "false"));
+     LOG(StringFormat("System - Data Path: %s", system_config.data_path));
+     
+     LOG(StringFormat("Insights - Auto Reload: %s", insights_config.auto_reload ? "true" : "false"));
+     LOG(StringFormat("Insights - Freshness Minutes: %d", insights_config.freshness_minutes));
+     LOG(StringFormat("Insights - Poll Interval: %d", insights_config.poll_interval_sec));
+     
+     for(int i = 0; i < 8; i++)
+     {
+        LOG(StringFormat("Gate %d (%s) - Enabled: %s, Threshold: %.6f", i, gate_configs[i].name, 
+              gate_configs[i].enabled ? "true" : "false", gate_configs[i].threshold));
+     }
+  }
 };
 
 // Static instance declaration

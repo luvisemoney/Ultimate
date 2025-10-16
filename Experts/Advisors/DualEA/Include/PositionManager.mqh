@@ -10,6 +10,9 @@
 #include <Trade/OrderInfo.mqh>
 #include <Arrays/ArrayObj.mqh>
 #include <Object.mqh>
+ #include "LogMiddleware.mqh"
+ #include "Managers/RiskSizer.mqh"
+ #include "Managers/VolatilityExit.mqh"
 
 // --- Profiles
 enum ScalingProfile
@@ -121,11 +124,11 @@ private:
      }
    bool            EnsureSymbolReady(const string sym) const
      {
-      if(!SymbolSelect(sym, true)) { PrintFormat("[PM] Failed to select symbol %s", sym); return false; }
+      if(!SymbolSelect(sym, true)) { LOG(StringFormat("[PM] Failed to select symbol %s", sym)); return false; }
       long tmode = 0; SymbolInfoInteger(sym, SYMBOL_TRADE_MODE, tmode);
-      if(tmode==SYMBOL_TRADE_MODE_DISABLED) { PrintFormat("[PM] Trading disabled for %s", sym); return false; }
-      MqlTick tick; if(!SymbolInfoTick(sym, tick)) { PrintFormat("[PM] No tick for %s", sym); return false; }
-      if(tick.bid<=0.0 || tick.ask<=0.0) { PrintFormat("[PM] Invalid bid/ask for %s", sym); return false; }
+      if(tmode==SYMBOL_TRADE_MODE_DISABLED) { LOG(StringFormat("[PM] Trading disabled for %s", sym)); return false; }
+      MqlTick tick; if(!SymbolInfoTick(sym, tick)) { LOG(StringFormat("[PM] No tick for %s", sym)); return false; }
+      if(tick.bid<=0.0 || tick.ask<=0.0) { LOG(StringFormat("[PM] Invalid bid/ask for %s", sym)); return false; }
       return true;
      }
    double          NormalizeVolume(const string sym, double lots) const
@@ -146,8 +149,8 @@ private:
       double norm = NormalizeDouble(snapped, vdigits);
       if(norm < vmin || norm > vmax)
         {
-         PrintFormat("[PM] Normalized volume %.4f out of bounds [%.4f..%.4f] step=%.5f for %s, using min",
-                     norm, vmin, vmax, vstep, sym);
+         LOG(StringFormat("[PM] Normalized volume %.4f out of bounds [%.4f..%.4f] step=%.5f for %s, using min",
+                     norm, vmin, vmax, vstep, sym));
          norm = vmin;
         }
       return norm;
@@ -155,7 +158,7 @@ private:
    // ATR helper
    bool            ComputeATR(const string sym, int period, double &atr_out) const
      {
-      int handle = iATR(sym, _Period, period);
+      int handle = iATR(sym, PERIOD_CURRENT, period);
       if(handle==INVALID_HANDLE) return false;
       double buf[]; int copied = CopyBuffer(handle, 0, 0, 1, buf);
       IndicatorRelease(handle);
@@ -168,8 +171,8 @@ private:
      {
       if(bars<=2) return false;
       double a[], b[];
-      int ca = CopyClose(sym1, _Period, 0, bars, a);
-      int cb = CopyClose(sym2, _Period, 0, bars, b);
+      int ca = CopyClose(sym1, PERIOD_CURRENT, 0, bars, a);
+      int cb = CopyClose(sym2, PERIOD_CURRENT, 0, bars, b);
       if(ca<bars || cb<bars) return false;
 
       // Compute means
@@ -308,12 +311,12 @@ public:
       double proposed = NormalizeVolume(m_symbol, base * mult);
       if(proposed<=0.0) return false;
 
-      // Dynamic risk cap (very simplified check against position size growth)
+      // Dynamic risk cap via manager
       if(m_dynamic_risk_enabled)
         {
          double cur_vol = pos.Volume();
-         double max_add = cur_vol * 0.5; // cap additional 50% of current position
-         if(proposed > max_add) proposed = NormalizeVolume(m_symbol, max_add);
+         double capped = CRiskSizer::CapAdditionalVolume(cur_vol, proposed);
+         proposed = NormalizeVolume(m_symbol, capped);
          if(proposed<=0.0) return false;
         }
 
@@ -357,30 +360,20 @@ public:
       string sym = pos.Symbol(); if(sym!="") m_symbol=sym; if(!EnsureSymbolReady(m_symbol)) return false;
       double bid=0, ask=0; SymbolInfoDouble(m_symbol, SYMBOL_BID, bid); SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
 
-      // Volatility-based exit using ATR
+      // Volatility-based exit via manager
       if(m_vol_exit_enabled && m_vol_exit_atr_mult>0.0)
         {
-         double atr=0.0; if(ComputeATR(m_symbol, m_atr_period, atr))
+         if(CVolatilityExit::Evaluate(m_symbol,
+                                      m_atr_period,
+                                      m_vol_exit_atr_mult,
+                                      pos.PositionType(),
+                                      bid,
+                                      ask,
+                                      pos.StopLoss(),
+                                      close_price_out,
+                                      reason_out))
            {
-            if(pos.PositionType()==POSITION_TYPE_BUY)
-              {
-               double trail = bid - (atr * m_vol_exit_atr_mult);
-               if(pos.StopLoss()>0.0 && trail<=pos.StopLoss()) { /* SL already protective enough */ }
-               else if(trail>0.0)
-                 {
-                  // If price falls under trail by 1 tick, consider exit
-                  if(bid <= trail - TickSize(m_symbol)) { close_price_out = bid; reason_out = "VolatilityExit"; return true; }
-                 }
-              }
-            else if(pos.PositionType()==POSITION_TYPE_SELL)
-              {
-               double trail = ask + (atr * m_vol_exit_atr_mult);
-               if(pos.StopLoss()>0.0 && trail>=pos.StopLoss()) { }
-               else if(trail>0.0)
-                 {
-                  if(ask >= trail + TickSize(m_symbol)) { close_price_out = ask; reason_out = "VolatilityExit"; return true; }
-                 }
-              }
+            return true;
            }
         }
 
@@ -404,7 +397,7 @@ public:
       CPositionInfo pos; bool found=false; for(int i=0;i<PositionsTotal();++i){ if(!pos.SelectByIndex(i)) continue; if((ulong)pos.Ticket()==ticket){ found=true; break; } }
       if(!found) return false; string sym = pos.Symbol(); if(sym=="") return false; if(!EnsureSymbolReady(sym)) return false;
       bool ok = m_trade.PositionClose(sym);
-      if(ok) PrintFormat("[PM] Closed %s ticket=%I64u reason=%s", sym, ticket, reason);
+      if(ok) LOG(StringFormat("[PM] Closed %s ticket=%I64u reason=%s", sym, ticket, reason));
       return ok;
      }
 
@@ -624,8 +617,8 @@ public:
       m_ml_threshold = 0.6; // Dynamic threshold based on market conditions
       if(volatility > 0.02) m_ml_threshold = 0.7; // Higher threshold in volatile markets
       
-      PrintFormat("ML Model Updated: %d features, threshold=%.2f, volatility=%.4f", 
-                  ArraySize(features), m_ml_threshold, volatility);
+      LOG(StringFormat("ML Model Updated: %d features, threshold=%.2f, volatility=%.4f", 
+                  ArraySize(features), m_ml_threshold, volatility));
       
       return true;
      }

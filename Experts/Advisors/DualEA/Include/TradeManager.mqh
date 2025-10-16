@@ -12,6 +12,7 @@
 #include <Object.mqh>
 #include "IStrategy.mqh"
 #include "..\Include\Indicators\ATR.mqh"
+#include "LogMiddleware.mqh"
 
 // Use TrailingType from IStrategy.mqh instead of defining a duplicate enum
 
@@ -71,8 +72,8 @@ private:
       // Final guard
       if(norm < vmin || norm > vmax)
         {
-         PrintFormat("[VOL] Normalized volume %.4f out of bounds [%.4f..%.4f] step=%.5f for %s, falling back to min",
-                     norm, vmin, vmax, vstep, m_symbol);
+         LOG(StringFormat("[VOL] Normalized volume %.4f out of bounds [%.4f..%.4f] step=%.5f for %s, falling back to min",
+                     norm, vmin, vmax, vstep, m_symbol));
          norm = vmin;
         }
       return norm;
@@ -140,25 +141,25 @@ private:
       // Select symbol in Market Watch
       if(!SymbolSelect(m_symbol, true))
         {
-         PrintFormat("[SYMBOL] Failed to select symbol %s", m_symbol);
+         LOG(StringFormat("[SYMBOL] Failed to select symbol %s", m_symbol));
          return false;
         }
       // Check trading mode
       long tmode = 0; SymbolInfoInteger(m_symbol, SYMBOL_TRADE_MODE, tmode);
       if(tmode==SYMBOL_TRADE_MODE_DISABLED)
         {
-         PrintFormat("[SYMBOL] Trading disabled for %s", m_symbol);
+         LOG(StringFormat("[SYMBOL] Trading disabled for %s", m_symbol));
          return false;
         }
       // Get latest tick
       MqlTick tick; if(!SymbolInfoTick(m_symbol, tick))
         {
-         PrintFormat("[SYMBOL] No tick for %s", m_symbol);
+         LOG(StringFormat("[SYMBOL] No tick for %s", m_symbol));
          return false;
         }
       if(tick.bid<=0.0 || tick.ask<=0.0)
         {
-         PrintFormat("[SYMBOL] Invalid bid/ask for %s (bid=%.5f ask=%.5f)", m_symbol, tick.bid, tick.ask);
+         LOG(StringFormat("[SYMBOL] Invalid bid/ask for %s (bid=%.5f ask=%.5f)", m_symbol, tick.bid, tick.ask));
          return false;
         }
       return true;
@@ -221,6 +222,45 @@ private:
       if(entry_price>0.0) entry_price = NormalizeDouble(RoundToTick(entry_price), dg);
      }
 
+   // Compute safe default SL/TP using ATR and broker min distances when one or both are missing
+   void              EnsureFallbackStops(const ENUM_ORDER_TYPE otype, double &entry_price, double &sl, double &tp)
+     {
+      if(sl>0.0 && tp>0.0) return; // already provided
+      double bid=0.0, ask=0.0; SymbolInfoDouble(m_symbol, SYMBOL_BID, bid); SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
+      double pt=0.0; SymbolInfoDouble(m_symbol, SYMBOL_POINT, pt);
+      if(pt<=0.0) pt = TickSize();
+      double needDist = MathMax(MinStopDistance(), FreezeDistance());
+      // Try ATR-based distance (14-period on current chart TF)
+      double atr_dist = 0.0;
+      int h = iATR(m_symbol, _Period, 14);
+      if(h!=INVALID_HANDLE)
+        {
+         double buf[]; int c = CopyBuffer(h, 0, 0, 1, buf);
+         IndicatorRelease(h);
+         if(c==1 && buf[0]>0.0) atr_dist = buf[0] * 2.0; // 2x ATR for SL/TP baseline
+        }
+      if(atr_dist<=0.0)
+        {
+         // Fallback to conservative multiple of broker min distance or 100 points
+         double fallback = 100.0 * pt;
+         atr_dist = MathMax(fallback, needDist * 3.0);
+        }
+      // Use entry price if provided (pending orders), else use current market
+      if(otype==ORDER_TYPE_BUY || otype==ORDER_TYPE_BUY_LIMIT || otype==ORDER_TYPE_BUY_STOP)
+        {
+         double ref_sl = (entry_price>0.0 ? entry_price : bid);
+         double ref_tp = (entry_price>0.0 ? entry_price : ask);
+         if(sl<=0.0) sl = RoundToTickBelow(ref_sl - MathMax(atr_dist, needDist), m_symbol);
+         if(tp<=0.0) tp = RoundToTickAbove(ref_tp + MathMax(atr_dist, needDist), m_symbol);
+        }
+      else if(otype==ORDER_TYPE_SELL || otype==ORDER_TYPE_SELL_LIMIT || otype==ORDER_TYPE_SELL_STOP)
+        {
+         double ref_sl = (entry_price>0.0 ? entry_price : ask);
+         double ref_tp = (entry_price>0.0 ? entry_price : bid);
+         if(sl<=0.0) sl = RoundToTickAbove(ref_sl + MathMax(atr_dist, needDist), m_symbol);
+         if(tp<=0.0) tp = RoundToTickBelow(ref_tp - MathMax(atr_dist, needDist), m_symbol);
+        }
+     }
    // Find trail config by symbol - implementation is in the public section
      
    // Normalize SL for an existing position with given side; return false if cannot make valid
@@ -303,7 +343,7 @@ CTradeManager::CTradeManager(string symbol, double lot_size, int magic_number)
    // Ensure symbol is visible/ready upfront
    if(!SymbolSelect(m_symbol, true))
      {
-      PrintFormat("[SYMBOL] Failed to select on ctor: %s", m_symbol);
+      LOG(StringFormat("[SYMBOL] Failed to select on ctor: %s", m_symbol));
      }
   }
 //+------------------------------------------------------------------+
@@ -322,7 +362,7 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
    bool ok = false;
    if(!EnsureSymbolReady())
      {
-      PrintFormat("[SYMBOL] Not ready for trading: %s. Skipping order %s", m_symbol, EnumToString(order.order_type));
+      LOG(StringFormat("[SYMBOL] Not ready for trading: %s. Skipping order %s", m_symbol, EnumToString(order.order_type)));
       return false;
      }
    double vol_in = (order.lots>0.0 ? order.lots : m_lot_size);
@@ -331,17 +371,37 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
    if(vol<=0.0)
      {
       double vmin=0,vmax=0,vstep=0; SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_MIN,vmin); SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_MAX,vmax); SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP,vstep);
-      PrintFormat("[VOL] Invalid normalized volume (%.4f). Symbol %s constraints: min=%.4f max=%.4f step=%.4f", vol, m_symbol, vmin, vmax, vstep);
+      LOG(StringFormat("[VOL] Invalid normalized volume (%.4f). Symbol %s constraints: min=%.4f max=%.4f step=%.4f", vol, m_symbol, vmin, vmax, vstep));
       return false;
      }
    double sl = order.stop_loss;
    double tp = order.take_profit;
    double entry_px = order.price;
    NormalizeStops(order.order_type, entry_px, sl, tp);
-   if((order.order_type==ORDER_TYPE_BUY || order.order_type==ORDER_TYPE_SELL) && (sl==0.0 || tp==0.0))
+   // Enforce fallback SL/TP if missing
+   if(sl<=0.0 || tp<=0.0)
      {
-      // Not fatal; we can open without one of the stops if broker distance too tight.
-      PrintFormat("[STOPS] Adjusted SL/TP for %s on %s -> SL=%.5f TP=%.5f (entry px=%.5f)", EnumToString(order.order_type), m_symbol, sl, tp, entry_px);
+      EnsureFallbackStops(order.order_type, entry_px, sl, tp);
+      NormalizeStops(order.order_type, entry_px, sl, tp);
+     }
+   // Log final stops state
+   if(sl==0.0 || tp==0.0)
+     {
+      LOG(StringFormat("[STOPS] Warning: SL/TP zero after fallback for %s on %s -> SL=%.5f TP=%.5f (entry=%.5f)", EnumToString(order.order_type), m_symbol, sl, tp, entry_px));
+     }
+   else
+     {
+      LOG(StringFormat("[STOPS] Using SL/TP for %s on %s -> SL=%.5f TP=%.5f (entry=%.5f)", EnumToString(order.order_type), m_symbol, sl, tp, entry_px));
+     }
+   
+   // CRITICAL SAFETY CHECK: Prevent execution without SL/TP
+   if(sl <= 0.0 || tp <= 0.0)
+     {
+      LOG(StringFormat("[SAFETY] BLOCKING ORDER: Cannot execute %s on %s without valid SL/TP (SL=%.5f TP=%.5f)", 
+                  EnumToString(order.order_type), m_symbol, sl, tp));
+      LOG("[SAFETY] This indicates a critical bug in signal generation or gate processing");
+      LOG(StringFormat("[SAFETY] Order details: entry=%.5f volume=%.4f strategy=%s", entry_px, vol, order.strategy_name));
+      return false; // BLOCK EXECUTION
      }
 
    int max_attempts = 3;
@@ -371,34 +431,34 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
          ok = m_trade.SellLimit(vol, entry_px, m_symbol, sl, tp);
          break;
       default:
-         Print("Unsupported order type in TradeManager: ", EnumToString(order.order_type));
-         ok = false;
-         break;
+        LOG(StringFormat("Unsupported order type in TradeManager: %s", EnumToString(order.order_type)));
+        ok = false;
+        break;
      }
      uint rc = m_trade.ResultRetcode();
      ulong deal = m_trade.ResultDeal();
      ulong ord  = m_trade.ResultOrder();
      double px  = m_trade.ResultPrice();
      datetime now = TimeCurrent();
-     PrintFormat("OrderSend: type=%s symbol=%s lots_req=%.4f lots_used=%.4f override=%s retcode=%u deal=%I64u order=%I64u price=%.5f ok=%s attempt=%d time=%s",
-                 EnumToString(order.order_type), m_symbol, vol_in, vol, (lots_overridden?"true":"false"), rc, deal, ord, px, (ok?"true":"false"), attempt, TimeToString(now, TIME_DATE|TIME_SECONDS));
+     LOG(StringFormat("OrderSend: type=%s symbol=%s lots_req=%.4f lots_used=%.4f override=%s retcode=%u deal=%I64u order=%I64u price=%.5f ok=%s attempt=%d time=%s",
+                 EnumToString(order.order_type), m_symbol, vol_in, vol, (lots_overridden?"true":"false"), rc, deal, ord, px, (ok?"true":"false"), attempt, TimeToString(now, TIME_DATE|TIME_SECONDS)));
      if(ok) break;
      // Only retry on transient errors (requote, busy, timeout, etc.)
-     if(rc==10004 || rc==10006 || rc==10007 || rc==10009 || rc==10010 || rc==10013 || rc==10014) // ERR_TRADE_REQUOTE, ERR_SERVER_BUSY, ERR_TRADE_TIMEOUT, etc.
+     if(rc==10004 || rc==10006 || rc==10007 || rc==10009 || rc==10010 || rc==10013 || rc==10014)
      {
-       PrintFormat("[RETRY] Trade failed with retcode=%u (attempt %d/%d) at %s. Sleeping before retry...", rc, attempt, max_attempts, TimeToString(now, TIME_DATE|TIME_SECONDS));
+       LOG(StringFormat("[RETRY] Trade failed with retcode=%u (attempt %d/%d) at %s. Sleeping before retry...", rc, attempt, max_attempts, TimeToString(now, TIME_DATE|TIME_SECONDS)));
        Sleep(200);
      }
      else
      {
-       PrintFormat("[FAIL] Trade failed with non-retryable retcode=%u at %s. Aborting retries.", rc, TimeToString(now, TIME_DATE|TIME_SECONDS));
+       LOG(StringFormat("[FAIL] Trade failed with non-retryable retcode=%u at %s. Aborting retries.", rc, TimeToString(now, TIME_DATE|TIME_SECONDS)));
        break;
      }
+    }
+    ulong t_end = GetTickCount();
+    LOG(StringFormat("OrderSend: total attempts=%d duration_ms=%d final_ok=%s", attempt, (int)(t_end-t_start), (ok?"true":"false")));
+    return ok;
    }
-   ulong t_end = GetTickCount();
-   PrintFormat("OrderSend: total attempts=%d duration_ms=%d final_ok=%s", attempt, (int)(t_end-t_start), (ok?"true":"false"));
-   return ok;
-  }
 
 //+------------------------------------------------------------------+
 //| Accessors for last trade result                                   |
@@ -508,23 +568,23 @@ void CTradeManager::UpdateTrailingStops()
                    double needDist2 = MathMax(MinStopDistance(sym), FreezeDistance(sym));
                    double tick = TickSize(sym);
                    if(MathAbs(tmp_sl - sl) < tick)
-                     { PrintFormat("[TRAIL] %s BUY skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick); }
+                     { LOG(StringFormat("[TRAIL] %s BUY skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick)); }
                    else if(tmp_sl <= fbid2 - needDist2)
                      {
                       double new_sl_out = NormalizeDouble(tmp_sl, digits);
                       // Extra guard: avoid server-side 10025 (no change) by skipping equal normalized SL
                       double cur_sl_norm = NormalizeDouble(sl, digits);
                       if(MathAbs(new_sl_out - cur_sl_norm) < (tick*0.1))
-                        { PrintFormat("[TRAIL] %s BUY skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out); }
+                        { LOG(StringFormat("[TRAIL] %s BUY skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out)); }
                       else
                         {
-                       PrintFormat("[TRAIL] %s BUY modify: old_sl=%.5f -> new_sl=%.5f bid=%.5f needDist=%.5f", sym, sl, new_sl_out, fbid2, needDist2);
+                       LOG(StringFormat("[TRAIL] %s BUY modify: old_sl=%.5f -> new_sl=%.5f bid=%.5f needDist=%.5f", sym, sl, new_sl_out, fbid2, needDist2));
                        if(!m_trade.PositionModify(sym, new_sl_out, tp))
-                         { PrintFormat("[TRAIL] %s BUY modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError()); }
+                         { LOG(StringFormat("[TRAIL] %s BUY modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                         }
                      }
                    else
-                     { PrintFormat("[TRAIL] %s BUY skip: inside needDist (tmp=%.5f bid=%.5f needDist=%.5f)", sym, tmp_sl, fbid2, needDist2); }
+                     { LOG(StringFormat("[TRAIL] %s BUY skip: inside needDist (tmp=%.5f bid=%.5f needDist=%.5f)", sym, tmp_sl, fbid2, needDist2)); }
                   }
                  }
               }
@@ -549,23 +609,23 @@ void CTradeManager::UpdateTrailingStops()
                    double needDist2 = MathMax(MinStopDistance(sym), FreezeDistance(sym));
                    double tick = TickSize(sym);
                    if(MathAbs(tmp_sl - sl) < tick)
-                     { PrintFormat("[TRAIL] %s SELL skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick); }
+                     { LOG(StringFormat("[TRAIL] %s SELL skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick)); }
                    else if(tmp_sl >= fask2 + needDist2)
                      {
                       double new_sl_out = NormalizeDouble(tmp_sl, digits);
                       // Extra guard: avoid server-side 10025 (no change) by skipping equal normalized SL
                       double cur_sl_norm = NormalizeDouble(sl, digits);
                       if(MathAbs(new_sl_out - cur_sl_norm) < (tick*0.1))
-                        { PrintFormat("[TRAIL] %s SELL skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out); }
+                        { LOG(StringFormat("[TRAIL] %s SELL skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out)); }
                       else
                         {
-                       PrintFormat("[TRAIL] %s SELL modify: old_sl=%.5f -> new_sl=%.5f ask=%.5f needDist=%.5f", sym, sl, new_sl_out, fask2, needDist2);
+                       LOG(StringFormat("[TRAIL] %s SELL modify: old_sl=%.5f -> new_sl=%.5f ask=%.5f needDist=%.5f", sym, sl, new_sl_out, fask2, needDist2));
                        if(!m_trade.PositionModify(sym, new_sl_out, tp))
-                         { PrintFormat("[TRAIL] %s SELL modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError()); }
+                         { LOG(StringFormat("[TRAIL] %s SELL modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                         }
                      }
                    else
-                     { PrintFormat("[TRAIL] %s SELL skip: inside needDist (tmp=%.5f ask=%.5f needDist=%.5f)", sym, tmp_sl, fask2, needDist2); }
+                     { LOG(StringFormat("[TRAIL] %s SELL skip: inside needDist (tmp=%.5f ask=%.5f needDist=%.5f)", sym, tmp_sl, fask2, needDist2)); }
                   }
                  }
               }
@@ -599,23 +659,23 @@ void CTradeManager::UpdateTrailingStops()
                         double needDist = MathMax(MinStopDistance(sym), FreezeDistance(sym));
                         double tick = TickSize(sym);
                         if(MathAbs(tmp_sl - sl) < tick)
-                          { PrintFormat("[TRAIL] %s BUY(ATR) skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick); }
+                          { LOG(StringFormat("[TRAIL] %s BUY(ATR) skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick)); }
                         else if(tmp_sl <= fbid - needDist)
                           {
                            double new_sl_out = NormalizeDouble(tmp_sl, digits);
                            // Extra guard: avoid server-side 10025 (no change) by skipping equal normalized SL
                            double cur_sl_norm = NormalizeDouble(sl, digits);
                            if(MathAbs(new_sl_out - cur_sl_norm) < (tick*0.1))
-                             { PrintFormat("[TRAIL] %s BUY(ATR) skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out); }
+                             { LOG(StringFormat("[TRAIL] %s BUY(ATR) skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out)); }
                            else
                              {
-                           PrintFormat("[TRAIL] %s BUY(ATR) modify: old_sl=%.5f -> new_sl=%.5f bid=%.5f needDist=%.5f", sym, sl, new_sl_out, fbid, needDist);
+                           LOG(StringFormat("[TRAIL] %s BUY(ATR) modify: old_sl=%.5f -> new_sl=%.5f bid=%.5f needDist=%.5f", sym, sl, new_sl_out, fbid, needDist));
                            if(!m_trade.PositionModify(sym, new_sl_out, tp))
-                             { PrintFormat("[TRAIL] %s BUY(ATR) modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError()); }
+                             { LOG(StringFormat("[TRAIL] %s BUY(ATR) modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                              }
                           }
                         else
-                          { PrintFormat("[TRAIL] %s BUY(ATR) skip: inside needDist (tmp=%.5f bid=%.5f needDist=%.5f)", sym, tmp_sl, fbid, needDist); }
+                          { LOG(StringFormat("[TRAIL] %s BUY(ATR) skip: inside needDist (tmp=%.5f bid=%.5f needDist=%.5f)", sym, tmp_sl, fbid, needDist)); }
                        }
                     }
                  }
@@ -635,23 +695,23 @@ void CTradeManager::UpdateTrailingStops()
                         double needDist = MathMax(MinStopDistance(sym), FreezeDistance(sym));
                         double tick = TickSize(sym);
                         if(MathAbs(tmp_sl - sl) < tick)
-                          { PrintFormat("[TRAIL] %s SELL(ATR) skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick); }
+                          { LOG(StringFormat("[TRAIL] %s SELL(ATR) skip: delta<tick (sl=%.5f tmp=%.5f tick=%.5f)", sym, sl, tmp_sl, tick)); }
                         else if(tmp_sl >= fask + needDist)
                           {
                            double new_sl_out = NormalizeDouble(tmp_sl, digits);
                            // Extra guard: avoid server-side 10025 (no change) by skipping equal normalized SL
                            double cur_sl_norm = NormalizeDouble(sl, digits);
                            if(MathAbs(new_sl_out - cur_sl_norm) < (tick*0.1))
-                             { PrintFormat("[TRAIL] %s SELL(ATR) skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out); }
+                             { LOG(StringFormat("[TRAIL] %s SELL(ATR) skip: no-change after normalize (sl=%.5f new=%.5f)", sym, sl, new_sl_out)); }
                            else
                              {
-                           PrintFormat("[TRAIL] %s SELL(ATR) modify: old_sl=%.5f -> new_sl=%.5f ask=%.5f needDist=%.5f", sym, sl, new_sl_out, fask, needDist);
+                           LOG(StringFormat("[TRAIL] %s SELL(ATR) modify: old_sl=%.5f -> new_sl=%.5f ask=%.5f needDist=%.5f", sym, sl, new_sl_out, fask, needDist));
                            if(!m_trade.PositionModify(sym, new_sl_out, tp))
-                             { PrintFormat("[TRAIL] %s SELL(ATR) modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError()); }
+                             { LOG(StringFormat("[TRAIL] %s SELL(ATR) modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                              }
                           }
                         else
-                          { PrintFormat("[TRAIL] %s SELL(ATR) skip: inside needDist (tmp=%.5f ask=%.5f needDist=%.5f)", sym, tmp_sl, fask, needDist); }
+                          { LOG(StringFormat("[TRAIL] %s SELL(ATR) skip: inside needDist (tmp=%.5f ask=%.5f needDist=%.5f)", sym, tmp_sl, fask, needDist)); }
                        }
                     }
                  }

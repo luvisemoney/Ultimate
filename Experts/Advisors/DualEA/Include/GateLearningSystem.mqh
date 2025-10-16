@@ -368,9 +368,13 @@ public:
             "      \"total_signals\": %d,\n"
             "      \"passed\": %d,\n"
             "      \"blocked\": %d,\n"
-            "      \"pass_rate\": %.3f,\n"
-            "      \"outcomes\": {\n"
-            
+            "      \"pass_rate\": %.3f\n"
+            "    }",
+            i, m_gate_stats[i].gate_name, 
+            m_gate_stats[i].total_signals_processed,
+            m_gate_stats[i].signals_passed,
+            m_gate_stats[i].signals_blocked,
+            m_gate_stats[i].pass_rate);
          
          FileWriteString(handle, gate_json);
       }
@@ -400,7 +404,7 @@ public:
       
       for(int i = 0; i < 8; i++)
       {
-         GateStatistics &stats = m_gate_stats[i];
+         GateStatistics stats = m_gate_stats[i];  // Copy, not reference
          
          PrintFormat("\nGate %d: %s", i, stats.gate_name);
          PrintFormat("  Signals: %d processed | %d passed (%.1f%%) | %d blocked",

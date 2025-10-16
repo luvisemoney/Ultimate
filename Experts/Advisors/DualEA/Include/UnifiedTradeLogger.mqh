@@ -135,7 +135,7 @@ public:
       {
          // Append to existing file
          FileSeek(handle, 0, SEEK_END);
-         long file_size = FileSize(handle);
+         ulong file_size = FileSize(handle);
          
          if(file_size > 100)  // File has content
          {

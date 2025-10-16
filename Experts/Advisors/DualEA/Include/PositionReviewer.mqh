@@ -144,8 +144,10 @@ public:
       return false;
    }
    
-   // Review a single paper position
-   PositionReview ReviewPaperPosition(CPaperPosition* position, 
+   // NOTE: ReviewPaperPosition removed - now using real MT5 positions
+   // Use PositionGetDouble(), PositionSelectByTicket() instead
+   /*
+   PositionReview ReviewPaperPosition_DEPRECATED(void* position, 
                                       IStrategy* strategy,
                                       const string strategy_name)
    {
@@ -304,9 +306,12 @@ public:
       
       return review;
    }
+   */  // End of deprecated CPaperPosition functions
    
-   // Apply review decision to paper position
-   bool ApplyReviewDecision(CPaperPosition* position, const PositionReview &review)
+   // NOTE: ApplyReviewDecision removed - now using real MT5 position modifications
+   // Use TradeManager::ModifyPosition() instead
+   /*
+   bool ApplyReviewDecision_DEPRECATED(void* position, const PositionReview &review)
    {
       if(position == NULL) return false;
       
@@ -356,6 +361,7 @@ public:
             return false;
       }
    }
+   */  // End of deprecated ApplyReviewDecision
    
    // Get statistics
    void GetStatistics(int &total, int &closed, int &adjusted, int &held)

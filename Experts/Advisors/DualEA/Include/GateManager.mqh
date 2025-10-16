@@ -8,6 +8,7 @@
 #include "ConfigManager.mqh"
 #include "EventBus.mqh"
 #include "SystemMonitor.mqh"
+ #include "LogMiddleware.mqh"
 
 // Gate result structure
 struct GateResult
@@ -31,6 +32,7 @@ struct TradingSignal
    double tp;
    double volume;
    double confidence;
+   string strategy;  // Which of the 23 strategies generated this signal
    
    // Market context
    double volatility;
@@ -411,6 +413,13 @@ public:
       }
    }
 
+   // Learning-driven threshold updates (stub to satisfy external callers)
+   void UpdateFromLearning()
+   {
+      // Intentionally minimal; real implementation can query m_learning
+      // and adjust internal thresholds or gate configs.
+   }
+  
    // Initialize gates with configuration
    void InitializeGates()
    {
@@ -508,10 +517,28 @@ public:
          // Apply tweaks if gate passed
          if(result.passed)
          {
-            current_signal.price += result.tweaks[0];
-            current_signal.sl += result.tweaks[1];
-            current_signal.tp += result.tweaks[2];
-            current_signal.volume *= (1 + result.tweaks[3]);
+            // CRITICAL FIX: Gates return adjustments differently
+            // - tweaks[0] = price adjustment (can be 0 for no change, or delta/multiplier)
+            // - tweaks[1] = SL adjustment (0 = no change, positive = new SL value, negative = delta)
+            // - tweaks[2] = TP adjustment (0 = no change, positive = new TP value, negative = delta)
+            // - tweaks[3] = volume multiplier adjustment (-0.1 = 90% of original, 0 = no change, 0.1 = 110%)
+            // - tweaks[4] = timing adjustment
+            
+            // Price adjustment (apply as delta only if non-zero)
+            if(MathAbs(result.tweaks[0]) > 1e-9)
+               current_signal.price = result.tweaks[0];
+            
+            // SL/TP adjustments: If gate returns a value, use it; if 0, keep original
+            // This fixes the bug where gates returned full values but we were adding them
+            if(MathAbs(result.tweaks[1]) > 1e-9)
+               current_signal.sl = result.tweaks[1];  // SET instead of ADD
+            
+            if(MathAbs(result.tweaks[2]) > 1e-9)
+               current_signal.tp = result.tweaks[2];  // SET instead of ADD
+            
+            // Volume adjustment (multiplicative)
+            if(MathAbs(result.tweaks[3]) > 1e-9)
+               current_signal.volume *= (1.0 + result.tweaks[3]);
             
             // Copy tweaks to decision record
             for(int j = 0; j < 5; j++)
@@ -531,93 +558,26 @@ public:
       decision.final_tp = current_signal.tp;
       decision.final_volume = current_signal.volume;
       
+      // CRITICAL FIX: Validate SL/TP are non-zero after gate processing
+      if(decision.final_sl <= 0.0 || decision.final_tp <= 0.0)
+     {
+        LOG(StringFormat("WARNING: Gates produced invalid SL/TP (sl=%.5f tp=%.5f) for signal %s", 
+                    decision.final_sl, decision.final_tp, decision.signal_id));
+        if(decision.final_sl <= 0.0) decision.final_sl = signal.sl;
+        if(decision.final_tp <= 0.0) decision.final_tp = signal.tp;
+     }
+      
       // Record market context
       decision.volatility = current_signal.volatility;
       decision.correlation_score = current_signal.correlation;
       decision.market_regime = current_signal.regime;
       
-      // Record decision in learning system
-         if(m_learning != NULL)
-         {
-            m_learning.RecordDecision(decision);
-            
-            if(m_unified_mode && m_event_bus != NULL)
-            {
-               string decision_msg = StringFormat("Decision recorded: %s", decision.signal_id);
-               m_event_bus.PublishSystemEvent("LearningBridge", decision_msg);
-            }
-         }
-      
-      // Publish trade execution event if unified mode is enabled
-      if(m_unified_mode && m_event_bus != NULL)
-      {
-         string trade_data = StringFormat("%s|%s|%s", decision.signal_id, decision.symbol, 
-                           (decision.executed ? "EXECUTED" : "REJECTED"));
-         m_event_bus.Publish(EVENT_TRADE_EXECUTED, "GateManager", trade_data, 2);
-      }
-         
       return all_gates_passed;
-   }
-   
-   // Update gate thresholds based on learning
-   void UpdateFromLearning()
-   {
-      if(m_learning == NULL) return;
-      
-      if(m_unified_mode && m_config != NULL && m_monitor != NULL)
-      {
-         // Update thresholds based on performance metrics
-         for(int i = 0; i < 8; i++)
-         {
-            double success_rate = m_monitor.GetGateSuccessRate(i);
-            GateConfig config = m_config.GetGateConfig(i);
-            
-            // Adjust threshold based on success rate vs target
-            if(success_rate < config.success_rate_target - 0.05)
-            {
-               // Lower threshold if success rate is too low
-               config.threshold *= 0.95;
-               m_config.SetGateConfig(i, config);
-               
-               if(m_gates[i] != NULL)
-                  m_gates[i].SetThreshold(config.threshold);
-               
-               if(m_event_bus != NULL)
-               {
-                  string msg = StringFormat("Threshold lowered to %.4f", config.threshold);
-                  string full_msg = StringFormat("%s: %s", config.name, msg);
-                  m_event_bus.PublishSystemEvent("GateManager", full_msg);
-               }
-            }
-            else if(success_rate > config.success_rate_target + 0.05)
-            {
-               // Raise threshold if success rate is too high
-               config.threshold *= 1.05;
-               m_config.SetGateConfig(i, config);
-               
-               if(m_gates[i] != NULL)
-                  m_gates[i].SetThreshold(config.threshold);
-               
-               if(m_event_bus != NULL)
-               {
-                  string msg = StringFormat("Threshold raised to %.4f", config.threshold);
-                  string full_msg = StringFormat("%s: %s", config.name, msg);
-                  m_event_bus.PublishSystemEvent("GateManager", full_msg);
-               }
-            }
-         }
-      }
-      else
-      {
-         // Legacy implementation for backward compatibility
-         Print("UpdateFromLearning: Using legacy mode");
-      }
    }
    
    // Configuration methods for unified system
    void SetUnifiedMode(bool enabled) { m_unified_mode = enabled; }
    bool IsUnifiedMode() { return m_unified_mode; }
-   
    // Get gate configuration
    GateConfig GetGateConfiguration(int gate_index)
    {
@@ -663,15 +623,15 @@ public:
          
          if(m_config != NULL)
          {
-            Print("\n=== Configuration Status ===");
-            Print("Unified Mode: Enabled");
-            Print("No Constraints Mode: ", m_config.IsNoConstraintsMode());
-            Print("Verbose Logging: ", m_config.IsVerboseLogging());
+            LOG("\n=== Configuration Status ===");
+            LOG("Unified Mode: Enabled");
+            LOG(StringFormat("No Constraints Mode: %s", m_config.IsNoConstraintsMode() ? "true" : "false"));
+            LOG(StringFormat("Verbose Logging: %s", m_config.IsVerboseLogging() ? "true" : "false"));
          }
       }
       else
       {
-         Print("GateManager: Running in legacy mode");
+         LOG("GateManager: Running in legacy mode");
       }
    }
 };

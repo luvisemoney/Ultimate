@@ -10,19 +10,30 @@
 // This function resets the array each call.
 void GetDefaultStrategyNames(string &out[])
   {
-   ArrayResize(out, 9);
-   // Update this list when strategies change
-   // Names must match class-name identifiers used by strategies
-   out[0] = "BollAveragesStrategy";
-   out[1] = "DonchianATRBreakoutStrategy";
-   out[2] = "MeanReversionBBStrategy";
-   out[3] = "RSI2BBReversionStrategy";
-   out[4] = "SuperTrendADXKamaStrategy";
-   // Newly added
-   out[5] = "OpeningRangeBreakoutStrategy";
-   out[6] = "VWAPReversionStrategy";
-   out[7] = "EMAPullbackStrategy";
-   out[8] = "KeltnerMomentumStrategy";
+   ArrayResize(out, 21);
+   // Names must match IStrategy::Name() returns
+   int i=0;
+   out[i++] = "ADXStrategy";
+   out[i++] = "AcceleratorOscillatorStrategy";
+   out[i++] = "AlligatorStrategy";
+   out[i++] = "AroonStrategy";
+   out[i++] = "AwesomeOscillatorStrategy";
+   out[i++] = "BearsPowerStrategy";
+   out[i++] = "BollsAveragesStrategy"; // fallback alias if present (kept for compatibility)
+   out[i++] = "BollAveragesStrategy";
+   out[i++] = "BullsPowerStrategy";
+   out[i++] = "DonchianATRBreakoutStrategy";
+   out[i++] = "EMAPullbackStrategy";
+   out[i++] = "ForexTrendStrategy";
+   out[i++] = "GoldVolatilityStrategy";
+   out[i++] = "IndicesEnergiesStrategy";
+   out[i++] = "KeltnerMomentumStrategy";
+   out[i++] = "MeanReversionBBStrategy";
+   out[i++] = "MultiIndicatorStrategy";
+   out[i++] = "OpeningRangeBreakoutStrategy";
+   out[i++] = "RSI2BBReversionStrategy";
+   out[i++] = "SuperTrendADXKamaStrategy";
+   out[i++] = "VWAPReversionStrategy";
   }
 
 #endif // __STRATEGIES_REGISTRY_MQH__

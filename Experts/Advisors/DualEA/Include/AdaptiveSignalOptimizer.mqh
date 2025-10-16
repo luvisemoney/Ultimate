@@ -9,7 +9,6 @@
 
 #include "LearningBridge.mqh"
 #include "GateManager.mqh"
-#include <Generic/HashMap.mqh>
 
 // Strategy-specific adjustment profile
 struct StrategyProfile
@@ -104,7 +103,10 @@ class CAdaptiveSignalOptimizer
 private:
    CLearningBridge* m_learning;
    CGateManager* m_gate_manager;
-   CHashMap<string, StrategyProfile> m_profiles;
+   
+   // Simple array-based profile storage (MQL5 HashMap doesn't support structs)
+   string m_profile_keys[];
+   StrategyProfile m_profile_values[];
    
    // Configuration
    int m_max_attempts;
@@ -114,6 +116,44 @@ private:
    // Statistics
    int m_total_optimizations;
    int m_successful_optimizations;
+   
+   // Helper methods for profile storage
+   int FindProfileIndex(const string key)
+   {
+      for(int i = 0; i < ArraySize(m_profile_keys); i++)
+      {
+         if(m_profile_keys[i] == key) return i;
+      }
+      return -1;
+   }
+   
+   bool GetProfile(const string key, StrategyProfile &out_profile)
+   {
+      int idx = FindProfileIndex(key);
+      if(idx >= 0)
+      {
+         out_profile = m_profile_values[idx];
+         return true;
+      }
+      return false;
+   }
+   
+   void SetProfile(const string key, const StrategyProfile &profile)
+   {
+      int idx = FindProfileIndex(key);
+      if(idx >= 0)
+      {
+         m_profile_values[idx] = profile;
+      }
+      else
+      {
+         int size = ArraySize(m_profile_keys);
+         ArrayResize(m_profile_keys, size + 1);
+         ArrayResize(m_profile_values, size + 1);
+         m_profile_keys[size] = key;
+         m_profile_values[size] = profile;
+      }
+   }
    
    // Initialize strategy profiles for all 23 strategies
    void InitializeStrategyProfiles()
@@ -165,7 +205,7 @@ private:
          profile.optimal_tp_tweak = 1.0;
          profile.optimal_volume_tweak = 0.7;  // Start conservative
          
-         m_profiles.Add(strategies[i], profile);
+         SetProfile(strategies[i], profile);
       }
       
       PrintFormat("✅ AdaptiveSignalOptimizer: Initialized %d strategy profiles", ArraySize(strategies));
@@ -177,7 +217,7 @@ private:
       if(m_learning == NULL) return;
       
       StrategyProfile profile;
-      if(!m_profiles.TryGetValue(strategy_name, profile))
+      if(!GetProfile(strategy_name, profile))
          return;
       
       // Query learning bridge for successful adjustments
@@ -201,7 +241,7 @@ private:
          }
          
          profile.last_update = TimeCurrent();
-         m_profiles.TrySetValue(strategy_name, profile);
+         SetProfile(strategy_name, profile);
          
          if(m_verbose_logging)
             PrintFormat("📊 ML Update [%s]: Success=%.1f%% Vol=%.2f SL=%.2f", 
@@ -267,7 +307,7 @@ public:
       
       // Get strategy profile
       StrategyProfile profile;
-      if(!m_profiles.TryGetValue(strategy_name, profile))
+      if(!GetProfile(strategy_name, profile))
       {
          // Unknown strategy - use default profile
          if(m_verbose_logging)
@@ -366,7 +406,7 @@ public:
                // Update profile statistics
                profile.total_adjustments++;
                profile.successful_adjustments++;
-               m_profiles.TrySetValue(strategy_name, profile);
+               SetProfile(strategy_name, profile);
                
                m_successful_optimizations++;
                
@@ -395,7 +435,7 @@ public:
       
       // All attempts exhausted
       profile.total_adjustments++;
-      m_profiles.TrySetValue(strategy_name, profile);
+      SetProfile(strategy_name, profile);
       
       blocking_reason = StringFormat("All %d optimization attempts failed", m_max_attempts);
       
