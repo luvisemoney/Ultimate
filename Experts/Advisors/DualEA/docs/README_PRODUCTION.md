@@ -4,6 +4,35 @@
 
 ---
 
+## Registries & Factories
+
+- Strategy registry: `Include/Strategies/Registry.mqh` lists default strategies by name.
+- Strategy factory: `Include/StrategyFactory.mqh` creates `IStrategy*` by name.
+- Gate registry: `Include/GateRegistry.mqh` lists gates and creates `IGate*` by name.
+
+Usage pattern (EA-level):
+
+```cpp
+#include "Include/Strategies/Registry.mqh"
+#include "Include/StrategyFactory.mqh"
+#include "Include/GateRegistry.mqh"
+
+string names[]; GetDefaultStrategyNames(names);
+IStrategy *active[]; ArrayResize(active, ArraySize(names));
+for(int i=0;i<ArraySize(names);++i)
+  active[i] = CreateStrategyByName(names[i], _Symbol, (ENUM_TIMEFRAMES)_Period);
+
+string gates[]; GetDefaultGateNames(gates);
+// Use CreateGateByName(...) to build a custom gate pipeline if needed.
+```
+
+Hot-reload suggestion:
+
+- On `OnTimer()` detect updated config → rebuild strategy list or gate pipeline by name.
+- Use `ConfigManager` for gate enable/threshold updates.
+
+---
+
 ## Quick Navigation
 
 **New to DualEA?** Start here:
@@ -518,6 +547,32 @@ python policy_export.py --model artifacts/tf_model.keras --scaler artifacts/scal
 ### Deployment
 
 Copy `policy.json` to `Common/Files/DualEA/policy.json` and restart LiveEA (or touch `policy.reload` for hot-reload when implemented).
+
+---
+
+## Policy Server (Local HTTP)
+
+Run a minimal local HTTP server to serve `policy.json` for hot-reload via `WebRequest`.
+
+```bash
+cd MQL5/Experts/Advisors/DualEA/python
+python policy_server.py --host 127.0.0.1 --port 5005 --policy "%APPDATA%/MetaQuotes/Terminal/Common/Files/DualEA/policy.json"
+```
+
+- Endpoints:
+  - `/policy.json` → returns the policy file contents
+  - `/policy/version` → returns `{ hash, size }` metadata for change detection
+
+- MT5 WebRequest whitelist:
+  - Tools → Options → Expert Advisors → Allow WebRequest for listed URL
+  - Add: `http://127.0.0.1:5005`
+
+- PaperEA/LiveEA Settings:
+  - `PolicyServerUrl` (e.g. `http://127.0.0.1:5005/policy.json`)
+  - `PolicyHttpPollPercent` (rate-based split between HTTP and file polling)
+  - `HotReloadIntervalSec` (default 10s)
+
+Hot-reload flow: on each timer tick, EA rolls a percentage to decide HTTP vs file polling for policy and reloads on size/hash changes.
 
 ---
 
