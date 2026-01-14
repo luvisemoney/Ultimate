@@ -16,7 +16,8 @@ public:
     void Initialize(const string &strategies)
     {
         StringSplit(strategies, ',', m_expectedStrategies);
-        m_lastAuditTime = 0;
+        // Start with a grace period: set last audit time to now so first audit is delayed
+        m_lastAuditTime = TimeCurrent();
         ArrayResize(m_processedStrategies, 0);
         ArrayResize(m_skippedStrategies, 0);
         
@@ -44,6 +45,13 @@ public:
     {
         // Only run audit every 15 minutes
         if(TimeCurrent() - m_lastAuditTime < 900) return;
+        
+        // Do not audit if nothing was processed in the last period (avoid false positives at startup)
+        if(ArraySize(m_processedStrategies) == 0)
+        {
+            m_lastAuditTime = TimeCurrent();
+            return;
+        }
         
         // Reset skipped strategies
         ArrayResize(m_skippedStrategies, 0);
@@ -81,11 +89,12 @@ public:
             PrintFormat("GATE AUDIT: %d strategies skipped - %s", 
                        ArraySize(m_skippedStrategies), skipList);
             
-            // Critical error if more than 2 strategies skipped
-            if(ArraySize(m_skippedStrategies) > 2)
+            // Warning only - do not shutdown on strategy skips
+            // This is informational, not a critical error
+            // Strategies may be skipped due to market conditions, not bugs
+            if(ArraySize(m_skippedStrategies) > 5)
             {
-                Print("CRITICAL: Too many strategies skipped - shutting down!");
-                ExpertRemove();
+                Print("WARNING: Many strategies skipped this period - check signal generation conditions");
             }
         }
         else

@@ -69,11 +69,12 @@
 #include "..\\Include\\Strategies\\AssetRegistry.mqh"
 
 // Strategy selector
-#include "..\\Include\\StrategySelector.mqh"
-// Learning and Export Systems
+#include "..\Include\StrategySelector.mqh"
+// Learning and Export Systems - Using file-based export for strategy tester compatibility
 #include "..\Include\LearningBridge.mqh"
 #include "..\Include\GateManager.mqh"
-#include "..\Include\ExportFeatureBatch.mqh"
+#include "..\Include\FileBasedFeatureExport.mqh"  // Replaces DLL-based export
+#include "..\Include\StrategySignalGenerators.mqh"  // Extensible strategy signal generators
 
 // ===================[ PAPER vs LIVE EA CLARIFICATION ]===================
 // IMPORTANT: "Paper" refers to DEMO ACCOUNT, NOT simulated trades!
@@ -316,6 +317,7 @@ CLearningBridge *g_learning_bridge = NULL;
 CGateManager *g_gate_manager = NULL;
 CTradeManager *g_trade_manager = NULL;
 CTelemetryStandard *g_telemetry = NULL;
+CStrategySignalRegistry *g_signal_registry = NULL;  // Extensible strategy signal generators
 // g_paper_positions removed - using REAL MT5 positions via PositionSelect()
 
 // ===================[ DYNAMIC PARAMETER ENGINE ]===================
@@ -562,8 +564,7 @@ int OnInit()
    }
    
    // Initialize gate audit system with all expected strategies
-   string all_strategies = "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,"
-                         "VWAPReversion,EMAPullback,OpeningRangeBreakout";
+   string all_strategies = "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,VWAPReversion,EMAPullback,OpeningRangeBreakout";
    // Use global g_gate_audit declared earlier instead of creating local variable
    g_gate_audit.Initialize(all_strategies);
    
@@ -693,6 +694,26 @@ int OnInit()
       return(INIT_FAILED);
    }
    
+   // Initialize Strategy Signal Registry (extensible signal generators for all strategies)
+   g_signal_registry = new CStrategySignalRegistry();
+   if(CheckPointer(g_signal_registry) != POINTER_INVALID)
+   {
+      g_signal_registry.InitializeAllStrategies();
+      LOG(StringFormat("✅ Strategy Signal Registry initialized: %d generators registered", g_signal_registry.GetCount()));
+   }
+   else
+   {
+      LOG("WARNING: Failed to initialize Strategy Signal Registry - using fallback signal generation");
+   }
+   
+   // Ensure selector has recent telemetry data loaded before first selection
+   if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
+   {
+      g_selector.EnsureRecentLoaded(SelRecentDays);
+      if(ShouldLog(LOG_INFO))
+         LOG(StringFormat("📚 Strategy selector recent data loaded for last %d days", SelRecentDays));
+   }
+
    // Initialize trade manager
    g_trade_manager = new CTradeManager(_Symbol, LotSize, MagicNumber);
    if(CheckPointer(g_trade_manager) == POINTER_INVALID)
@@ -1115,6 +1136,12 @@ void OnDeinit(const int reason)
    {
       delete g_gate_manager;
       g_gate_manager = NULL;
+   }
+   
+   if(g_signal_registry != NULL)
+   {
+      delete g_signal_registry;
+      g_signal_registry = NULL;
    }
    
    if(g_trade_manager != NULL)
@@ -1813,6 +1840,11 @@ string SelectBestStrategy()
       if(ShouldLog(LOG_DEBUG))
          LOG(StringFormat("Strategy selector returned empty, using fallback: %s", selected));
    }
+   else
+   {
+      if(ShouldLog(LOG_INFO))
+         LOG(StringFormat("🎯 Strategy selector picked: %s (index %d)", selected, best_idx));
+   }
    
    return selected;
 }
@@ -2055,6 +2087,7 @@ void OnTick()
    
    // ===================[ STRATEGY SELECTION & SIGNAL GENERATION ]===================
    TradingSignal signal;
+   signal.Init();  // CRITICAL: Initialize all fields to safe defaults
    string selected_strategy = "";
    
    if(UseStrategySelector)
@@ -2068,9 +2101,6 @@ void OnTick()
          return;
       }
       
-      // Log strategy selection for audit
-      g_gate_audit.LogStrategyProcessed(selected_strategy);
-      
       // Generate signal using selected strategy
       signal = GenerateSignalFromStrategy(selected_strategy);
       
@@ -2082,13 +2112,15 @@ void OnTick()
       // Fallback to simple signal generation
       signal = GenerateSignal();
       selected_strategy = "MovingAverageStrategy"; // Default strategy name
-      g_gate_audit.LogStrategyProcessed(selected_strategy);
    }
    
    if(signal.id == "")
    {
       return; // No signal generated
    }
+   
+   // Log strategy ONLY after confirming a valid signal was generated
+   g_gate_audit.LogStrategyProcessed(selected_strategy);
    
    // ===================[ ADAPTIVE SIGNAL OPTIMIZATION SYSTEM ]===================
    if(UseGateSystem && CheckPointer(g_gate_manager) != POINTER_INVALID)
@@ -2531,6 +2563,7 @@ void OnTick()
 TradingSignal GenerateSignal()
 {
    TradingSignal signal;
+   signal.Init();  // CRITICAL: Initialize all fields to safe defaults
    
    // Simple moving average crossover strategy - automatically uses chart symbol/timeframe
    int fast_ma_handle = iMA(_Symbol, _Period, 20, 0, MODE_SMA, PRICE_CLOSE);
@@ -2754,8 +2787,13 @@ void ExecutePaperTrade(CSignalDecision &decision)
       features[6] = "volatility:" + DoubleToString(GetVolatility(_Symbol, (ENUM_TIMEFRAMES)_Period), 4);
       features[7] = "correlation:" + DoubleToString(GetCorrelation(), 3);
       
-      // Export to ML pipeline via DLL
-      ExportTradeFeatures(decision.symbol, decision.strategy, (long)TimeCurrent(), features);
+      // Export to ML pipeline via file-based system (strategy tester compatible)
+      string out_path;
+      int result = g_file_exporter.ExportStringFeatures(features, ArraySize(features), out_path);
+      if(result != 0)
+         Print("ExportStringFeatures failed: ", result);
+      else
+         Print("Feature batch exported to: ", out_path);
    }
    else
    {
@@ -2927,9 +2965,7 @@ void LogAdaptiveDecisionDetails(CAdaptiveDecision &decision, const string strate
 // Export enhanced features with adaptive tracking
 void ExportEnhancedFeaturesAdaptive(CAdaptiveDecision &decision, const string strategy_name)
 {
-   if(CheckPointer(g_features) == POINTER_INVALID) return;
-   
-   // Create comprehensive feature set
+   // Use file-based export for strategy tester compatibility
    string features[];
    ArrayResize(features, 20);  // Expanded for adaptive features
    datetime now = TimeCurrent();
@@ -2962,8 +2998,13 @@ void ExportEnhancedFeaturesAdaptive(CAdaptiveDecision &decision, const string st
    features[18] = "gate_passed_count:" + IntegerToString(CountPassedGates(decision));
    features[19] = "timestamp:" + TimeToString(now);
    
-   // Export to features system
-   g_features.ExportFeatures(decision.symbol, strategy_name, now, features);
+   // Export to file-based system (strategy tester compatible)
+   string out_path;
+   int result = g_file_exporter.ExportStringFeatures(features, ArraySize(features), out_path);
+   if(result != 0)
+      Print("ExportStringFeatures failed: ", result);
+   else
+      Print("Enhanced features exported to: ", out_path);
 }
 
 // Helper to count passed gates
@@ -2999,20 +3040,52 @@ int CountPassedGates(CSignalDecision &decision)
 //| MISSING FUNCTIONS - ENHANCED IMPLEMENTATIONS                    |
 //+------------------------------------------------------------------+
 
-// Generate signal from specific strategy
+// Generate signal from specific strategy using the extensible signal generator registry
 TradingSignal GenerateSignalFromStrategy(const string strategy_name)
 {
    TradingSignal signal;
+   signal.Init();  // CRITICAL: Initialize all fields to safe defaults
    
-   // This would normally interface with the strategy registry
-   // For now, we'll use the existing GenerateSignal as fallback
+   // Try to use the strategy-specific signal generator from the registry
+   if(CheckPointer(g_signal_registry) != POINTER_INVALID)
+   {
+      bool generated = g_signal_registry.GenerateSignal(strategy_name, _Symbol, (ENUM_TIMEFRAMES)_Period, signal);
+      
+      if(generated && signal.id != "")
+      {
+         // Signal was generated by strategy-specific logic
+         // Ensure market context is set
+         if(signal.volatility <= 0.0)
+            signal.volatility = GetVolatility(_Symbol, (ENUM_TIMEFRAMES)_Period);
+         if(signal.regime == "")
+            signal.regime = GetMarketRegime();
+         if(signal.market_regime == "")
+            signal.market_regime = signal.regime;
+         if(signal.correlation == 0.0)
+            signal.correlation = GetCorrelation();
+         
+         return signal;
+      }
+   }
+   
+   // Fallback to legacy MA crossover signal generation if registry unavailable or no signal
    signal = GenerateSignal();
    
-   // Override strategy name and ID
+   // Only override strategy name and ID if a valid signal was generated
    if(signal.id != "")
    {
       signal.id = strategy_name + "_" + IntegerToString(TimeCurrent());
-      signal.strategy = strategy_name;  // Set the actual strategy that generated this
+      signal.strategy = strategy_name;
+      
+      // Ensure market context is set
+      if(signal.volatility <= 0.0)
+         signal.volatility = GetVolatility(_Symbol, (ENUM_TIMEFRAMES)_Period);
+      if(signal.regime == "")
+         signal.regime = GetMarketRegime();
+      if(signal.market_regime == "")
+         signal.market_regime = signal.regime;
+      if(signal.correlation == 0.0)
+         signal.correlation = GetCorrelation();
    }
    
    return signal;

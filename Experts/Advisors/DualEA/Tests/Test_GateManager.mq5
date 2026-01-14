@@ -16,6 +16,7 @@ void OnStart()
 
    // Build a sample signal
    TradingSignal signal;
+   signal.Init();  // CRITICAL: Initialize all fields to safe defaults
    signal.id = "TEST_SIGNAL";
    signal.symbol = _Symbol;
    signal.timeframe = _Period;

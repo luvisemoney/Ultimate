@@ -146,6 +146,7 @@ void OnTick()
    {
       // Create example trading signal
       TradingSignal signal;
+      signal.Init();  // CRITICAL: Initialize all fields to safe defaults
       signal.id = "EXAMPLE_" + IntegerToString(signal_counter++);
       signal.symbol = Symbol();
       signal.timeframe = Period();

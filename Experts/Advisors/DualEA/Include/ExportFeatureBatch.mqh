@@ -1,9 +1,6 @@
-// MQL5 integration: Export features per trade as protobuf, call DLL
-// NOTE: Ensure feature_export.dll exists and has proper dependencies (MSVC Runtime)
-// For x64 MT5, DLL must be 64-bit compiled
-#import "C:\\DualEA_FeatureBatches\\feature_export.dll"
-int ExportFeatureBatch(const uchar &pb_bytes[], int pb_len, uchar &out_path[], int out_path_len);
-#import
+// MQL5 integration: Export features per trade using file-based system
+// This version works in strategy tester where DLL loading is disabled
+#include "FileBasedFeatureExport.mqh"
 
 // Helper: Serialize features to protobuf-compatible binary format
 // Implements proper binary serialization with field tags and wire types
@@ -167,15 +164,13 @@ bool StringIsDigit(const string str)
 
 void ExportTradeFeatures(const string symbol, const string strategy, const long timestamp, const string &features[])
   {
-   uchar pb_bytes[4096];
-   int pb_len;
-   SerializeFeatureBatch(symbol, strategy, timestamp, features, pb_bytes, pb_len);
-   uchar out_path[512];
-   int result = ExportFeatureBatch(pb_bytes, pb_len, out_path, 512);
+   // Use file-based export instead of DLL for strategy tester compatibility
+   string out_path;
+   int result = g_file_exporter.ExportStringFeatures(features, ArraySize(features), out_path);
    if(result != 0)
-     Print("ExportFeatureBatch failed: ", result);
+     Print("ExportStringFeatures failed: ", result);
    else
-     Print("Feature batch exported to: ", CharArrayToString(out_path));
+     Print("Feature batch exported to: ", out_path);
   }
 
 // Usage (inside trade logic):

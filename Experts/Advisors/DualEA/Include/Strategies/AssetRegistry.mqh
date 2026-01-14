@@ -71,6 +71,16 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
          strategies[count++].strategy = new CRSI2BBReversionStrategy(symbol, tf);
          strategies[count].name = "DonchianATRBreakout";
          strategies[count++].strategy = new CDonchianATRBreakoutStrategy(symbol, tf);
+         strategies[count].name = "MeanReversionBB";
+         strategies[count++].strategy = new CMeanReversionBBStrategy(symbol, tf);
+         strategies[count].name = "KeltnerMomentum";
+         strategies[count++].strategy = new CKeltnerMomentumStrategy(symbol, tf);
+         strategies[count].name = "VWAPReversion";
+         strategies[count++].strategy = new CVWAPReversionStrategy(symbol, tf);
+         strategies[count].name = "EMAPullback";
+         strategies[count++].strategy = new CEMAPullbackStrategy(symbol, tf);
+         strategies[count].name = "OpeningRangeBreakout";
+         strategies[count++].strategy = new COpeningRangeBreakoutStrategy(symbol, tf);
          break;
 
       case ASSET_FX_MINOR:

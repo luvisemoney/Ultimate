@@ -173,25 +173,25 @@ private:
          profile.strategy_name = strategies[i];
          
          // Default adjustment ranges (will be ML-optimized)
-         // Price: ±2% adjustment range
-         profile.price_adjust_range[0] = -0.02;
-         profile.price_adjust_range[1] = 0.02;
-         profile.price_adjust_range[2] = 0.005;  // 0.5% steps
+         // Price: ±1% adjustment range (more conservative)
+         profile.price_adjust_range[0] = -0.01;
+         profile.price_adjust_range[1] = 0.01;
+         profile.price_adjust_range[2] = 0.0025;  // 0.25% steps
          
-         // SL: 0.5x to 1.5x
-         profile.sl_adjust_range[0] = 0.5;
-         profile.sl_adjust_range[1] = 1.5;
-         profile.sl_adjust_range[2] = 0.1;
+         // SL: 0.8x to 1.2x (more conservative)
+         profile.sl_adjust_range[0] = 0.8;
+         profile.sl_adjust_range[1] = 1.2;
+         profile.sl_adjust_range[2] = 0.05;
          
-         // TP: 0.8x to 2.0x
-         profile.tp_adjust_range[0] = 0.8;
-         profile.tp_adjust_range[1] = 2.0;
-         profile.tp_adjust_range[2] = 0.2;
+         // TP: 0.9x to 1.5x (more conservative)
+         profile.tp_adjust_range[0] = 0.9;
+         profile.tp_adjust_range[1] = 1.5;
+         profile.tp_adjust_range[2] = 0.1;
          
-         // Volume: 0.3x to 1.0x (reduce only for safety)
-         profile.volume_adjust_range[0] = 0.3;
+         // Volume: 0.5x to 1.0x (reduce only for safety)
+         profile.volume_adjust_range[0] = 0.5;
          profile.volume_adjust_range[1] = 1.0;
-         profile.volume_adjust_range[2] = 0.1;
+         profile.volume_adjust_range[2] = 0.05;
          
          // Initialize metrics
          profile.success_rate = 0.0;
@@ -199,11 +199,11 @@ private:
          profile.successful_adjustments = 0;
          profile.last_update = 0;
          
-         // Start with neutral tweaks
+         // Start with more conservative tweaks
          profile.optimal_price_tweak = 0.0;
          profile.optimal_sl_tweak = 1.0;
-         profile.optimal_tp_tweak = 1.0;
-         profile.optimal_volume_tweak = 0.7;  // Start conservative
+         profile.optimal_tp_tweak = 1.1;  // Slightly more aggressive TP
+         profile.optimal_volume_tweak = 0.8;  // Less conservative volume
          
          SetProfile(strategies[i], profile);
       }
@@ -329,20 +329,27 @@ public:
          TradingSignal adjusted_signal = signal;
          
          // Calculate adjustments based on attempt number and ML insights
-         double aggressiveness = 1.0 + (attempt * 0.3);  // Increase adjustments each attempt
+         // Use more conservative adjustments to increase success rate
+         double aggressiveness = 1.0 + (attempt * 0.15);  // Slower increase in adjustments
          
-         // Apply ML-optimized adjustments
-         adjusted_signal.price = signal.price * (1.0 + profile.optimal_price_tweak * aggressiveness);
-         adjusted_signal.sl = signal.sl * (profile.optimal_sl_tweak * (1.0 - attempt * 0.1));  // Tighten SL more each attempt
-         adjusted_signal.tp = signal.tp * (profile.optimal_tp_tweak * (1.0 + attempt * 0.15));  // Wider TP each attempt
-         adjusted_signal.volume = signal.volume * (profile.optimal_volume_tweak * (1.0 - attempt * 0.15));  // Reduce volume each attempt
+         // Apply ML-optimized adjustments with more conservative ranges
+         adjusted_signal.price = signal.price * (1.0 + profile.optimal_price_tweak * aggressiveness * 0.5);  // Reduce price adjustment impact
+         adjusted_signal.sl = signal.sl * (profile.optimal_sl_tweak * (1.0 - attempt * 0.05));  // Gentler SL tightening
+         adjusted_signal.tp = signal.tp * (profile.optimal_tp_tweak * (1.0 + attempt * 0.075));  // Gentler TP widening
+         adjusted_signal.volume = signal.volume * (profile.optimal_volume_tweak * (1.0 - attempt * 0.075));  // Gentler volume reduction
          
          // Special adjustments based on confidence
-         if(signal.confidence < 0.5)
+         if(signal.confidence < 0.3)
          {
-            // Low confidence - be extra conservative
-            adjusted_signal.volume *= 0.5;
-            adjusted_signal.sl *= 0.8;
+            // Very low confidence - be extra conservative
+            adjusted_signal.volume *= 0.7;
+            adjusted_signal.sl *= 0.9;
+         }
+         else if(signal.confidence < 0.5)
+         {
+            // Low confidence - be moderately conservative
+            adjusted_signal.volume *= 0.85;
+            adjusted_signal.sl *= 0.95;
          }
          
          // Update signal ID to track adjustment

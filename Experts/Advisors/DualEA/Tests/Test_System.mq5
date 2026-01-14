@@ -41,6 +41,7 @@ void OnStart()
 
    // Simulate a signal through the full pipeline
    TradingSignal signal;
+   signal.Init();  // CRITICAL: Initialize all fields to safe defaults
    signal.id = "SYS_TEST";
    signal.symbol = _Symbol;
    signal.timeframe = _Period;

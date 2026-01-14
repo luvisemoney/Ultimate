@@ -208,6 +208,7 @@ public:
       if(strategy != NULL)
       {
          TradingSignal new_signal;
+         new_signal.Init();  // CRITICAL: Initialize all fields to safe defaults
          new_signal.symbol = position.symbol;
          new_signal.timeframe = position.timeframe;
          new_signal.timestamp = TimeCurrent();
