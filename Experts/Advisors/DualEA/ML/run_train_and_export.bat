@@ -40,6 +40,13 @@ if errorlevel 1 (
   popd & endlocal & exit /b 1
 )
 
+REM Convert trained XGBoost artifacts to ONNX bundle
+"%PY%" snapshot_export_onnx.py --artifacts "%SCRIPT_DIR%\artifacts"
+if errorlevel 1 (
+  echo ONNX export failed. Aborting.
+  popd & endlocal & exit /b 1
+)
+
 REM Export policy with heuristic scales (min_conf default 0.45 recommended)
 "%PY%" policy_export.py --common "%COMMON_DIR%" --model_dir "%SCRIPT_DIR%\artifacts" --min_conf 0.45
 if errorlevel 1 (

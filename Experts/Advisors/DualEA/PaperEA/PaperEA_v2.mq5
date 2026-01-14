@@ -61,6 +61,7 @@
 
 // Position management
 #include "..\\Include\\PositionManager.mqh"
+#include "..\\Include\\ModelPredictor.mqh"
 
 // Policy hot-reload bridge
 #include "..\\Include\\PolicyHttpBridge.mqh"
@@ -139,6 +140,9 @@ input bool   SelStrictThresholds   = false;    // 0:1:1 - Use strict vs probabil
 input bool   SelUseRecency         = true;     // 0:1:1 - Weight recent performance more heavily
 input int    SelRecentDays         = 14;        // 7:30:7 - Recent performance lookback days
 input double SelRecAlpha           = 0.5;       // 0.3:0.8:0.1 - Recency weighting decay factor
+input int    GateAuditMinSignals   = 5;         // Minimum signals per audit window before alerting
+input int    GateAuditMinUptimeMin = 60;        // Grace period (minutes) after initialization
+input int    GateAuditAlertCooldownMin = 60;    // Cooldown between repeated alerts
 
 // ===================[ ADVANCED GATING/TUNING ]===================
 input bool   P5_AutoDisableEnable    = true;     // 0:1:1 - Auto-disable underperforming strategies
@@ -288,6 +292,13 @@ input bool   TrainerLSTM_UseRecency = true;
 input bool   HeartbeatEnabled = true;
 input int    HeartbeatMinutes = 15;
 input bool   HeartbeatVerbose = true;
+
+// ===================[ ONNX RUNTIME PREDICTOR INPUTS ]===================
+input bool   UseOnnxPredictor          = true;
+input string OnnxModelPath             = "DualEA\\ML\\artifacts\\signal_model.onnx";
+input string OnnxConfigJsonPath        = "DualEA\\ML\\artifacts\\onnx_config.json";
+input string OnnxConfigIniPath         = "DualEA\\ML\\artifacts\\onnx_config.ini";
+input bool   OnnxPathsUseCommonDir     = true;
 
 // ===================[ LEGACY GATE PARAMETERS ]===================
 #include "AdaptiveEngine.mqh"
@@ -451,6 +462,238 @@ CPositionManager*        g_position_manager = NULL;
 CFeaturesKB*             g_features = NULL;
 CKnowledgeBase*          g_kb = NULL;
 CTelemetry*              g_telemetry_base = NULL;
+CModelPredictor          g_model_predictor;
+bool                     g_model_predictor_ready = false;
+string                   g_mlp_feature_columns[];
+double                   g_mlp_feature_buffer[];
+bool                     g_mlp_warned_unready = false;
+bool                     g_mlp_warned_features = false;
+
+// ===================[ ONNX PREDICTOR HELPERS ]===================
+string ResolveDualEAPath(const string relative_path, const bool prefer_common)
+{
+   string trimmed = relative_path;
+   StringTrimLeft(trimmed);
+   StringTrimRight(trimmed);
+   if(StringLen(trimmed) == 0)
+      return "";
+   if(StringFind(trimmed, ":\\") >= 0 || StringSubstr(trimmed, 0, 2) == "\\\\")
+      return trimmed;
+   if(prefer_common)
+      return TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + trimmed;
+   return trimmed;
+}
+
+double SafeDivision(const double numerator, const double denominator)
+{
+   if(MathAbs(denominator) < 1e-9)
+      return 0.0;
+   return numerator / denominator;
+}
+
+void ShutdownModelPredictor()
+{
+   if(g_model_predictor_ready)
+   {
+      g_model_predictor.Shutdown();
+      g_model_predictor_ready = false;
+      LOG("ONNX predictor shut down");
+   }
+   ArrayResize(g_mlp_feature_columns, 0);
+   ArrayResize(g_mlp_feature_buffer, 0);
+}
+
+bool BuildPredictorFeatureVector(const TradingSignal &signal,
+                                 const string &strategy_name,
+                                 const CAdaptiveDecision *decision_ptr,
+                                 const string &status,
+                                 const string &reason,
+                                 const datetime ts,
+                                 double &buffer[])
+{
+   int feat_count = ArraySize(g_mlp_feature_columns);
+   if(feat_count == 0)
+      return false;
+
+   ArrayResize(buffer, feat_count);
+
+   string resolved_symbol = (signal.symbol != "") ? signal.symbol : _Symbol;
+   string resolved_strategy = (strategy_name != "") ? strategy_name : signal.strategy;
+   string resolved_regime = signal.regime;
+   if(resolved_regime == "")
+      resolved_regime = GetMarketRegime();
+   string resolved_market_regime = (signal.market_regime != "") ? signal.market_regime : resolved_regime;
+    string normalized_status = status;
+   StringToLower(normalized_status);
+   string normalized_reason = reason;
+   StringToLower(normalized_reason);
+
+   double base_price = (signal.price != 0.0) ? signal.price : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double base_volume = (signal.volume != 0.0) ? signal.volume : LotSize;
+   double base_sl = (signal.sl != 0.0) ? signal.sl : base_price;
+   double base_tp = (signal.tp != 0.0) ? signal.tp : base_price;
+
+   double final_price = base_price;
+   double final_volume = base_volume;
+   double final_sl = base_sl;
+   double final_tp = base_tp;
+   bool executed = false;
+   bool is_adjusted = false;
+   int adjustment_attempts = 0;
+   int gate_passed = 0;
+   double gate_pass_flags[8];
+   ArrayInitialize(gate_pass_flags, 0.0);
+   double volume_delta_pct = 0.0;
+   double price_delta_pct = 0.0;
+   double sl_scale = 1.0;
+   double tp_scale = 1.0;
+
+   if(CheckPointer(decision_ptr) != POINTER_INVALID)
+   {
+      const CAdaptiveDecision *decision = decision_ptr;
+      final_price = (decision.final_price != 0.0) ? decision.final_price : final_price;
+      final_volume = (decision.final_volume != 0.0) ? decision.final_volume : final_volume;
+      final_sl = (decision.final_sl != 0.0) ? decision.final_sl : final_sl;
+      final_tp = (decision.final_tp != 0.0) ? decision.final_tp : final_tp;
+      executed = decision.executed;
+      is_adjusted = decision.is_adjusted;
+      adjustment_attempts = decision.adjustment_attempts;
+      gate_passed = CountPassedGates(*decision);
+      for(int gi = 0; gi < 8; gi++)
+         gate_pass_flags[gi] = decision.gate_results[gi] ? 1.0 : 0.0;
+      volume_delta_pct = SafeDivision(final_volume - decision.original_volume, decision.original_volume) * 100.0;
+      price_delta_pct = SafeDivision(final_price - decision.original_price, decision.original_price) * 100.0;
+      sl_scale = SafeDivision(final_sl, decision.original_sl == 0.0 ? final_sl : decision.original_sl);
+      tp_scale = SafeDivision(final_tp, decision.original_tp == 0.0 ? final_tp : decision.original_tp);
+   }
+
+   if(!MathIsValidNumber(sl_scale) || sl_scale == 0.0) sl_scale = 1.0;
+   if(!MathIsValidNumber(tp_scale) || tp_scale == 0.0) tp_scale = 1.0;
+
+   MqlDateTime mt;
+   TimeToStruct(ts, mt);
+   int hour_value = mt.hour;
+   int timeframe_value = (signal.timeframe != 0) ? signal.timeframe : _Period;
+   double volatility_value = (signal.volatility != 0.0) ? signal.volatility : GetVolatility(_Symbol, (ENUM_TIMEFRAMES)_Period);
+   double correlation_value = (signal.correlation != 0.0) ? signal.correlation : GetCorrelation();
+   double confidence_value = signal.confidence;
+   if(confidence_value <= 0.0 || confidence_value > 1.0)
+      confidence_value = 0.5;
+
+   for(int i = 0; i < feat_count; i++)
+   {
+      string col = g_mlp_feature_columns[i];
+      double value = 0.0;
+
+      if(col == "price") value = final_price;
+      else if(col == "volume") value = final_volume;
+      else if(col == "sl") value = final_sl;
+      else if(col == "tp") value = final_tp;
+      else if(col == "confidence") value = confidence_value;
+      else if(col == "volatility") value = volatility_value;
+      else if(col == "correlation") value = correlation_value;
+      else if(col == "hour") value = hour_value;
+      else if(col == "timeframe") value = timeframe_value;
+      else if(col == "order_type") value = signal.type;
+      else if(col == "gate_passed_count") value = gate_passed;
+      else if(col == "adjustment_attempts") value = adjustment_attempts;
+      else if(col == "volume_change_pct") value = volume_delta_pct;
+      else if(col == "price_change_pct") value = price_delta_pct;
+      else if(col == "sl_scale") value = sl_scale;
+      else if(col == "tp_scale") value = tp_scale;
+      else if(col == "executed") value = executed ? 1.0 : 0.0;
+      else if(col == "is_adjusted") value = is_adjusted ? 1.0 : 0.0;
+      else if(StringSubstr(col, 0, 4) == "gate" && StringFind(col, "_pass") > 0)
+      {
+         int pass_pos = StringFind(col, "_pass");
+         int gate_index = -1;
+         if(pass_pos > 4)
+         {
+            int length = (int)(pass_pos - 4);
+            string gate_token = StringSubstr(col, 4, length);
+            gate_index = (int)StringToInteger(gate_token) - 1;
+         }
+         if(gate_index >= 0 && gate_index < 8)
+            value = gate_pass_flags[gate_index];
+      }
+      else if(col == "strategy_code" || col == "symbol_code" || col == "status_code" ||
+              col == "regime_code" || col == "market_regime_code" || col == "reason_code")
+      {
+         string field = "";
+         string label = "";
+         if(col == "strategy_code") { field = "strategy"; label = resolved_strategy; }
+         else if(col == "symbol_code") { field = "symbol"; label = resolved_symbol; }
+         else if(col == "status_code") { field = "status"; label = normalized_status; }
+         else if(col == "regime_code") { field = "regime"; label = resolved_regime; }
+         else if(col == "market_regime_code") { field = "market_regime"; label = resolved_market_regime; }
+         else if(col == "reason_code") { field = "reason"; label = normalized_reason; }
+         value = g_model_predictor.EncodeCategorical(field, label);
+      }
+      buffer[i] = value;
+   }
+
+   return true;
+}
+
+double EvaluateModelProbability(const TradingSignal &signal,
+                                const string strategy_name,
+                                const CAdaptiveDecision *decision_ptr,
+                                const string status,
+                                const string reason)
+{
+   if(!UseOnnxPredictor || !g_model_predictor_ready)
+      return -1.0;
+   if(ArraySize(g_mlp_feature_columns) == 0)
+      return -1.0;
+
+   datetime now = TimeCurrent();
+   if(!BuildPredictorFeatureVector(signal, strategy_name, decision_ptr, status, reason, now, g_mlp_feature_buffer))
+   {
+      if(!g_mlp_warned_features)
+      {
+         LOG("WARNING: Unable to build ML predictor feature vector (metadata mismatch)");
+         g_mlp_warned_features = true;
+      }
+      return -1.0;
+   }
+
+   return g_model_predictor.Predict(g_mlp_feature_buffer, ArraySize(g_mlp_feature_buffer));
+}
+
+bool InitModelPredictor()
+{
+   ArrayResize(g_mlp_feature_columns, 0);
+   ArrayResize(g_mlp_feature_buffer, 0);
+   g_mlp_warned_unready = false;
+   g_mlp_warned_features = false;
+
+   string model_path = ResolveDualEAPath(OnnxModelPath, OnnxPathsUseCommonDir);
+   string json_path = ResolveDualEAPath(OnnxConfigJsonPath, OnnxPathsUseCommonDir);
+   string ini_path = ResolveDualEAPath(OnnxConfigIniPath, OnnxPathsUseCommonDir);
+
+   if(StringLen(model_path) == 0 || StringLen(json_path) == 0 || StringLen(ini_path) == 0)
+   {
+      LOG("WARNING: ONNX predictor paths are not configured correctly");
+      return false;
+   }
+
+   if(!g_model_predictor.Init(model_path, json_path, ini_path))
+   {
+      LOG(StringFormat("WARNING: ONNX predictor init failed - %s", g_model_predictor.LastError()));
+      return false;
+   }
+
+   if(!g_model_predictor.GetFeatureNames(g_mlp_feature_columns) || ArraySize(g_mlp_feature_columns) == 0)
+   {
+      LOG("WARNING: ONNX predictor did not return feature metadata; shutting down");
+      g_model_predictor.Shutdown();
+      return false;
+   }
+
+   ArrayResize(g_mlp_feature_buffer, ArraySize(g_mlp_feature_columns));
+   LOG(StringFormat("ONNX predictor ready (%d features)", ArraySize(g_mlp_feature_columns)));
+   return true;
+}
 
 // ===================[ STRATEGIES CONTAINER AND ADDITIONAL MISSING GLOBALS ]===================
 CArrayObj*               g_strategies = NULL;
@@ -555,6 +798,21 @@ int OnInit()
    {
       LOG("WARNING: Failed to initialize Features KB - ML features disabled");
    }
+
+   // Initialize ONNX predictor (optional)
+   if(UseOnnxPredictor)
+   {
+      g_model_predictor_ready = InitModelPredictor();
+      if(!g_model_predictor_ready)
+      {
+         LOG("WARNING: ONNX predictor init failed - heuristic confidence will be used");
+      }
+   }
+   else
+   {
+      ShutdownModelPredictor();
+      g_model_predictor_ready = false;
+   }
    
    // ===================[ STRATEGY SYSTEM INITIALIZATION   // ===================[ INITIALIZE STRATEGY REGISTRY ]===================
    g_strategies = new CArrayObj();
@@ -563,10 +821,15 @@ int OnInit()
       return(INIT_FAILED);
    }
    
-   // Initialize gate audit system with all expected strategies
-   string all_strategies = "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,VWAPReversion,EMAPullback,OpeningRangeBreakout";
-   // Use global g_gate_audit declared earlier instead of creating local variable
+   // Initialize gate audit system with all expected strategies (legacy + registry)
+   string all_strategies =
+      "ADXStrategy,AcceleratorOscillatorStrategy,AlligatorStrategy,AwesomeOscillatorStrategy,BearsPowerStrategy,BullsPowerStrategy,"+
+      "CCIStrategy,DeMarkerStrategy,ForceIndexStrategy,FractalsStrategy,GatorStrategy,IchimokuStrategy,MACDStrategy,MomentumStrategy,OsMAStrategy,"+
+      "RSIStrategy,RVIStrategy,StochasticStrategy,TriXStrategy,UltimateOscillatorStrategy,WilliamsPercentRangeStrategy,ZigZagStrategy,MovingAverageStrategy,"+
+      "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,VWAPReversion,EMAPullback,OpeningRangeBreakout";
    g_gate_audit.Initialize(all_strategies);
+   g_gate_audit.Configure(GateAuditMinSignals, GateAuditMinUptimeMin, GateAuditAlertCooldownMin);
+   g_gate_audit.SetEnabled(UseGateSystem);
    
    // Initialize strategy selector
    if(UseStrategySelector)
@@ -963,6 +1226,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    LOG("=== PaperEA v2 Enhanced Deinitialization Starting ===");
+   ShutdownModelPredictor();
    CEventBus *bus = CEventBus::GetInstance();
    if(CheckPointer(bus) != POINTER_INVALID) bus.PublishSystemEvent("PaperEA_v2", "Deinitializing");
    
@@ -2012,7 +2276,15 @@ void OnTick()
    // Run gate audit check every 30 minutes
    if(now - last_audit_check > 1800)
    {
-      g_gate_audit.RunAudit();
+      string skipped_strategies;
+      int skipped_count = 0;
+      if(g_gate_audit.RunAudit(skipped_strategies, skipped_count))
+      {
+         string alert_msg = StringFormat("⚠️ Gate audit detected %d skipped strategies: %s", skipped_count, skipped_strategies);
+         LOG(alert_msg);
+         if(TelemetryEnabled && CheckPointer(g_telemetry_base) != POINTER_INVALID)
+            g_telemetry_base.LogEvent(_Symbol, _Period, "gate_audit", "skipped_strategies", alert_msg);
+      }
       last_audit_check = now;
    }
    
@@ -2121,6 +2393,31 @@ void OnTick()
    
    // Log strategy ONLY after confirming a valid signal was generated
    g_gate_audit.LogStrategyProcessed(selected_strategy);
+
+   // Evaluate ML probability before gates to seed confidence
+   if(UseOnnxPredictor)
+   {
+      if(g_model_predictor_ready)
+      {
+         double pre_prob = EvaluateModelProbability(signal, selected_strategy, NULL, "generated", "pre_gate");
+         if(pre_prob >= 0.0)
+         {
+            signal.confidence = pre_prob;
+            if(ShouldLog(LOG_INFO))
+               LOG(StringFormat("MLPRED pre_gate signal=%s strategy=%s prob=%.3f", signal.id, selected_strategy, pre_prob));
+         }
+         else if(!g_mlp_warned_unready)
+         {
+            LOG("WARNING: ONNX predictor unavailable during pre-gate evaluation");
+            g_mlp_warned_unready = true;
+         }
+      }
+      else if(!g_mlp_warned_unready)
+      {
+         LOG("WARNING: ONNX predictor not ready; using heuristic confidence");
+         g_mlp_warned_unready = true;
+      }
+   }
    
    // ===================[ ADAPTIVE SIGNAL OPTIMIZATION SYSTEM ]===================
    if(UseGateSystem && CheckPointer(g_gate_manager) != POINTER_INVALID)
@@ -2172,6 +2469,17 @@ void OnTick()
       
       if(passed)
       {
+         if(UseOnnxPredictor && g_model_predictor_ready)
+         {
+            double final_prob = EvaluateModelProbability(signal, selected_strategy, &decision, "passed_gates", blocking_reason);
+            if(final_prob >= 0.0)
+            {
+               decision.confidence = final_prob;
+               if(ShouldLog(LOG_INFO))
+                  LOG(StringFormat("MLPRED post_gate signal=%s prob=%.3f status=passed", decision.signal_id, final_prob));
+            }
+         }
+
          // ===================[ POLICY GATING ]===================
          if(UsePolicyGating && g_policy_loaded)
          {
@@ -2963,52 +3271,115 @@ void LogAdaptiveDecisionDetails(CAdaptiveDecision &decision, const string strate
 }
 
 // Export enhanced features with adaptive tracking
-void ExportEnhancedFeaturesAdaptive(CAdaptiveDecision &decision, const string strategy_name)
+void ExportEnhancedFeaturesAdaptive(const CAdaptiveDecision &decision, const string strategy_name);
+
+void AppendSnapshotFeature(string &features[], int &count, const string key, const string value)
 {
-   // Use file-based export for strategy tester compatibility
+   ArrayResize(features, count + 1);
+   features[count++] = key + ":" + value;
+}
+
+void ExportSignalAttemptSnapshot(const TradingSignal &signal,
+                                 const string strategy_name,
+                                 const string status,
+                                 const string reason,
+                                 const CAdaptiveDecision *decision_ptr = NULL)
+{
    string features[];
-   ArrayResize(features, 20);  // Expanded for adaptive features
+   int feature_count = 0;
    datetime now = TimeCurrent();
-   MqlDateTime _dt; TimeToStruct(now, _dt); int _hour = _dt.hour;
+   MqlDateTime _dt; TimeToStruct(now, _dt);
    
-   features[0] = "strategy:" + strategy_name;
-   features[1] = "symbol:" + decision.symbol;
-   features[2] = "timeframe:" + IntegerToString(_Period);
-   features[3] = "entry_price:" + DoubleToString(decision.final_price, 5);
-   features[4] = "volume:" + DoubleToString(decision.final_volume, 2);
-   features[5] = "order_type:" + IntegerToString(decision.order_type);
-   features[6] = "confidence:" + DoubleToString(decision.confidence, 3);
-   features[7] = "hour:" + IntegerToString(_hour);
-   features[8] = "volatility:" + DoubleToString(decision.volatility, 4);
-   features[9] = "correlation:" + DoubleToString(decision.correlation_score, 3);
-   features[10] = "regime:" + decision.market_regime;
+   string symbol = signal.symbol;
+   int timeframe = _Period;
+   double price = signal.price;
+   double volume = signal.volume;
+   double sl = signal.sl;
+   double tp = signal.tp;
+   double confidence = signal.confidence;
+   double volatility = signal.volatility;
+   double correlation = signal.correlation;
+   string regime = signal.regime;
+   string market_regime = signal.market_regime;
+   int order_type = signal.type;
+   bool executed = false;
+   bool is_adjusted = false;
+   int gate_passed = 0;
    
-   // ADAPTIVE-SPECIFIC FEATURES
-   features[11] = "is_adjusted:" + (decision.is_adjusted ? "1" : "0");
-   features[12] = "adjustment_attempts:" + IntegerToString(decision.adjustment_attempts);
-   features[13] = "volume_change_pct:" + DoubleToString(
-      decision.original_volume > 0 ? (decision.final_volume - decision.original_volume) / decision.original_volume * 100 : 0, 2);
-   features[14] = "price_change_pct:" + DoubleToString(
-      decision.original_price > 0 ? (decision.final_price - decision.original_price) / decision.original_price * 100 : 0, 2);
-   features[15] = "sl_scale:" + DoubleToString(
-      decision.original_sl > 0 ? decision.final_sl / decision.original_sl : 1.0, 2);
-   features[16] = "tp_scale:" + DoubleToString(
-      decision.original_tp > 0 ? decision.final_tp / decision.original_tp : 1.0, 2);
-   features[17] = "original_signal_id:" + (decision.is_adjusted ? decision.original_signal_id : decision.signal_id);
-   features[18] = "gate_passed_count:" + IntegerToString(CountPassedGates(decision));
-   features[19] = "timestamp:" + TimeToString(now);
+   if(decision_ptr != NULL)
+   {
+      symbol = (decision_ptr.symbol != "") ? decision_ptr.symbol : symbol;
+      timeframe = (decision_ptr.timeframe != 0) ? decision_ptr.timeframe : timeframe;
+      price = (decision_ptr.final_price != 0.0) ? decision_ptr.final_price : price;
+      volume = (decision_ptr.final_volume != 0.0) ? decision_ptr.final_volume : volume;
+      sl = (decision_ptr.final_sl != 0.0) ? decision_ptr.final_sl : sl;
+      tp = (decision_ptr.final_tp != 0.0) ? decision_ptr.final_tp : tp;
+      confidence = (decision_ptr.confidence != 0.0) ? decision_ptr.confidence : confidence;
+      volatility = (decision_ptr.volatility != 0.0) ? decision_ptr.volatility : volatility;
+      correlation = (decision_ptr.correlation_score != 0.0) ? decision_ptr.correlation_score : correlation;
+      regime = (decision_ptr.market_regime != "") ? decision_ptr.market_regime : regime;
+      market_regime = decision_ptr.market_regime;
+      order_type = decision_ptr.order_type;
+      executed = decision_ptr.executed;
+      is_adjusted = decision_ptr.is_adjusted;
+      gate_passed = CountPassedGates(*decision_ptr);
+   }
    
-   // Export to file-based system (strategy tester compatible)
+   AppendSnapshotFeature(features, feature_count, "timestamp", TimeToString(now, TIME_DATE|TIME_SECONDS));
+   AppendSnapshotFeature(features, feature_count, "hour", IntegerToString(_dt.hour));
+   AppendSnapshotFeature(features, feature_count, "status", status);
+   AppendSnapshotFeature(features, feature_count, "reason", reason);
+   AppendSnapshotFeature(features, feature_count, "strategy", strategy_name);
+   AppendSnapshotFeature(features, feature_count, "signal_id", signal.id);
+   AppendSnapshotFeature(features, feature_count, "symbol", symbol);
+   AppendSnapshotFeature(features, feature_count, "timeframe", IntegerToString(timeframe));
+   AppendSnapshotFeature(features, feature_count, "order_type", IntegerToString(order_type));
+   AppendSnapshotFeature(features, feature_count, "price", DoubleToString(price, 5));
+   AppendSnapshotFeature(features, feature_count, "volume", DoubleToString(volume, 2));
+   AppendSnapshotFeature(features, feature_count, "sl", DoubleToString(sl, 5));
+   AppendSnapshotFeature(features, feature_count, "tp", DoubleToString(tp, 5));
+   AppendSnapshotFeature(features, feature_count, "confidence", DoubleToString(confidence, 3));
+   AppendSnapshotFeature(features, feature_count, "volatility", DoubleToString(volatility, 5));
+   AppendSnapshotFeature(features, feature_count, "correlation", DoubleToString(correlation, 5));
+   AppendSnapshotFeature(features, feature_count, "regime", regime);
+   AppendSnapshotFeature(features, feature_count, "market_regime", market_regime);
+   AppendSnapshotFeature(features, feature_count, "executed", executed ? "1" : "0");
+   AppendSnapshotFeature(features, feature_count, "is_adjusted", is_adjusted ? "1" : "0");
+   AppendSnapshotFeature(features, feature_count, "gate_passed_count", IntegerToString(gate_passed));
+   
+   if(decision_ptr != NULL)
+   {
+      AppendSnapshotFeature(features, feature_count, "adjustment_attempts", IntegerToString(decision_ptr.adjustment_attempts));
+      AppendSnapshotFeature(features, feature_count, "original_signal_id",
+                            decision_ptr.is_adjusted ? decision_ptr.original_signal_id : decision_ptr.signal_id);
+      AppendSnapshotFeature(features, feature_count, "volume_change_pct",
+                            DoubleToString(decision_ptr.original_volume > 0 ? (decision_ptr.final_volume - decision_ptr.original_volume) / decision_ptr.original_volume * 100.0 : 0.0, 2));
+      AppendSnapshotFeature(features, feature_count, "price_change_pct",
+                            DoubleToString(decision_ptr.original_price > 0 ? (decision_ptr.final_price - decision_ptr.original_price) / decision_ptr.original_price * 100.0 : 0.0, 2));
+      AppendSnapshotFeature(features, feature_count, "sl_scale",
+                            DoubleToString(decision_ptr.original_sl > 0 ? decision_ptr.final_sl / decision_ptr.original_sl : 1.0, 3));
+      AppendSnapshotFeature(features, feature_count, "tp_scale",
+                            DoubleToString(decision_ptr.original_tp > 0 ? decision_ptr.final_tp / decision_ptr.original_tp : 1.0, 3));
+      
+      for(int i = 0; i < 8; i++)
+      {
+         string gate_key = StringFormat("gate%d", i + 1);
+         AppendSnapshotFeature(features, feature_count, gate_key + "_pass", decision_ptr.gate_results[i] ? "1" : "0");
+         if(decision_ptr.gate_reasons[i] != "")
+            AppendSnapshotFeature(features, feature_count, gate_key + "_reason", decision_ptr.gate_reasons[i]);
+      }
+   }
+   
    string out_path;
-   int result = g_file_exporter.ExportStringFeatures(features, ArraySize(features), out_path);
+   int result = g_file_exporter.ExportStringFeatures(features, feature_count, out_path);
    if(result != 0)
-      Print("ExportStringFeatures failed: ", result);
-   else
-      Print("Enhanced features exported to: ", out_path);
+      Print(StringFormat("ExportSignalAttemptSnapshot failed (%s): %d", status, result));
+   else if(ShouldLog(LOG_DEBUG))
+      Print(StringFormat("Signal snapshot (%s) exported to: %s", status, out_path));
 }
 
 // Helper to count passed gates
-int CountPassedGates(CSignalDecision &decision)
+int CountPassedGates(const CSignalDecision &decision)
 {
    int count = 0;
    for(int i = 0; i < 8; i++)
@@ -3152,6 +3523,90 @@ void ExportEnhancedFeatures(const CSignalDecision &decision, const string strate
    
    // Export to features system
    g_features.ExportFeatures(decision.symbol, strategy_name, now, features);
+}
+
+void ExportEnhancedFeaturesAdaptive(const CAdaptiveDecision &decision, const string strategy_name)
+{
+   if(CheckPointer(g_features) == POINTER_INVALID)
+      return;
+
+   datetime ts = (decision.execution_time > 0) ? decision.execution_time : TimeCurrent();
+   string features[];
+   int feature_count = 0;
+
+   AppendSnapshotFeature(features, feature_count, "timestamp", TimeToString(ts, TIME_DATE|TIME_SECONDS));
+   AppendSnapshotFeature(features, feature_count, "strategy", strategy_name);
+   AppendSnapshotFeature(features, feature_count, "symbol", decision.symbol);
+   AppendSnapshotFeature(features, feature_count, "signal_id", decision.signal_id);
+   AppendSnapshotFeature(features, feature_count, "original_signal_id", (decision.is_adjusted && decision.original_signal_id != "") ? decision.original_signal_id : decision.signal_id);
+   AppendSnapshotFeature(features, feature_count, "is_adjusted", decision.is_adjusted ? "1" : "0");
+   AppendSnapshotFeature(features, feature_count, "adjustment_attempts", IntegerToString(decision.adjustment_attempts));
+   AppendSnapshotFeature(features, feature_count, "executed", decision.executed ? "1" : "0");
+   AppendSnapshotFeature(features, feature_count, "confidence", DoubleToString(decision.confidence, 3));
+   AppendSnapshotFeature(features, feature_count, "market_regime", decision.market_regime);
+   AppendSnapshotFeature(features, feature_count, "volatility", DoubleToString(decision.volatility, 6));
+   AppendSnapshotFeature(features, feature_count, "correlation", DoubleToString(decision.correlation_score, 6));
+
+   AppendSnapshotFeature(features, feature_count, "original_price", DoubleToString(decision.original_price, 5));
+   AppendSnapshotFeature(features, feature_count, "original_sl", DoubleToString(decision.original_sl, 5));
+   AppendSnapshotFeature(features, feature_count, "original_tp", DoubleToString(decision.original_tp, 5));
+   AppendSnapshotFeature(features, feature_count, "original_volume", DoubleToString(decision.original_volume, 2));
+
+   AppendSnapshotFeature(features, feature_count, "final_price", DoubleToString(decision.final_price, 5));
+   AppendSnapshotFeature(features, feature_count, "final_sl", DoubleToString(decision.final_sl, 5));
+   AppendSnapshotFeature(features, feature_count, "final_tp", DoubleToString(decision.final_tp, 5));
+   AppendSnapshotFeature(features, feature_count, "final_volume", DoubleToString(decision.final_volume, 2));
+
+   double price_delta_pct = 0.0;
+   if(MathAbs(decision.original_price) > 1e-9)
+      price_delta_pct = (decision.final_price - decision.original_price) / decision.original_price * 100.0;
+   double volume_delta_pct = 0.0;
+   if(MathAbs(decision.original_volume) > 1e-9)
+      volume_delta_pct = (decision.final_volume - decision.original_volume) / decision.original_volume * 100.0;
+
+   AppendSnapshotFeature(features, feature_count, "price_change_pct", DoubleToString(price_delta_pct, 3));
+   AppendSnapshotFeature(features, feature_count, "volume_change_pct", DoubleToString(volume_delta_pct, 3));
+
+   double sl_scale = (MathAbs(decision.original_sl) > 1e-9) ? decision.final_sl / decision.original_sl : 1.0;
+   double tp_scale = (MathAbs(decision.original_tp) > 1e-9) ? decision.final_tp / decision.original_tp : 1.0;
+   AppendSnapshotFeature(features, feature_count, "sl_scale", DoubleToString(sl_scale, 4));
+   AppendSnapshotFeature(features, feature_count, "tp_scale", DoubleToString(tp_scale, 4));
+
+   int gate_passed = CountPassedGates(decision);
+   AppendSnapshotFeature(features, feature_count, "gate_passed_count", IntegerToString(gate_passed));
+
+   string first_block_reason = "";
+   for(int i = 0; i < 8; i++)
+   {
+      string gate_key = StringFormat("gate%d", i + 1);
+      AppendSnapshotFeature(features, feature_count, gate_key + "_pass", decision.gate_results[i] ? "1" : "0");
+      if(decision.gate_reasons[i] != "")
+      {
+         AppendSnapshotFeature(features, feature_count, gate_key + "_reason", decision.gate_reasons[i]);
+         if(!decision.gate_results[i] && first_block_reason == "")
+            first_block_reason = decision.gate_reasons[i];
+      }
+   }
+   if(first_block_reason != "")
+      AppendSnapshotFeature(features, feature_count, "first_block_reason", first_block_reason);
+
+   if(decision.is_adjusted)
+   {
+      int attempts = MathMin(decision.adjustment_attempts, ArraySize(decision.attempts));
+      for(int j = 0; j < attempts; j++)
+      {
+         string prefix = StringFormat("attempt%d_", j + 1);
+         AppendSnapshotFeature(features, feature_count, prefix + "passed", decision.attempts[j].passed ? "1" : "0");
+         AppendSnapshotFeature(features, feature_count, prefix + "price_tweak", DoubleToString(decision.attempts[j].price_tweak, 4));
+         AppendSnapshotFeature(features, feature_count, prefix + "sl_tweak", DoubleToString(decision.attempts[j].sl_tweak, 4));
+         AppendSnapshotFeature(features, feature_count, prefix + "tp_tweak", DoubleToString(decision.attempts[j].tp_tweak, 4));
+         AppendSnapshotFeature(features, feature_count, prefix + "volume_tweak", DoubleToString(decision.attempts[j].volume_tweak, 4));
+         if(decision.attempts[j].reason != "")
+            AppendSnapshotFeature(features, feature_count, prefix + "reason", decision.attempts[j].reason);
+      }
+   }
+
+   g_features.ExportFeatures(decision.symbol, strategy_name, ts, features);
 }
 
 //+------------------------------------------------------------------+

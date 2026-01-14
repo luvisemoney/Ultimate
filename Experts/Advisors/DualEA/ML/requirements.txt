@@ -5,3 +5,6 @@ pandas
 flask
 yfinance
 scikit-learn
+xgboost
+skl2onnx
+onnxruntime
