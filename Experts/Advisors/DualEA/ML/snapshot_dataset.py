@@ -79,12 +79,37 @@ def _parse_snapshot_line(line: str, idx: int) -> Tuple[str, str]:
     return key.strip().lower(), value.strip()
 
 
+def _read_text_lines_with_fallback(path: str) -> List[str]:
+    """Read a text file that may be UTF-8 or UTF-16 from MQL5 FILE_TXT.
+
+    MQL5 FILE_TXT writes Unicode (UTF-16) by default, which will fail if we
+    try to open it as UTF-8. To be robust against both historical and new
+    snapshots, we read bytes and try several common encodings.
+    """
+
+    with open(path, "rb") as handle:
+        data = handle.read()
+
+    # Try the most likely encodings in order. utf-8-sig handles BOM if present.
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "cp1252"):
+        try:
+            text = data.decode(encoding)
+            return text.splitlines()
+        except UnicodeDecodeError:
+            continue
+
+    # If everything fails, re-raise a readable error for diagnostics.
+    raise UnicodeDecodeError(
+        "snapshot", b"", 0, 1, f"unable to decode {path!r} with common encodings"
+    )
+
+
 def parse_snapshot_file(path: str) -> Dict[str, str]:
     record: Dict[str, str] = {}
-    with open(path, "r", encoding="utf-8") as handle:
-        for idx, raw in enumerate(handle):
-            key, value = _parse_snapshot_line(raw, idx)
-            record[key] = value
+    lines = _read_text_lines_with_fallback(path)
+    for idx, raw in enumerate(lines):
+        key, value = _parse_snapshot_line(raw, idx)
+        record[key] = value
     record["__source_file"] = os.path.basename(path)
     record["__source_path"] = path
     return record
@@ -119,6 +144,14 @@ def _to_binary(value: object) -> float:
     if value is None:
         return 0.0
     if isinstance(value, (int, float)):
+        # Treat NaN as 0.0; otherwise non-zero numeric as 1.0
+        try:
+            import math
+
+            if isinstance(value, float) and math.isnan(value):
+                return 0.0
+        except Exception:
+            pass
         return float(1.0 if value != 0 else 0.0)
     s = str(value).strip().lower()
     if s in {"1", "true", "yes", "y", "passed", "executed"}:
@@ -142,16 +175,40 @@ def normalize_snapshot_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     for field in NUMERIC_FIELDS:
         df[field] = pd.to_numeric(df.get(field), errors="coerce")
     for field in BINARY_FIELDS:
-        df[field] = df.get(field, np.nan).apply(_to_binary).astype(float)
+        # df.get(..., np.nan) returns a scalar when the column is missing,
+        # which breaks .apply(). Construct a proper Series instead.
+        if field in df.columns:
+            series = df[field]
+        else:
+            series = pd.Series(np.nan, index=df.index)
+        df[field] = series.apply(_to_binary).astype(float)
     for field in CATEGORICAL_FIELDS:
+        # df.get(..., "unknown") can return a scalar if the column is missing.
+        # Always work with a Series aligned to df.index.
+        if field in df.columns:
+            series = df[field]
+        else:
+            series = pd.Series("unknown", index=df.index)
         df[field] = (
-            df.get(field, "unknown")
+            series
             .fillna("unknown")
             .astype(str)
             .str.strip()
             .str.lower()
         )
-    df["status"] = df.get("status", "unknown").fillna("unknown").astype(str).str.lower()
+
+    # Normalized status column; same scalar-safe pattern as other categoricals.
+    if "status" in df.columns:
+        status_series = df["status"]
+    else:
+        status_series = pd.Series("unknown", index=df.index)
+    df["status"] = (
+        status_series
+        .fillna("unknown")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
     return df
 
 
@@ -278,7 +335,16 @@ def build_feature_matrix(
     for field, series in zip(categorical_fields, categorical_columns):
         arrays.append(series.values.reshape(-1, 1))
         feature_names.append(f"{field}_code")
-    X = np.hstack(arrays).astype(np.float32)
+
+    # Build raw matrix in float64 for stability, then sanitize and downcast.
+    X = np.hstack(arrays).astype(np.float64)
+    # Replace NaN/inf with finite values and clip extreme magnitudes so that
+    # downstream scalers do not choke on pathological inputs from malformed
+    # or legacy snapshots.
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    max_abs = 1e9
+    X = np.clip(X, -max_abs, max_abs)
+    X = X.astype(np.float32)
     return FeatureMatrix(X=X, feature_names=feature_names, categorical_mappings=categorical_mappings)
 
 

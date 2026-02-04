@@ -11,9 +11,10 @@ private:
    int      m_reload_secs;     // minimum interval between checks
    datetime m_last_check;
    long     m_last_size;
+   bool     m_warned_whitelist;
 
 public:
-   CPolicyHttpBridge(): m_policy_file(""), m_reload_secs(10), m_last_check(0), m_last_size(-1) {}
+   CPolicyHttpBridge(): m_policy_file(""), m_reload_secs(10), m_last_check(0), m_last_size(-1), m_warned_whitelist(false) {}
 
    void Configure(const string policy_file, const int reload_secs)
    {
@@ -21,6 +22,41 @@ public:
       m_reload_secs = (reload_secs>0? reload_secs:10);
       m_last_check  = 0;
       m_last_size   = -1;
+   }
+
+   bool VerifyAccess(const string url)
+   {
+      string trimmed = url;
+      StringTrimLeft(trimmed);
+      StringTrimRight(trimmed);
+      if(StringLen(trimmed) == 0)
+         return true;
+
+      char payload[];
+      ArrayResize(payload, 0);
+      char response[];
+      string response_headers = "";
+      int status = WebRequest("HEAD", trimmed, "", 3000, payload, response, response_headers);
+      if(status == -1)
+      {
+         int err = GetLastError();
+         if((err == 4014 || err == 5204) && !m_warned_whitelist)
+         {
+            string guidance = StringFormat(
+               "Policy HTTP access blocked (error %d). Enable WebRequest in MT5: Tools → Options → Expert Advisors → 'Allow WebRequest for listed URL' and add %s. Then press OK and restart the EA.",
+               err, trimmed);
+            LOG(guidance);
+            m_warned_whitelist = true;
+         }
+         return false;
+      }
+
+      if(status >= 400 && !m_warned_whitelist)
+      {
+         LOG(StringFormat("Policy HTTP verification returned status %d for %s", status, trimmed));
+      }
+
+      return (status >= 200 && status < 500);
    }
 
    // Returns true if the on-disk policy file size changed since last check

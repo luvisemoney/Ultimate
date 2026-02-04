@@ -47,6 +47,8 @@ struct GateStatistics
    double optimal_volume_tweak;
    
    datetime last_update;
+   int sanitization_events;
+   double avg_sanitization_severity;
 };
 
 // Trade outcome record
@@ -132,7 +134,19 @@ private:
          m_gate_stats[i].optimal_volume_tweak = 0.8;
          
          m_gate_stats[i].last_update = TimeCurrent();
+         m_gate_stats[i].sanitization_events = 0;
+         m_gate_stats[i].avg_sanitization_severity = 0.0;
       }
+   }
+
+   int GetGateIndexByName(const string &gate_name)
+   {
+      for(int i = 0; i < 8; i++)
+      {
+         if(m_gate_stats[i].gate_name == gate_name)
+            return i;
+      }
+      return -1;
    }
    
    // Learn optimal threshold for a gate
@@ -232,6 +246,41 @@ public:
       
       // Update pass rate
       m_gate_stats[gate_index].pass_rate = (double)m_gate_stats[gate_index].signals_passed / m_gate_stats[gate_index].total_signals_processed;
+   }
+
+   void RecordSanitizationEvent(const string &gate_name, const double price, const double sl, const double tp, const double volume)
+   {
+      int gate_index = GetGateIndexByName(gate_name);
+      if(gate_index < 0 || gate_index >= 8)
+         return;
+
+      // MQL5 does not support C++ references for local variables, so work on a copy
+      GateStatistics stats = m_gate_stats[gate_index];
+      double base_price = MathMax(0.0001, MathAbs(price));
+      double sl_gap = MathAbs(price - sl) / base_price;
+      double tp_gap = MathAbs(tp - price) / base_price;
+      double severity = (sl_gap + tp_gap) * 0.5;
+      if(!MathIsValidNumber(severity) || severity < 0.0)
+         severity = 0.0;
+
+      stats.sanitization_events++;
+      if(stats.sanitization_events <= 1)
+         stats.avg_sanitization_severity = severity;
+      else
+         stats.avg_sanitization_severity = ((stats.avg_sanitization_severity * (stats.sanitization_events - 1)) + severity) / stats.sanitization_events;
+      stats.last_update = TimeCurrent();
+
+      if(m_auto_adjust_thresholds && (stats.sanitization_events % 5 == 0))
+      {
+         double capped = MathMin(0.5, stats.avg_sanitization_severity);
+         double adjust_factor = 1.0 + (capped * (m_learning_rate * 0.5));
+         stats.current_threshold = MathMin(stats.threshold_max, stats.current_threshold * adjust_factor);
+         PrintFormat("⚠️ Gate %s: sanitizations=%d avg_severity=%.3f threshold=%.3f vol=%.2f",
+                    gate_name, stats.sanitization_events, stats.avg_sanitization_severity, stats.current_threshold, volume);
+      }
+
+      // Write updated statistics back to the array
+      m_gate_stats[gate_index] = stats;
    }
    
    // Record trade outcome - HYBRID UPDATE SYSTEM

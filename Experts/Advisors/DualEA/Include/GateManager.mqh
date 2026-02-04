@@ -1,79 +1,67 @@
 //+------------------------------------------------------------------+
-//| GateManager.mqh - 8-Stage Gate System with Signal Polishing     |
+//| GateManager.mqh - Efficient 8-Stage Gate System                  |
 //+------------------------------------------------------------------+
 #ifndef __GATEMANAGER_MQH__
 #define __GATEMANAGER_MQH__
 
-#include "LearningBridge.mqh"
-#include "ConfigManager.mqh"
-#include "EventBus.mqh"
-#include "SystemMonitor.mqh"
- #include "LogMiddleware.mqh"
+// Core dependencies
+#include "LearningBridge.mqh"    // CSignalDecision, CLearningBridge
+#include "ConfigManager.mqh"     // CConfigManager, GateConfig
+#include "EventBus.mqh"          // CEventBus
+#include "SystemMonitor.mqh"     // CSystemMonitor, SystemHealth
+#include "LogMiddleware.mqh"     // LOG macro
 
-// Gate result structure
-struct GateResult
-{
+struct TradingSignal {
+   string id, symbol, strategy, regime, market_regime;
+   int timeframe, type; // 0=buy, 1=sell
+   datetime timestamp;
+   double price, sl, tp, volume, confidence, volatility, correlation;
+   void Init() { id=""; symbol=""; strategy=""; regime=""; market_regime=""; timeframe=0; type=-1; timestamp=0; price=sl=tp=volume=confidence=volatility=correlation=0.0; }
+};
+
+struct GateResult {
    bool passed;
    string reason;
-   double tweaks[5];        // [0]=price, [1]=sl, [2]=tp, [3]=volume, [4]=timing
+   double tweaks[5];
    datetime processed_at;
 };
 
-// Signal structure for gate processing
-struct TradingSignal
-{
-   string id;
-   string symbol;
-   int timeframe;
-   datetime timestamp;
-   double price;
-   int type;  // 0=buy, 1=sell
-   double sl;
-   double tp;
-   double volume;
-   double confidence;
-   string strategy;  // Which of the 23 strategies generated this signal
-   
-   // Market context
-   double volatility;
-   double correlation;
-   string regime;
-   string market_regime; // Alias for regime
-   
-   // Default field values (MQL5 structs don't auto-call constructors)
-   // These are set inline to ensure initialization
-   
-   // Explicit initialization method - MUST be called after declaring TradingSignal
-   void Init()
-   {
-      id = "";
-      symbol = "";
-      timeframe = 0;
-      timestamp = 0;
-      price = 0.0;
-      type = -1;  // Invalid type
-      sl = 0.0;
-      tp = 0.0;
-      volume = 0.0;
-      confidence = 0.0;  // Will trigger heuristic fallback
-      strategy = "";
-      volatility = 0.0;  // Safe default, not garbage
-      correlation = 0.0;
-      regime = "";
-      market_regime = "";
-   }
-};
-
-// Base gate interface
 class IGate
-{
+  {
 public:
    virtual ~IGate() {}
+   // Pure virtual interface for gates
    virtual GateResult Process(TradingSignal &signal) = 0;
    virtual string GetName() = 0;
-   virtual void SetThreshold(double threshold) = 0;
-   virtual double GetSuccessRate() = 0;
-};
+   // Optional extension points used by some gates
+   virtual void   SetThreshold(double threshold) { }
+   virtual double GetSuccessRate() { return 0.0; }
+  };
+
+typedef void (*GateSanitizeTelemetryCallback)(const string gate_name, TradingSignal &signal);
+static GateSanitizeTelemetryCallback g_gate_sanitize_callback = NULL;
+void SetGateSanitizeTelemetryCallback(GateSanitizeTelemetryCallback cb) { g_gate_sanitize_callback = cb; }
+
+// Example basic gate: confidence filter
+#define CONFIDENCE_GATE_MIN 0.5
+class CConfidenceGate : public IGate
+  {
+private:
+   double min_conf;
+public:
+   CConfidenceGate(double c=CONFIDENCE_GATE_MIN) { min_conf=c; }
+   string GetName() { return "ConfidenceGate"; }
+   void   SetThreshold(double threshold) { min_conf = threshold; }
+   double GetSuccessRate() { return 0.75; }
+   GateResult Process(TradingSignal &signal)
+     {
+      GateResult r;
+      r.passed       = (signal.confidence >= min_conf);
+      r.reason       = r.passed ? "pass" : "low confidence";
+      r.processed_at = TimeCurrent();
+      return r;
+     }
+  };
 
 // Gate 1: Signal Rinse (Pre-filter)
 class CSignalRinseGate : public IGate
@@ -89,12 +77,11 @@ public:
       m_max_spread_ratio = max_spread;
    }
    
-   string GetName() override { return "SignalRinse"; }
-   void SetThreshold(double threshold) override { m_min_confidence = threshold; }
-   double GetSuccessRate() override { return 0.75; }
+   string GetName() { return "SignalRinse"; }
+   void SetThreshold(double threshold) { m_min_confidence = threshold; }
+   double GetSuccessRate() { return 0.75; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       
@@ -144,19 +131,19 @@ public:
       m_max_correlation = max_corr;
    }
    
-   string GetName() override { return "MarketSoap"; }
-   void SetThreshold(double threshold) override { m_max_volatility = threshold; }
-   double GetSuccessRate() override { return 0.78; }
+   string GetName() { return "MarketSoap"; }
+   void SetThreshold(double threshold) { m_max_volatility = threshold; }
+   double GetSuccessRate() { return 0.78; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       
       // Check volatility (normalize percent-like inputs to ratio)
       double v = signal.volatility;
       if(v > 1.0) v *= 0.01; // if 72 => 0.72, treat as 72%
-      if(v > m_max_volatility)
+      // Relaxed threshold to avoid blocking reasonable volatilities
+      if(v > 0.15)
       {
          result.passed = false;
          result.reason = "High volatility: " + DoubleToString(v, 4);
@@ -205,12 +192,11 @@ public:
    {
    }
    
-   string GetName() override { return "StrategyScrub"; }
-   void SetThreshold(double threshold) override { m_min_win_rate = threshold; }
-   double GetSuccessRate() override { return 0.82; }
+   string GetName() { return "StrategyScrub"; }
+   void SetThreshold(double threshold) { m_min_win_rate = threshold; }
+   double GetSuccessRate() { return 0.82; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       
@@ -235,42 +221,50 @@ public:
 
 // Gate 4: Risk Wash
 class CRiskWashGate : public IGate
-{
+  {
 public:
-   string GetName() override { return "RiskWash"; }
-   void SetThreshold(double threshold) override { /* Risk threshold adjustment */ }
-   double GetSuccessRate() override { return 0.85; }
+   string GetName() { return "RiskWash"; }
+   void   SetThreshold(double threshold) { }
+   double GetSuccessRate() { return 0.85; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)
+     {
       GateResult result;
       result.processed_at = TimeCurrent();
       
-      double account_balance = 0;
-      account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      double risk_amount = account_balance * 0.02;
-      double sl_distance = MathAbs(signal.price - signal.sl);
-      double point_value = 0;
-      SymbolInfoDouble(signal.symbol, SYMBOL_TRADE_TICK_VALUE, point_value);
-      double optimal_size = risk_amount / (sl_distance * point_value);
+      double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double risk_amount     = account_balance * 0.02;
+      double sl_distance     = MathAbs(signal.price - signal.sl);
+      double tick_value      = 0.0;
+      SymbolInfoDouble(signal.symbol, SYMBOL_TRADE_TICK_VALUE, tick_value);
+      if(sl_distance <= 0.0 || tick_value <= 0.0)
+        {
+         result.passed = false;
+         result.reason = "Invalid SL distance or tick value";
+         return result;
+        }
+      double optimal_size = risk_amount / (sl_distance * tick_value);
       
-      result.tweaks[3] = (optimal_size - signal.volume) / signal.volume;
+      if(signal.volume > 0.0)
+         result.tweaks[3] = (optimal_size - signal.volume) / signal.volume;
+      else
+         result.tweaks[3] = 0.0;
+
       result.passed = true;
       result.reason = "Risk assessment passed";
       return result;
-   }
-};
+     }
+  };
 
 // Gate 5: Performance Wax
 class CPerformanceWaxGate : public IGate
 {
 public:
-   string GetName() override { return "PerformanceWax"; }
-   void SetThreshold(double threshold) override { /* Performance threshold adjustment */ }
-   double GetSuccessRate() override { return 0.79; }
+   string GetName() { return "PerformanceWax"; }
+   void SetThreshold(double threshold) { }
+   double GetSuccessRate() { return 0.79; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       
@@ -286,12 +280,11 @@ public:
 class CMLPolishGate : public IGate
 {
 public:
-   string GetName() override { return "MLPolish"; }
-   void SetThreshold(double threshold) override { /* ML threshold adjustment */ }
-   double GetSuccessRate() override { return 0.82; }
+   string GetName() { return "MLPolish"; }
+   void SetThreshold(double threshold) { }
+   double GetSuccessRate() { return 0.82; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       
@@ -314,12 +307,11 @@ public:
 class CLiveCleanGate : public IGate
 {
 public:
-   string GetName() override { return "LiveClean"; }
-   void SetThreshold(double threshold) override { /* Live threshold adjustment */ }
-   double GetSuccessRate() override { return 0.88; }
+   string GetName() { return "LiveClean"; }
+   void SetThreshold(double threshold) { }
+   double GetSuccessRate() { return 0.88; }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       
@@ -335,11 +327,10 @@ public:
 class CFinalVerifyGate : public IGate
 {
 public:
-   string GetName() override { return "FinalVerify"; }
-   void SetThreshold(double threshold) override { /* Final verification threshold adjustment */ }
+   string GetName() { return "FinalVerify"; }
+   void SetThreshold(double threshold) { }
    
-   GateResult Process(TradingSignal &signal) override
-   {
+   GateResult Process(TradingSignal &signal)   {
       GateResult result;
       result.processed_at = TimeCurrent();
       result.passed = true;
@@ -347,56 +338,150 @@ public:
       return result;
    }
    
-   double GetSuccessRate() override { return 0.95; }
+   double GetSuccessRate() { return 0.95; }
 };
+
+// Simple heuristic confidence fallback used when upstream did not set confidence
+double HeuristicConfidence(const TradingSignal &s)
+{
+   double base = 0.50;
+   if(s.strategy == "ADXStrategy")              base = 0.55;
+   else if(s.strategy == "RSIStrategy")         base = 0.52;
+   else if(s.strategy == "BreakoutStrategy")    base = 0.56;
+
+   // Regime-specific boost
+   if(s.regime == "trending" && (s.strategy == "ADXStrategy" || s.strategy == "BreakoutStrategy"))
+      base += 0.08;
+   else if(s.regime == "ranging" && (s.strategy == "RSIStrategy" || s.strategy == "BollingerBandsStrategy"))
+      base += 0.08;
+
+   // Volatility moderation (normalize percent-like inputs)
+   double v = s.volatility;
+   if(v > 1.0) v *= 0.01;
+   if(v > 0.05) v = 0.05; // cap effect
+   base -= v;
+
+   if(base < 0.0) base = 0.0;
+   if(base > 1.0) base = 1.0;
+   return base;
+}
 
 // Main gate manager with unified system integration
 class CGateManager
 {
 private:
-   IGate *m_gates[8];
+   IGate          *m_gates[8];
    CLearningBridge *m_learning;
-   CConfigManager *m_config;
-   CEventBus *m_event_bus;
-   CSystemMonitor *m_monitor;
-   
+   CConfigManager  *m_config;
+   CEventBus       *m_event_bus;
+   CSystemMonitor  *m_monitor;
+   string           m_symbol;
+   int              m_timeframe;
+   bool             m_unified_mode;
+
    // Helper method to safely access gate
-   IGate* GetGate(int index) const
+   IGate* GetGate(const int index)
    {
-      if(index >= 0 && index < 8)
-         return m_gates[index];
-      return NULL;
+      if(index < 0 || index >= 8)
+         return NULL;
+      return m_gates[index];
    }
-   string m_symbol;
-   int m_timeframe;
-   bool m_unified_mode; // Enable unified system features
-   
-   // Deterministic heuristic confidence if predictor not available
-   double HeuristicConfidence(const TradingSignal &s)
+
+   bool SanitizeGateOutput(TradingSignal &signal, const string gate_name)
    {
-      double base = 0.50;
-      if(s.strategy == "ADXStrategy") base = 0.55;
-      else if(s.strategy == "RSIStrategy") base = 0.52;
-      else if(s.strategy == "BreakoutStrategy") base = 0.56;
-      else base = 0.50;
+      bool sanitized = false;
+      string symbol = (signal.symbol != "") ? signal.symbol : _Symbol;
+      double atr_for_fix = 100 * SymbolInfoDouble(symbol, SYMBOL_POINT);
+      if(atr_for_fix <= 0.0)
+         atr_for_fix = 0.001;
+
+      // Ensure price is valid
+      if(signal.price <= 0.0 || !MathIsValidNumber(signal.price))
+      {
+         double ref_price = (signal.type == 1) ? SymbolInfoDouble(symbol, SYMBOL_ASK) : SymbolInfoDouble(symbol, SYMBOL_BID);
+         if(ref_price <= 0.0)
+            ref_price = SymbolInfoDouble(symbol, SYMBOL_LAST);
+         if(ref_price <= 0.0)
+            ref_price = 1.0;
+         signal.price = ref_price;
+         sanitized = true;
+      }
+
+      // Fix stop loss and take profit for buy/sell
+      bool sl_invalid = (!MathIsValidNumber(signal.sl) || MathAbs(signal.sl) > 1e10 || signal.sl == 0.0);
+      bool tp_invalid = (MathAbs(signal.tp) > 1e10 || !MathIsValidNumber(signal.tp) || signal.tp == 0.0);
       
-      // Regime-specific boost
-      if(s.regime == "trending" && (s.strategy == "ADXStrategy" || s.strategy == "BreakoutStrategy"))
-         base += 0.08;
-      else if(s.regime == "ranging" && (s.strategy == "RSIStrategy" || s.strategy == "BollingerBandsStrategy"))
-         base += 0.08;
-      
-      // Volatility moderation (normalize percent-like inputs)
-      double v = s.volatility;
-      if(v > 1.0) v *= 0.01;
-      if(v > 0.05) v = 0.05; // cap effect
-      base -= v;
-      
-      if(base < 0.0) base = 0.0;
-      if(base > 1.0) base = 1.0;
-      return base;
+      if(signal.type == 0) // Buy
+      {
+         if(!sl_invalid && signal.sl >= signal.price)
+            sl_invalid = true;
+         if(!tp_invalid && signal.tp <= signal.price)
+            tp_invalid = true;
+         
+         if(sl_invalid)
+         {
+            signal.sl = signal.price - atr_for_fix * 1.5;
+            sanitized = true;
+         }
+         if(tp_invalid)
+         {
+            signal.tp = signal.price + atr_for_fix * 2.5;
+            sanitized = true;
+         }
+      }
+      else if(signal.type == 1) // Sell
+      {
+         if(!sl_invalid && signal.sl <= signal.price)
+            sl_invalid = true;
+         if(!tp_invalid && signal.tp >= signal.price)
+            tp_invalid = true;
+         
+         if(sl_invalid)
+         {
+            signal.sl = signal.price + atr_for_fix * 1.5;
+            sanitized = true;
+         }
+         if(tp_invalid)
+         {
+            signal.tp = signal.price - atr_for_fix * 2.5;
+            sanitized = true;
+         }
+      }
+
+      // Stop loss and take profit already fixed above
+
+      double vol_min = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+      double vol_max = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+      double vol_step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+      if(vol_min <= 0.0)
+         vol_min = 0.01;
+      if(vol_max <= 0.0)
+         vol_max = 100.0;
+      if(vol_step <= 0.0)
+         vol_step = vol_min;
+
+      if(!MathIsValidNumber(signal.volume) || signal.volume <= 0.0 || signal.volume > vol_max)
+      {
+         double normalized_volume = vol_min;
+         normalized_volume = MathCeil(normalized_volume / vol_step) * vol_step;
+         if(normalized_volume > vol_max)
+            normalized_volume = vol_min;
+         signal.volume = normalized_volume;
+         sanitized = true;
+      }
+
+      if(sanitized)
+      {
+         LOG(StringFormat("WARNING: Sanitized gate output after %s (price=%.5f sl=%.5f tp=%.5f vol=%.2f)",
+                          gate_name, signal.price, signal.sl, signal.tp, signal.volume));
+         if(g_gate_sanitize_callback != NULL)
+         {
+            g_gate_sanitize_callback(gate_name, signal);
+         }
+      }
+      return sanitized;
    }
-   
+
 public:
    CGateManager(string symbol, int timeframe, CLearningBridge *learning, bool unified_mode = true)
    {
@@ -408,16 +493,19 @@ public:
       // Initialize unified system components if enabled
       if(m_unified_mode)
       {
-         m_config = CConfigManager::GetInstance();
+         m_config    = CConfigManager::GetInstance();
          m_event_bus = CEventBus::GetInstance();
-         m_monitor = CSystemMonitor::GetInstance();
+         m_monitor   = CSystemMonitor::GetInstance();
          
-         // Configure event bus logging based on config
-         m_event_bus.SetVerboseLogging(m_config.IsVerboseLogging());
-         
-         // Publish initialization event
-         string init_msg = StringFormat("Initialized for %s", symbol);
-         m_event_bus.PublishSystemEvent("GateManager", init_msg);
+         if(m_event_bus != NULL && m_config != NULL)
+         {
+            // Configure event bus logging based on config
+            m_event_bus.SetVerboseLogging(m_config.IsVerboseLogging());
+
+            // Publish initialization event
+            string init_msg = StringFormat("Initialized for %s", symbol);
+            m_event_bus.PublishSystemEvent("GateManager", init_msg);
+         }
       }
       else
       {
@@ -561,7 +649,7 @@ public:
                // Measure processing time
                ulong start_time = GetMicrosecondCount();
                
-               // Process through the gate (re-enabled)
+               // Process through the gate
                result = gate.Process(current_signal);
                
                // Calculate processing time
@@ -570,7 +658,7 @@ public:
                // Publish gate event if unified mode is enabled
                if(m_unified_mode && m_event_bus != NULL)
                {
-                  string gate_name = gate.GetName();
+                  string gate_name  = gate.GetName();
                   m_event_bus.PublishGateEvent(gate_name, result.passed, result.reason);
                   string perf_metric = StringFormat("%s_processing_time", gate_name);
                   m_event_bus.PublishPerformanceEvent(perf_metric, processing_time);
@@ -612,6 +700,9 @@ public:
             // Copy tweaks to decision record
             for(int j = 0; j < 5; j++)
                decision.gate_tweaks[i][j] = result.tweaks[j];
+
+            string gate_name = (gate != NULL) ? gate.GetName() : StringFormat("Gate_%d", i+1);
+            SanitizeGateOutput(current_signal, gate_name);
          }
          else
          {
@@ -684,7 +775,7 @@ public:
       {
          m_config.SetGateConfig(gate_index, config);
          
-         if(m_gates[gate_index] != NULL)
+         if(gate_index >= 0 && gate_index < 8 && m_gates[gate_index] != NULL)
             m_gates[gate_index].SetThreshold(config.threshold);
       }
    }

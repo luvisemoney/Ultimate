@@ -63,6 +63,8 @@ class CTelemetry
     string   NowTs() { return TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS); }
 
   public:
+    string JsonQuote(const string s) { return Quote(s); }
+
     CTelemetry(string base_dir="DualEA\\telemetry", string experiment="", int level=1, int max_buf=256)
       {
         m_base_dir = base_dir;
@@ -101,6 +103,18 @@ class CTelemetry
         if(m_level<=0) return;
         string line = StringFormat("{\"ts\":%s,\"symbol\":%s,\"timeframe\":%d,\"strategy\":%s,\"event\":%s,\"details\":%s}",
                                    Quote(NowTs()), Quote(symbol), timeframe, Quote(strategy), Quote(event), Quote(details));
+        AppendLine(line);
+      }
+
+    void LogEventJson(const string symbol, const int timeframe, const string strategy, const string event, const string json_fields)
+      {
+        if(m_level<=0) return;
+        string fields = json_fields;
+        StringTrimLeft(fields);
+        StringTrimRight(fields);
+        string suffix = (StringLen(fields) > 0 ? ("," + fields) : "");
+        string line = StringFormat("{\"ts\":%s,\"symbol\":%s,\"timeframe\":%d,\"strategy\":%s,\"event\":%s%s}",
+                                   Quote(NowTs()), Quote(symbol), timeframe, Quote(strategy), Quote(event), suffix);
         AppendLine(line);
       }
 

@@ -8,8 +8,8 @@ from typing import Dict
 
 import numpy as np
 import xgboost as xgb
-from skl2onnx import convert_sklearn
-from skl2onnx.common.data_types import FloatTensorType
+from onnxmltools.convert import convert_xgboost
+from onnxmltools.convert.common.data_types import FloatTensorType
 
 
 def _read_json(path: str) -> Dict:
@@ -59,14 +59,13 @@ def _write_ini(dest: str, meta: Dict, scaler, input_name: str, output_name: str)
 
 
 def convert_to_onnx(model: xgb.XGBClassifier, feature_count: int, opset: int):
+    booster = model.get_booster()
     initial_type = [("input", FloatTensorType([None, feature_count]))]
-    options = {id(model): {"zipmap": False, "raw_scores": False}}
-    onnx_model = convert_sklearn(model, initial_types=initial_type, target_opset=opset, options=options)
-    return (
-        onnx_model.SerializeToString(),
-        onnx_model.graph.input[0].name,
-        onnx_model.graph.output[0].name,
-    )
+    onnx_model = convert_xgboost(booster, initial_types=initial_type, target_opset=opset)
+
+    input_name = onnx_model.graph.input[0].name if onnx_model.graph.input else "input"
+    output_name = onnx_model.graph.output[0].name if onnx_model.graph.output else "output"
+    return (onnx_model.SerializeToString(), input_name, output_name)
 
 
 def main():
@@ -75,7 +74,7 @@ def main():
     parser.add_argument("--model_json", type=str, default=None, help="Override path to xgb_model.json")
     parser.add_argument("--feature_meta", type=str, default=None, help="Override path to feature_meta.json")
     parser.add_argument("--scaler", type=str, default=None, help="Override path to scaler.pkl")
-    parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument("--opset", type=int, default=15)
     parser.add_argument("--onnx_out", type=str, default=None, help="Destination ONNX path")
     parser.add_argument("--config_json", type=str, default=None, help="Destination JSON metadata path")
     parser.add_argument("--config_ini", type=str, default=None, help="Destination INI metadata path")

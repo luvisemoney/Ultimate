@@ -1,12 +1,21 @@
 #ifndef __MODEL_PREDICTOR_MQH__
 #define __MODEL_PREDICTOR_MQH__
 
-#import "PaperEA_OnnxBridge.dll"
-bool   ORT_Init(string model_path, string config_json_path);
-bool   ORT_Run(double &features[], int feature_count, double &output_value);
-void   ORT_Shutdown();
-int    ORT_GetLastError(string &buffer);
+#ifdef USE_MOCK_ORT
+#import "PaperEA_OnnxBridge_mock.dll"
+int   InitializeModel(string modelPath, string configPath);
+int   PredictSignal(const double &features[], int featureCount, double &probability);
+void   Cleanup();
+string GetLastModelError();
 #import
+#else
+#import "PaperEA_OnnxBridge_u2.dll"
+int   InitializeModel(string modelPath, string configPath);
+int   PredictSignal(const double &features[], int featureCount, double &probability);
+void   Cleanup();
+string GetLastModelError();
+#import
+#endif
 
 class CModelPredictor
 {
@@ -31,6 +40,8 @@ private:
    double    m_work_buffer[];
    double    m_last_probability;
    SCategoricalMap m_cat_maps[];
+   bool      m_debug_logged;
+   bool      m_debug_probs_logged;
 
    bool   LoadIniConfig(const string path);
    bool   ParseKeyValue(const string line, string &key, string &value) const;
@@ -68,6 +79,8 @@ CModelPredictor::CModelPredictor()
    m_output_name = "";
    m_last_error = "";
    m_last_probability = 0.5;
+   m_debug_logged = false;
+   m_debug_probs_logged = false;
    ArrayResize(m_scaler_mean, 0);
    ArrayResize(m_scaler_scale, 0);
    ArrayResize(m_feature_names, 0);
@@ -85,6 +98,14 @@ string CModelPredictor::Trim(string value)
 string CModelPredictor::NormalizeKey(string value)
 {
    string tmp = Trim(value);
+   while(StringLen(tmp) > 0)
+   {
+      int ch = StringGetCharacter(tmp, 0);
+      if(ch == 0xFEFF || ch == 65279 || ch == 0)
+         tmp = StringSubstr(tmp, 1);
+      else
+         break;
+   }
    StringToLower(tmp);
    return tmp;
 }
@@ -114,24 +135,45 @@ void CModelPredictor::LogError(const string msg)
 
 void CModelPredictor::CaptureDllError(const string context)
 {
-   string dll_err = "";
-   if(ORT_GetLastError(dll_err) <= 0 || StringLen(Trim(dll_err)) == 0)
+   string dll_err = GetLastModelError();
+   if(StringLen(Trim(dll_err)) == 0)
       dll_err = StringFormat("%s failed (GetLastError=%d)", context, GetLastError());
    LogError(dll_err);
 }
 
-bool CModelPredictor::LoadIniConfig(const string path)
-{
-   int handle = FileOpen(path, FILE_READ|FILE_TXT|FILE_ANSI);
+ bool CModelPredictor::LoadIniConfig(const string path)
+ {
+   string open_name = path;
+   int extra_flags = 0;
+   string common_prefix = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\";
+   if(StringFind(path, common_prefix) == 0)
+   {
+      open_name = StringSubstr(path, StringLen(common_prefix));
+      extra_flags = FILE_COMMON;
+   }
+
+   // Try different file opening modes
+   int handle = FileOpen(open_name, FILE_READ|FILE_TXT|extra_flags);
    if(handle == INVALID_HANDLE)
    {
-      handle = FileOpen(path, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
-      if(handle == INVALID_HANDLE)
-      {
-         LogError(StringFormat("Unable to open ONNX config INI: %s (error=%d)", path, GetLastError()));
-         return false;
-      }
+      handle = FileOpen(open_name, FILE_READ|FILE_TXT|FILE_ANSI|extra_flags);
    }
+   if(handle == INVALID_HANDLE)
+   {
+      handle = FileOpen(open_name, FILE_READ|FILE_TXT|FILE_UNICODE|extra_flags);
+   }
+   if(handle == INVALID_HANDLE)
+   {
+      handle = FileOpen(open_name, FILE_READ|FILE_TXT|FILE_COMMON);
+   }
+   if(handle == INVALID_HANDLE)
+   {
+      LogError(StringFormat("Unable to open ONNX config INI: %s (error=%d)", path, GetLastError()));
+      return false;
+   }
+
+   int parsed_pairs = 0;
+   bool saw_feature_names = false;
 
    ArrayResize(m_feature_names, 0);
    ArrayResize(m_scaler_mean, 0);
@@ -149,6 +191,10 @@ bool CModelPredictor::LoadIniConfig(const string path)
       if(!ParseKeyValue(raw, key, value))
          continue;
 
+      parsed_pairs++;
+      if(parsed_pairs <= 3)
+         Log(StringFormat("INI key[%d]=%s", parsed_pairs, key));
+
       if(key == "feature_count")
       {
          declared_count = (int)StringToInteger(value);
@@ -159,9 +205,13 @@ bool CModelPredictor::LoadIniConfig(const string path)
       {
          string tokens[];
          int parts = StringSplit(value, '|', tokens);
+         if(parts <= 1)
+            parts = StringSplit(value, ',', tokens);
          ArrayResize(m_feature_names, parts);
          for(int i = 0; i < parts; i++)
             m_feature_names[i] = Trim(tokens[i]);
+         saw_feature_names = (parts > 0);
+         Log(StringFormat("INI loaded feature_names=%d", parts));
          continue;
       }
 
@@ -169,9 +219,12 @@ bool CModelPredictor::LoadIniConfig(const string path)
       {
          string tokens[];
          int parts = StringSplit(value, '|', tokens);
+         if(parts <= 1)
+            parts = StringSplit(value, ',', tokens);
          ArrayResize(m_scaler_mean, parts);
          for(int i = 0; i < parts; i++)
             m_scaler_mean[i] = StringToDouble(Trim(tokens[i]));
+         Log(StringFormat("INI loaded scaler_mean=%d", parts));
          continue;
       }
 
@@ -179,9 +232,12 @@ bool CModelPredictor::LoadIniConfig(const string path)
       {
          string tokens[];
          int parts = StringSplit(value, '|', tokens);
+         if(parts <= 1)
+            parts = StringSplit(value, ',', tokens);
          ArrayResize(m_scaler_scale, parts);
          for(int i = 0; i < parts; i++)
             m_scaler_scale[i] = StringToDouble(Trim(tokens[i]));
+         Log(StringFormat("INI loaded scaler_scale=%d", parts));
          continue;
       }
 
@@ -236,10 +292,150 @@ bool CModelPredictor::LoadIniConfig(const string path)
       }
    }
 
-   FileClose(handle);
+   if(parsed_pairs == 0)
+   {
+      FileClose(handle);
+      int hbin = FileOpen(open_name, FILE_READ|FILE_BIN|extra_flags);
+      if(hbin == INVALID_HANDLE)
+         hbin = FileOpen(open_name, FILE_READ|FILE_BIN|FILE_COMMON);
+      if(hbin != INVALID_HANDLE)
+      {
+         int sz = (int)FileSize(hbin);
+         if(sz > 0)
+         {
+            uchar bytes[];
+            ArrayResize(bytes, sz);
+            FileReadArray(hbin, bytes, 0, sz);
+            string content = CharArrayToString(bytes, 0, sz, 65001);
+            if(StringLen(content) == 0)
+               content = CharArrayToString(bytes, 0, sz, 0);
+
+            string lines[];
+            int lcount = StringSplit(content, '\n', lines);
+            for(int li = 0; li < lcount; li++)
+            {
+               string line = Trim(lines[li]);
+               if(StringLen(line) == 0)
+                  continue;
+               if(StringGetCharacter(line, StringLen(line) - 1) == '\r')
+                  line = StringSubstr(line, 0, StringLen(line) - 1);
+               if(StringLen(line) == 0 || StringGetCharacter(line, 0) == '#')
+                  continue;
+
+               string k2, v2;
+               if(!ParseKeyValue(line, k2, v2))
+                  continue;
+
+               parsed_pairs++;
+
+               if(k2 == "feature_count")
+               {
+                  declared_count = (int)StringToInteger(v2);
+                  continue;
+               }
+
+               if(k2 == "feature_names")
+               {
+                  string tokens[];
+                  int parts = StringSplit(v2, '|', tokens);
+                  if(parts <= 1)
+                     parts = StringSplit(v2, ',', tokens);
+                  ArrayResize(m_feature_names, parts);
+                  for(int i = 0; i < parts; i++)
+                     m_feature_names[i] = Trim(tokens[i]);
+                  saw_feature_names = (parts > 0);
+                  continue;
+               }
+
+               if(k2 == "scaler_mean")
+               {
+                  string tokens[];
+                  int parts = StringSplit(v2, '|', tokens);
+                  if(parts <= 1)
+                     parts = StringSplit(v2, ',', tokens);
+                  ArrayResize(m_scaler_mean, parts);
+                  for(int i = 0; i < parts; i++)
+                     m_scaler_mean[i] = StringToDouble(Trim(tokens[i]));
+                  continue;
+               }
+
+               if(k2 == "scaler_scale")
+               {
+                  string tokens[];
+                  int parts = StringSplit(v2, '|', tokens);
+                  if(parts <= 1)
+                     parts = StringSplit(v2, ',', tokens);
+                  ArrayResize(m_scaler_scale, parts);
+                  for(int i = 0; i < parts; i++)
+                     m_scaler_scale[i] = StringToDouble(Trim(tokens[i]));
+                  continue;
+               }
+
+               if(StringSubstr(k2, 0, 4) == "cat_")
+               {
+                  string field = NormalizeKey(StringSubstr(k2, 4));
+                  string entries[];
+                  int entry_count = StringSplit(v2, '|', entries);
+                  if(entry_count <= 0)
+                     continue;
+
+                  SCategoricalMap map;
+                  map.field = field;
+                  ArrayResize(map.keys, 0);
+                  ArrayResize(map.values, 0);
+
+                  for(int e = 0; e < entry_count; e++)
+                  {
+                     string kv = Trim(entries[e]);
+                     int colon = StringFind(kv, ":");
+                     if(colon <= 0)
+                        continue;
+                     string label = NormalizeKey(StringSubstr(kv, 0, colon));
+                     int code = (int)StringToInteger(StringSubstr(kv, colon + 1));
+                     int idx = ArraySize(map.keys);
+                     ArrayResize(map.keys, idx + 1);
+                     ArrayResize(map.values, idx + 1);
+                     map.keys[idx] = label;
+                     map.values[idx] = code;
+                  }
+
+                  int mcount = ArraySize(map.keys);
+                  if(mcount > 0)
+                  {
+                     int slot = ArraySize(m_cat_maps);
+                     ArrayResize(m_cat_maps, slot + 1);
+                     m_cat_maps[slot] = map;
+                  }
+                  continue;
+               }
+
+               if(k2 == "input_name")
+               {
+                  m_input_name = Trim(v2);
+                  continue;
+               }
+
+               if(k2 == "output_name")
+               {
+                  m_output_name = Trim(v2);
+                  continue;
+               }
+            }
+         }
+         FileClose(hbin);
+      }
+   }
+   else
+   {
+      FileClose(handle);
+   }
 
    if(ArraySize(m_feature_names) == 0)
    {
+      if(parsed_pairs == 0)
+         LogError("ONNX config INI parsed 0 key/value pairs");
+      else if(!saw_feature_names)
+         LogError(StringFormat("ONNX config parsed %d keys but did not detect feature_names", parsed_pairs));
       LogError("ONNX config missing feature_names entry");
       return false;
    }
@@ -277,9 +473,10 @@ bool CModelPredictor::Init(const string model_path, const string config_json_pat
    if(!LoadIniConfig(config_ini_path))
       return false;
 
-   if(!ORT_Init(model_path, config_json_path))
+   // The DLL expects the INI config path (scaler + feature info), not the JSON.
+   if(InitializeModel(model_path, config_ini_path) != 1)
    {
-      CaptureDllError("ORT_Init");
+      CaptureDllError("InitializeModel");
       return false;
    }
 
@@ -297,7 +494,7 @@ void CModelPredictor::Shutdown()
 {
    if(m_ready)
    {
-      ORT_Shutdown();
+      Cleanup();
       m_ready = false;
       Log("ONNX predictor shutdown");
    }
@@ -342,21 +539,36 @@ double CModelPredictor::Predict(double &features[], int feature_count)
       return 0.5;
    }
 
-   EnsureBuffer(expected);
-   for(int i = 0; i < expected; i++)
+   double output_value = 0.5;
+
+   if(!m_debug_logged && MQLInfoInteger(MQL_TESTER) == 1)
    {
-      double mean = (i < ArraySize(m_scaler_mean)) ? m_scaler_mean[i] : 0.0;
-      double scale = (i < ArraySize(m_scaler_scale)) ? m_scaler_scale[i] : 1.0;
-      if(MathAbs(scale) < 1e-9)
-         scale = 1.0;
-      m_work_buffer[i] = (features[i] - mean) / scale;
+      string sample = "";
+      int lim = (expected < 6 ? expected : 6);
+      for(int i = 0; i < lim; i++)
+      {
+         if(i > 0) sample += ",";
+         sample += DoubleToString(features[i], 6);
+      }
+      Log(StringFormat("DEBUG Predict() raw_feature_sample[%d]=%s", lim, sample));
+      m_debug_logged = true;
    }
 
-   double output_value = 0.5;
-   if(!ORT_Run(m_work_buffer, expected, output_value))
+   // Pass raw features to the DLL; it applies scaling based on the INI config.
+   if(PredictSignal(features, expected, output_value) != 1)
    {
-      CaptureDllError("ORT_Run");
+      CaptureDllError("PredictSignal");
       return 0.5;
+   }
+
+   if(!m_debug_probs_logged)
+   {
+      string dbg = GetLastModelError();
+      if(StringFind(dbg, "ONNX DEBUG:") == 0)
+      {
+         Log(dbg);
+         m_debug_probs_logged = true;
+      }
    }
 
    output_value = MathMax(0.0, MathMin(1.0, output_value));

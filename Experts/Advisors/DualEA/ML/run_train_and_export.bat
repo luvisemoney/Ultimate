@@ -33,22 +33,22 @@ REM Upgrade pip & install deps
 "%PY%" -m pip install --upgrade pip
 "%PY%" -m pip install -r requirements.txt
 
-REM Train model (tweak epochs/batch/splits/model as needed)
-"%PY%" train.py --common "%COMMON_DIR%" --epochs 10 --batch 256 --splits 3 --model dense
+REM Train XGBoost model from snapshot feature_batch_*.txt files
+"%PY%" snapshot_train.py
 if errorlevel 1 (
-  echo Training failed. Aborting.
+  echo Snapshot training failed. Aborting.
   popd & endlocal & exit /b 1
 )
 
-REM Convert trained XGBoost artifacts to ONNX bundle
-"%PY%" snapshot_export_onnx.py --artifacts "%SCRIPT_DIR%\artifacts"
+REM Export XGBoost model to ONNX format for MQL5 integration (mock version for testing)
+"%PY%" snapshot_export_onnx.py
 if errorlevel 1 (
   echo ONNX export failed. Aborting.
   popd & endlocal & exit /b 1
 )
 
-REM Export policy with heuristic scales (min_conf default 0.45 recommended)
-"%PY%" policy_export.py --common "%COMMON_DIR%" --model_dir "%SCRIPT_DIR%\artifacts" --min_conf 0.45
+REM Export policy with heuristic scales from XGBoost snapshot model (min_conf default 0.45 recommended)
+"%PY%" snapshot_policy_export.py --common "%COMMON_DIR%" --model_dir "%SCRIPT_DIR%\artifacts" --min_conf 0.45
 if errorlevel 1 (
   echo Policy export failed. Aborting.
   popd & endlocal & exit /b 1

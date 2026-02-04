@@ -250,6 +250,65 @@ private:
       }
    }
 
+   bool ValidateAdjustedSignal(const TradingSignal &signal, string &reason) const
+   {
+      string symbol = (signal.symbol != "") ? signal.symbol : _Symbol;
+      if(symbol == "") symbol = _Symbol;
+
+      if(!MathIsValidNumber(signal.price) || signal.price <= 0.0)
+      {
+         reason = "invalid price";
+         return false;
+      }
+
+      if(!MathIsValidNumber(signal.sl) || !MathIsValidNumber(signal.tp))
+      {
+         reason = "invalid SL/TP";
+         return false;
+      }
+
+      bool is_buy = (signal.type == 0);
+      if(is_buy)
+      {
+         if(signal.sl >= signal.price)
+         {
+            reason = "buy SL above price";
+            return false;
+         }
+         if(signal.tp <= signal.price)
+         {
+            reason = "buy TP below price";
+            return false;
+         }
+      }
+      else if(signal.type == 1)
+      {
+         if(signal.sl <= signal.price)
+         {
+            reason = "sell SL below price";
+            return false;
+         }
+         if(signal.tp >= signal.price)
+         {
+            reason = "sell TP above price";
+            return false;
+         }
+      }
+
+      double vol_min = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+      double vol_max = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+      if(vol_min <= 0.0) vol_min = 0.01;
+      if(vol_max <= 0.0) vol_max = 100.0;
+
+      if(!MathIsValidNumber(signal.volume) || signal.volume < vol_min || signal.volume > vol_max)
+      {
+         reason = "invalid volume";
+         return false;
+      }
+
+      return true;
+   }
+
 public:
    CAdaptiveSignalOptimizer(CLearningBridge* learning, CGateManager* gate_mgr, 
                             int max_attempts = 3, bool use_ml = true)
@@ -327,6 +386,24 @@ public:
       for(int attempt = 0; attempt < m_max_attempts; attempt++)
       {
          TradingSignal adjusted_signal = signal;
+
+         // Normalize symbol and volume bounds early so validation doesn't skip all attempts.
+         string symbol = (adjusted_signal.symbol != "") ? adjusted_signal.symbol : _Symbol;
+         if(symbol == "") symbol = _Symbol;
+         double vol_min = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+         double vol_max = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+         double vol_step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+         if(vol_min <= 0.0) vol_min = 0.01;
+         if(vol_max <= 0.0) vol_max = 100.0;
+         if(vol_step <= 0.0) vol_step = vol_min;
+         if(!MathIsValidNumber(adjusted_signal.volume) || adjusted_signal.volume <= 0.0)
+            adjusted_signal.volume = vol_min;
+         // Clamp and round to step
+         if(adjusted_signal.volume < vol_min) adjusted_signal.volume = vol_min;
+         if(adjusted_signal.volume > vol_max) adjusted_signal.volume = vol_max;
+         adjusted_signal.volume = MathFloor(adjusted_signal.volume / vol_step + 1e-9) * vol_step;
+         if(adjusted_signal.volume < vol_min) adjusted_signal.volume = vol_min;
+         if(adjusted_signal.volume > vol_max) adjusted_signal.volume = vol_max;
          
          // Calculate adjustments based on attempt number and ML insights
          // Use more conservative adjustments to increase success rate
@@ -334,22 +411,46 @@ public:
          
          // Apply ML-optimized adjustments with more conservative ranges
          adjusted_signal.price = signal.price * (1.0 + profile.optimal_price_tweak * aggressiveness * 0.5);  // Reduce price adjustment impact
-         adjusted_signal.sl = signal.sl * (profile.optimal_sl_tweak * (1.0 - attempt * 0.05));  // Gentler SL tightening
-         adjusted_signal.tp = signal.tp * (profile.optimal_tp_tweak * (1.0 + attempt * 0.075));  // Gentler TP widening
-         adjusted_signal.volume = signal.volume * (profile.optimal_volume_tweak * (1.0 - attempt * 0.075));  // Gentler volume reduction
+         double sl_dist = MathAbs(signal.price - signal.sl);
+         double tp_dist = MathAbs(signal.tp - signal.price);
+         if(sl_dist <= 0.0) sl_dist = MathAbs(signal.price) * 0.001;
+         if(tp_dist <= 0.0) tp_dist = MathAbs(signal.price) * 0.001;
+         double sl_mult = (profile.optimal_sl_tweak * (1.0 - attempt * 0.05));
+         double tp_mult = (profile.optimal_tp_tweak * (1.0 + attempt * 0.075));
+         if(sl_mult <= 0.01) sl_mult = 0.01;
+         if(tp_mult <= 0.01) tp_mult = 0.01;
+         if(signal.type == 0)
+         {
+            adjusted_signal.sl = adjusted_signal.price - sl_dist * sl_mult;
+            adjusted_signal.tp = adjusted_signal.price + tp_dist * tp_mult;
+         }
+         else
+         {
+            adjusted_signal.sl = adjusted_signal.price + sl_dist * sl_mult;
+            adjusted_signal.tp = adjusted_signal.price - tp_dist * tp_mult;
+         }
+         adjusted_signal.volume = adjusted_signal.volume * (profile.optimal_volume_tweak * (1.0 - attempt * 0.075));  // Gentler volume reduction
+         // Re-clamp after applying tweaks
+         if(adjusted_signal.volume < vol_min) adjusted_signal.volume = vol_min;
+         if(adjusted_signal.volume > vol_max) adjusted_signal.volume = vol_max;
+         adjusted_signal.volume = MathFloor(adjusted_signal.volume / vol_step + 1e-9) * vol_step;
+         if(adjusted_signal.volume < vol_min) adjusted_signal.volume = vol_min;
+         if(adjusted_signal.volume > vol_max) adjusted_signal.volume = vol_max;
          
          // Special adjustments based on confidence
          if(signal.confidence < 0.3)
          {
             // Very low confidence - be extra conservative
             adjusted_signal.volume *= 0.7;
-            adjusted_signal.sl *= 0.9;
+            double dist = MathAbs(adjusted_signal.price - adjusted_signal.sl);
+            adjusted_signal.sl = (adjusted_signal.type == 0) ? adjusted_signal.price - dist * 0.9 : adjusted_signal.price + dist * 0.9;
          }
          else if(signal.confidence < 0.5)
          {
             // Low confidence - be moderately conservative
             adjusted_signal.volume *= 0.85;
-            adjusted_signal.sl *= 0.95;
+            double dist = MathAbs(adjusted_signal.price - adjusted_signal.sl);
+            adjusted_signal.sl = (adjusted_signal.type == 0) ? adjusted_signal.price - dist * 0.95 : adjusted_signal.price + dist * 0.95;
          }
          
          // Update signal ID to track adjustment
@@ -359,12 +460,33 @@ public:
          AdjustmentAttempt att;
          att.attempt_number = attempt + 1;
          att.price_tweak = (adjusted_signal.price - signal.price) / signal.price;
-         att.sl_tweak = adjusted_signal.sl / signal.sl;
-         att.tp_tweak = adjusted_signal.tp / signal.tp;
-         att.volume_tweak = adjusted_signal.volume / signal.volume;
+         if(MathIsValidNumber(signal.sl) && MathAbs(signal.sl) > 1e-12)
+            att.sl_tweak = adjusted_signal.sl / signal.sl;
+         else
+            att.sl_tweak = 0.0;
+         if(MathIsValidNumber(signal.tp) && MathAbs(signal.tp) > 1e-12)
+            att.tp_tweak = adjusted_signal.tp / signal.tp;
+         else
+            att.tp_tweak = 0.0;
+         if(MathIsValidNumber(signal.volume) && MathAbs(signal.volume) > 1e-12)
+            att.volume_tweak = adjusted_signal.volume / signal.volume;
+         else
+            att.volume_tweak = 0.0;
          
          // Try adjusted signal through gates
          CSignalDecision adj_decision;
+         string validation_reason;
+         if(!ValidateAdjustedSignal(adjusted_signal, validation_reason))
+         {
+            att.passed = false;
+            att.reason = "Sanity check failed: " + validation_reason;
+            decision.attempts[attempt] = att;
+            decision.adjustment_attempts++;
+            if(m_verbose_logging)
+               PrintFormat("⚠️ Adjustment attempt %d skipped (%s)", attempt + 1, validation_reason);
+            continue;
+         }
+
          bool adj_passed = m_gate_manager.ProcessSignal(adjusted_signal, adj_decision);
          
          att.passed = adj_passed;

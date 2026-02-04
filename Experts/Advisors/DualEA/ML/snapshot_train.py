@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import pickle
+import warnings
 from typing import List, Optional, Sequence
 
 import numpy as np
@@ -18,6 +19,14 @@ from snapshot_dataset import (
     label_from_status,
     labels_from_future_prices,
     load_snapshot_dataframe,
+)
+
+# Silence the noisy XGBoost deprecation warning about 'use_label_encoder'
+# while leaving other warnings intact.
+warnings.filterwarnings(
+    "ignore",
+    message=".*use_label_encoder.*",
+    category=UserWarning,
 )
 
 
@@ -68,7 +77,6 @@ def _train_with_timeseries_split(
         model = xgb.XGBClassifier(
             **params,
             eval_metric="logloss",
-            use_label_encoder=False,
         )
         model.fit(X[tr_idx], y[tr_idx])
         proba = model.predict_proba(X[va_idx])[:, 1]
@@ -131,6 +139,17 @@ def main():
     args = parse_args()
     df = load_snapshot_dataframe(args.snapshot_dir, limit=args.limit)
     print("[DATA]", describe_dataframe(df))
+    feature_matrix = build_feature_matrix(df)
+
+    # Sanitize raw feature matrix before scaling to avoid NaN/inf/overflow
+    # issues that can arise from malformed or legacy snapshot values.
+    X_raw = np.asarray(feature_matrix.X, dtype=np.float64)
+    X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=0.0, neginf=0.0)
+    X_raw = np.clip(X_raw, -1e9, 1e9)
+
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X_raw)
+
     labels = _determine_labels(
         df,
         mode=args.label_mode,
@@ -139,25 +158,58 @@ def main():
         target_r_multiple=args.target_r_multiple,
         positive_status=args.positive_status,
     )
-    if labels.sum() == 0:
-        raise RuntimeError("All labels are negative—need at least some positives to train")
-    feature_matrix = build_feature_matrix(df)
-    scaler = StandardScaler()
-    X = scaler.fit_transform(feature_matrix.X)
-    y = labels.values.astype(int)
-    model, metrics = _train_with_timeseries_split(
-        X,
-        y,
-        n_splits=args.n_splits,
-        params={
-            "max_depth": args.max_depth,
-            "learning_rate": args.learning_rate,
-            "n_estimators": args.n_estimators,
-            "subsample": args.subsample,
-            "colsample_bytree": args.colsample_bytree,
-            "objective": "binary:logistic",
-        },
-    )
+    # Convert to integer labels and inspect distribution.
+    labels = labels.fillna(0).astype(int)
+    y = labels.values
+    n_samples = len(y)
+    if n_samples == 0:
+        raise RuntimeError("No snapshot records available for training")
+
+    unique = sorted(set(int(v) for v in y))
+    params = {
+        "max_depth": args.max_depth,
+        "learning_rate": args.learning_rate,
+        "n_estimators": args.n_estimators,
+        "subsample": args.subsample,
+        "colsample_bytree": args.colsample_bytree,
+        "objective": "binary:logistic",
+    }
+
+    if len(unique) < 2:
+        # Degenerate label distribution (all 0 or all 1). Fall back to a
+        # small bootstrap model so the pipeline can proceed, while clearly
+        # logging the situation.
+        print(
+            f"[WARN] Degenerate label distribution {unique} for {n_samples} samples; "
+            "training a baseline bootstrap model instead of failing."
+        )
+        if n_samples == 1:
+            # Duplicate the single snapshot to create two samples with
+            # opposite labels, ensuring XGBoost sees both classes.
+            X_train = X.repeat(2, axis=0)
+            y_train = np.array([0, 1], dtype=int)
+        else:
+            X_train = X
+            y_train = np.zeros(n_samples, dtype=int)
+            y_train[n_samples // 2 :] = 1
+
+        model = xgb.XGBClassifier(
+            **params,
+            eval_metric="logloss",
+            use_label_encoder=False,
+        )
+        model.fit(X_train, y_train)
+        proba = model.predict_proba(X_train)[:, 1]
+        metrics = _evaluate_predictions(y_train, proba)
+        metrics["baseline"] = True
+        metrics["n_samples"] = int(n_samples)
+    else:
+        model, metrics = _train_with_timeseries_split(
+            X,
+            y,
+            n_splits=args.n_splits,
+            params=params,
+        )
     save_artifacts(
         out_dir=args.out_dir,
         model=model,

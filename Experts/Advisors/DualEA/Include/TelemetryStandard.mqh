@@ -1,11 +1,13 @@
 //+------------------------------------------------------------------+
-//| TelemetryStandard.mqh                                            |
-//| Unified telemetry schema and helpers for DualEA                 |
+//| TelemetryStandard.mqh - Efficient Telemetry for DualEA           |
 //+------------------------------------------------------------------+
+#ifndef __DUALEA_TELEMETRYSTANDARD_MQH__
+#define __DUALEA_TELEMETRYSTANDARD_MQH__
+
 #property copyright "DualEA"
 #property version   "1.00"
 
-// Ensure CTelemetry is known here
+// Use the full CTelemetry implementation
 #include "Telemetry.mqh"
 
 //+------------------------------------------------------------------+
@@ -116,6 +118,27 @@ public:
       string event_key = StringFormat("%s%s_params", TEL_GATE_PREFIX, gate_name);
       m_telemetry.LogEvent(symbol, timeframe, "gate_params", event_key, details);
    }
+
+   void LogGateSanitize(const string symbol,
+                        const int timeframe,
+                        const string gate_name,
+                        const double severity,
+                        const double sl_gap,
+                        const double tp_gap,
+                        const double volume)
+   {
+      if(!m_telemetry) return;
+
+      string event_key = "gate:sanitize";
+      string fields = StringFormat("\"gate\":%s,\"severity\":%.6f,\"sl_gap\":%.6f,\"tp_gap\":%.6f,\"volume\":%.2f",
+                                   m_telemetry.JsonQuote(gate_name),
+                                   severity,
+                                   sl_gap,
+                                   tp_gap,
+                                   volume);
+
+      m_telemetry.LogEventJson(symbol, timeframe, "gate_sanitize", event_key, fields);
+   }
    
    // Session events
    void LogSessionEvent(const string symbol, const int timeframe, const string session_action,
@@ -129,3 +152,5 @@ public:
       m_telemetry.LogEvent(symbol, timeframe, "session", event_key, details);
    }
 };
+
+#endif // __DUALEA_TELEMETRYSTANDARD_MQH__

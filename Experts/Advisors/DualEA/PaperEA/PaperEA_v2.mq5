@@ -1,6 +1,5 @@
 //+------------------------------------------------------------------+
-//| PaperEA_v2.mq5 - Enhanced Paper EA with 8-Stage Gates           |
-//| AUTOMATICALLY ADAPTS TO ANY CHART SYMBOL AND TIMEFRAME          |
+//| PaperEA_v2.mq5 - Efficient DualEA Main                           |
 //+------------------------------------------------------------------+
 #property copyright "DualEA Enhanced Paper System"
 #property version   "2.0"
@@ -10,7 +9,9 @@
 //| INCLUDES - COMPREHENSIVE MODULE INTEGRATION                     |
 //+------------------------------------------------------------------+
 // Core Interfaces & Data Structures
-#include "..\Include\IStrategy.mqh"
+#include "..\Include\GateManager.mqh"
+#include "..\Include\TelemetryStandard.mqh"
+
 #include "..\Include\ATRUtil.mqh"
 
 // Core Services
@@ -111,7 +112,7 @@ input int    TrailATRPeriod       = 14;      // 7:28:7 - ATR period for dynamic 
 input double TrailATRMultiplier   = 2.0;     // 1.0:4.0:0.5 - ATR multiplier for trail distance
 input bool   UsePositionManager   = true;
 input int    PMMaxOpenPositions   = 10;      // 3:20:1 - Max concurrent positions
-input bool   NoConstraintsMode    = false;
+input bool   NoConstraintsMode    = true;
 
 // ===================[ GATING/INSIGHTS ]===================
 input bool   UseInsightsGating    = true;
@@ -295,9 +296,9 @@ input bool   HeartbeatVerbose = true;
 
 // ===================[ ONNX RUNTIME PREDICTOR INPUTS ]===================
 input bool   UseOnnxPredictor          = true;
-input string OnnxModelPath             = "DualEA\\ML\\artifacts\\signal_model.onnx";
-input string OnnxConfigJsonPath        = "DualEA\\ML\\artifacts\\onnx_config.json";
-input string OnnxConfigIniPath         = "DualEA\\ML\\artifacts\\onnx_config.ini";
+input string OnnxModelPath             = "DualEA\\signal_model.onnx";
+input string OnnxConfigJsonPath        = "DualEA\\onnx_config.json";
+input string OnnxConfigIniPath         = "DualEA\\onnx_config.ini";
 input bool   OnnxPathsUseCommonDir     = true;
 
 // ===================[ LEGACY GATE PARAMETERS ]===================
@@ -491,6 +492,81 @@ double SafeDivision(const double numerator, const double denominator)
    return numerator / denominator;
 }
 
+int CsvCountTokens(const string csv)
+{
+   string tmp = csv;
+   StringTrimLeft(tmp);
+   StringTrimRight(tmp);
+   if(StringLen(tmp) == 0)
+      return 0;
+   string parts[];
+   int count = StringSplit(tmp, ',', parts);
+   int cleaned = 0;
+   for(int i = 0; i < count; i++)
+   {
+      string s = parts[i];
+      StringTrimLeft(s);
+      StringTrimRight(s);
+      if(StringLen(s) == 0)
+         continue;
+      cleaned++;
+   }
+   return cleaned;
+}
+
+bool CsvContainsToken(const string &haystack_csv, const string &token)
+{
+   string tmp = haystack_csv;
+   StringTrimLeft(tmp);
+   StringTrimRight(tmp);
+   if(StringLen(tmp) == 0)
+      return false;
+   string parts[];
+   int count = StringSplit(tmp, ',', parts);
+   for(int i = 0; i < count; i++)
+   {
+      string s = parts[i];
+      StringTrimLeft(s);
+      StringTrimRight(s);
+      if(s == token)
+         return true;
+   }
+   return false;
+}
+
+string CsvMergeUnique(const string &base_csv, const string &extra_csv)
+{
+   string base = base_csv;
+   StringTrimLeft(base);
+   StringTrimRight(base);
+   string extra = extra_csv;
+   StringTrimLeft(extra);
+   StringTrimRight(extra);
+
+   string result = base;
+   if(StringLen(extra) == 0)
+      return result;
+
+   string tokens[];
+   int count = StringSplit(extra, ',', tokens);
+   for(int i = 0; i < count; i++)
+   {
+      string s = tokens[i];
+      StringTrimLeft(s);
+      StringTrimRight(s);
+      if(StringLen(s) == 0)
+         continue;
+      if(StringLen(result) == 0)
+      {
+         result = s;
+         continue;
+      }
+      if(!CsvContainsToken(result, s))
+         result += "," + s;
+   }
+   return result;
+}
+
 void ShutdownModelPredictor()
 {
    if(g_model_predictor_ready)
@@ -635,6 +711,41 @@ bool BuildPredictorFeatureVector(const TradingSignal &signal,
    return true;
 }
 
+void GateSanitizeTelemetryReporter(const string gate_name, TradingSignal &signal)
+{
+   if(!TelemetryEnabled)
+      return;
+   if(CheckPointer(g_telemetry_base) == POINTER_INVALID)
+      return;
+
+   double base_price = MathMax(0.0001, MathAbs(signal.price));
+   double sl_gap = MathAbs(signal.price - signal.sl) / base_price;
+   double tp_gap = MathAbs(signal.tp - signal.price) / base_price;
+   double severity = (sl_gap + tp_gap) * 0.5;
+
+   if(CheckPointer(g_gate_learning) != POINTER_INVALID)
+      g_gate_learning.RecordSanitizationEvent(gate_name, signal.price, signal.sl, signal.tp, signal.volume);
+
+   if(CheckPointer(g_tel_standard) != POINTER_INVALID)
+   {
+      g_tel_standard.LogGateSanitize((signal.symbol == "" ? _Symbol : signal.symbol),
+                                     (signal.timeframe != 0 ? signal.timeframe : _Period),
+                                     gate_name,
+                                     severity,
+                                     sl_gap,
+                                     tp_gap,
+                                     signal.volume);
+      return;
+   }
+
+   string details = StringFormat("gate=%s symbol=%s strategy=%s price=%.5f sl=%.5f tp=%.5f volume=%.2f",
+                                 gate_name,
+                                 (signal.symbol == "" ? _Symbol : signal.symbol),
+                                 (signal.strategy == "" ? "unknown" : signal.strategy),
+                                 signal.price, signal.sl, signal.tp, signal.volume);
+   g_telemetry_base.LogEvent(_Symbol, _Period, "gate_sanitize", "sanitized", details);
+}
+
 double EvaluateModelProbability(const TradingSignal &signal,
                                 const string strategy_name,
                                 const CAdaptiveDecision *decision_ptr,
@@ -646,6 +757,11 @@ double EvaluateModelProbability(const TradingSignal &signal,
    if(ArraySize(g_mlp_feature_columns) == 0)
       return -1.0;
 
+   bool telemetry_ready = TelemetryEnabled && CheckPointer(g_telemetry_base) != POINTER_INVALID;
+   string phase = status;
+   if(StringLen(reason) > 0)
+      phase += ":" + reason;
+
    datetime now = TimeCurrent();
    if(!BuildPredictorFeatureVector(signal, strategy_name, decision_ptr, status, reason, now, g_mlp_feature_buffer))
    {
@@ -654,10 +770,21 @@ double EvaluateModelProbability(const TradingSignal &signal,
          LOG("WARNING: Unable to build ML predictor feature vector (metadata mismatch)");
          g_mlp_warned_features = true;
       }
+      if(telemetry_ready)
+      {
+         string details = StringFormat("phase=%s outcome=feature_build_failed strategy=%s", phase, strategy_name);
+         g_telemetry_base.LogEvent(_Symbol, _Period, "ml_eval", "failed", details);
+      }
       return -1.0;
    }
 
-   return g_model_predictor.Predict(g_mlp_feature_buffer, ArraySize(g_mlp_feature_buffer));
+   double probability = g_model_predictor.Predict(g_mlp_feature_buffer, ArraySize(g_mlp_feature_buffer));
+   if(telemetry_ready)
+   {
+      string details = StringFormat("phase=%s prob=%.4f strategy=%s", phase, probability, strategy_name);
+      g_telemetry_base.LogEvent(_Symbol, _Period, "ml_eval", "completed", details);
+   }
+   return probability;
 }
 
 bool InitModelPredictor()
@@ -667,9 +794,14 @@ bool InitModelPredictor()
    g_mlp_warned_unready = false;
    g_mlp_warned_features = false;
 
+   // Resolve paths for the DLL (absolute OS paths). Do not use these with FileIsExist/FileOpen.
    string model_path = ResolveDualEAPath(OnnxModelPath, OnnxPathsUseCommonDir);
    string json_path = ResolveDualEAPath(OnnxConfigJsonPath, OnnxPathsUseCommonDir);
    string ini_path = ResolveDualEAPath(OnnxConfigIniPath, OnnxPathsUseCommonDir);
+
+   LOG(StringFormat("ONNX Model Path: %s", model_path));
+   LOG(StringFormat("ONNX JSON Path: %s", json_path));
+   LOG(StringFormat("ONNX INI Path: %s", ini_path));
 
    if(StringLen(model_path) == 0 || StringLen(json_path) == 0 || StringLen(ini_path) == 0)
    {
@@ -677,6 +809,36 @@ bool InitModelPredictor()
       return false;
    }
 
+   int common_flag = OnnxPathsUseCommonDir ? FILE_COMMON : 0;
+
+   int h_model = FileOpen(OnnxModelPath, FILE_READ|FILE_BIN|common_flag);
+   if(h_model == INVALID_HANDLE)
+   {
+      LOG(StringFormat("ERROR: Model file not found in %s Files: %s (error=%d)", (OnnxPathsUseCommonDir ? "Common" : "Terminal"), OnnxModelPath, GetLastError()));
+      return false;
+   }
+   FileClose(h_model);
+
+   int h_ini = FileOpen(OnnxConfigIniPath, FILE_READ|FILE_TXT|common_flag);
+   if(h_ini == INVALID_HANDLE)
+   {
+      LOG(StringFormat("ERROR: Config INI file not found in %s Files: %s (error=%d)", (OnnxPathsUseCommonDir ? "Common" : "Terminal"), OnnxConfigIniPath, GetLastError()));
+      return false;
+   }
+   FileClose(h_ini);
+
+   int h_json = FileOpen(OnnxConfigJsonPath, FILE_READ|FILE_TXT|common_flag);
+   if(h_json == INVALID_HANDLE)
+   {
+      LOG(StringFormat("WARNING: Config JSON file not found in %s Files: %s (error=%d)", (OnnxPathsUseCommonDir ? "Common" : "Terminal"), OnnxConfigJsonPath, GetLastError()));
+   }
+   else
+   {
+      FileClose(h_json);
+   }
+
+   LOG(StringFormat("Initializing ONNX predictor with model: %s", model_path));
+   
    if(!g_model_predictor.Init(model_path, json_path, ini_path))
    {
       LOG(StringFormat("WARNING: ONNX predictor init failed - %s", g_model_predictor.LastError()));
@@ -765,6 +927,7 @@ int OnInit()
    // Initialize standard telemetry wrapper
    g_tel_standard = new CTelemetryStandard(g_telemetry_base);
    g_telemetry = g_tel_standard; // Maintain backward compatibility
+   SetGateSanitizeTelemetryCallback(GateSanitizeTelemetryReporter);
    // Unified System: sync config + event bus + monitor
    {
       CConfigManager *cfg = CConfigManager::GetInstance();
@@ -820,16 +983,6 @@ int OnInit()
       LOG("Failed to initialize strategy array!");
       return(INIT_FAILED);
    }
-   
-   // Initialize gate audit system with all expected strategies (legacy + registry)
-   string all_strategies =
-      "ADXStrategy,AcceleratorOscillatorStrategy,AlligatorStrategy,AwesomeOscillatorStrategy,BearsPowerStrategy,BullsPowerStrategy,"+
-      "CCIStrategy,DeMarkerStrategy,ForceIndexStrategy,FractalsStrategy,GatorStrategy,IchimokuStrategy,MACDStrategy,MomentumStrategy,OsMAStrategy,"+
-      "RSIStrategy,RVIStrategy,StochasticStrategy,TriXStrategy,UltimateOscillatorStrategy,WilliamsPercentRangeStrategy,ZigZagStrategy,MovingAverageStrategy,"+
-      "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,VWAPReversion,EMAPullback,OpeningRangeBreakout";
-   g_gate_audit.Initialize(all_strategies);
-   g_gate_audit.Configure(GateAuditMinSignals, GateAuditMinUptimeMin, GateAuditAlertCooldownMin);
-   g_gate_audit.SetEnabled(UseGateSystem);
    
    // Initialize strategy selector
    if(UseStrategySelector)
@@ -928,6 +1081,14 @@ int OnInit()
          {
             int interval = (HotReloadIntervalSec>0? HotReloadIntervalSec : 60);
             g_policy_bridge.Configure(PolicyFilePath, interval);
+            if(!g_policy_bridge.VerifyAccess(PolicyServerUrl))
+            {
+               LOG("WARNING: Policy HTTP endpoint not accessible yet. Follow the MT5 WebRequest instructions above to enable it.");
+            }
+            else if(ShouldLog(LOG_INFO))
+            {
+               LOG(StringFormat("Policy HTTP access verified for %s", PolicyServerUrl));
+            }
          }
       }
    }
@@ -967,6 +1128,36 @@ int OnInit()
    else
    {
       LOG("WARNING: Failed to initialize Strategy Signal Registry - using fallback signal generation");
+   }
+
+   // Initialize gate audit system with all expected strategies (registry + extra paper strategies)
+   string fallback_all_strategies =
+      "ADXStrategy,AcceleratorOscillatorStrategy,AlligatorStrategy,AwesomeOscillatorStrategy,BearsPowerStrategy,BullsPowerStrategy,"+
+      "CCIStrategy,DeMarkerStrategy,ForceIndexStrategy,FractalsStrategy,GatorStrategy,IchimokuStrategy,MACDStrategy,MomentumStrategy,OsMAStrategy,"+
+      "RSIStrategy,RVIStrategy,StochasticStrategy,TriXStrategy,UltimateOscillatorStrategy,WilliamsPercentRangeStrategy,ZigZagStrategy,MovingAverageStrategy,"+
+      "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,VWAPReversion,EMAPullback,OpeningRangeBreakout";
+
+   string registry_strategies = "";
+   int registry_count = 0;
+   if(CheckPointer(g_signal_registry) != POINTER_INVALID)
+   {
+      registry_strategies = g_signal_registry.GetRegisteredStrategies();
+      registry_count = g_signal_registry.GetCount();
+   }
+
+   string extra_paper_strategies = "SuperTrendADXKama,RSI2BBReversion,DonchianATRBreakout,MeanReversionBB,KeltnerMomentum,VWAPReversion,EMAPullback,OpeningRangeBreakout";
+   string all_strategies = CsvMergeUnique(registry_strategies, extra_paper_strategies);
+   if(CsvCountTokens(all_strategies) == 0)
+      all_strategies = fallback_all_strategies;
+
+   g_gate_audit.Initialize(all_strategies);
+   g_gate_audit.Configure(GateAuditMinSignals, GateAuditMinUptimeMin, GateAuditAlertCooldownMin);
+   g_gate_audit.SetEnabled(UseGateSystem);
+
+   if(ShouldLog(LOG_INFO))
+   {
+      LOG(StringFormat("✅ GateAudit expected strategies=%d (registry=%d, extras=%d)",
+                       CsvCountTokens(all_strategies), registry_count, CsvCountTokens(extra_paper_strategies)));
    }
    
    // Ensure selector has recent telemetry data loaded before first selection
@@ -1227,6 +1418,7 @@ void OnDeinit(const int reason)
 {
    LOG("=== PaperEA v2 Enhanced Deinitialization Starting ===");
    ShutdownModelPredictor();
+   SetGateSanitizeTelemetryCallback(NULL);
    CEventBus *bus = CEventBus::GetInstance();
    if(CheckPointer(bus) != POINTER_INVALID) bus.PublishSystemEvent("PaperEA_v2", "Deinitializing");
    
@@ -1478,6 +1670,16 @@ void OnDeinit(const int reason)
    
    LOG("=== PaperEA v2 Enhanced Deinitialization Complete ===");
    LOG(StringFormat("Reason: %s", GetUninitReasonText(reason)));
+
+   if(LogMiddleware != NULL)
+   {
+      delete LogMiddleware;
+      LogMiddleware = NULL;
+   }
+
+   CConfigManager::Cleanup();
+   CEventBus::Cleanup();
+   CSystemMonitor::Cleanup();
 }
 
 //+------------------------------------------------------------------+
@@ -2402,9 +2604,14 @@ void OnTick()
          double pre_prob = EvaluateModelProbability(signal, selected_strategy, NULL, "generated", "pre_gate");
          if(pre_prob >= 0.0)
          {
-            signal.confidence = pre_prob;
+            double blended = pre_prob;
+            // If the model is neutral (common when the model provides no information),
+            // fall back to deterministic heuristic confidence so live/tester behaviour matches.
+            if(MathAbs(pre_prob - 0.5) < 1e-6)
+               blended = HeuristicConfidence(signal);
+            signal.confidence = blended;
             if(ShouldLog(LOG_INFO))
-               LOG(StringFormat("MLPRED pre_gate signal=%s strategy=%s prob=%.3f", signal.id, selected_strategy, pre_prob));
+               LOG(StringFormat("MLPRED pre_gate signal=%s strategy=%s prob=%.3f conf=%.3f", signal.id, selected_strategy, pre_prob, signal.confidence));
          }
          else if(!g_mlp_warned_unready)
          {
