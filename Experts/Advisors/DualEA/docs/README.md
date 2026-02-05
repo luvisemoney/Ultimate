@@ -5,8 +5,8 @@
 
 **DualEA** is a production-ready, multi-strategy Expert Advisor ecosystem for MetaTrader 5 that combines:
 
-1. **PaperEA_v2** (2793 lines) - Advanced paper trading system with 8-stage gate filtering, 21 strategies, ML integration
-2. **LiveEA** (1702 lines) - Real trading implementation consuming insights and ML policies from PaperEA
+1. **PaperEA_v2** (2793 lines) - Executes real MT5 orders on demo accounts with 8-stage gate filtering, 23 signal generators, ML integration
+2. **LiveEA** (1702 lines) - Real trading implementation with insights/policy gating from PaperEA
 3. **ML Pipeline** - Python-based TensorFlow/Keras training with LSTM models and policy export
 4. **Knowledge Base** - Shared CSV/JSON data store in Common Files for cross-system communication
 
@@ -16,7 +16,7 @@ MQL5/
 ├── Experts/
 │   └── Advisors/
 │       └── DualEA/
-│           ├── PaperEA/                # Paper Trading System
+│           ├── PaperEA/                # PaperEA_v2 System (Demo Execution)
 │           │   ├── PaperEA_v2.mq5     # Enhanced Paper EA with 8-stage gates
 │           │   └── PaperEA_backtest.ini
 │           ├── LiveEA/                 # Live Trading System  
@@ -86,8 +86,8 @@ Terminal/Common/Files/DualEA/
 ├── knowledge_base.csv     # Trade execution records
 ├── insights.json          # Performance analytics per strategy/symbol/timeframe
 ├── policy.json           # ML-generated trading policy with confidence thresholds
-├── insights.reload       # Trigger file for insights rebuild (planned)
-└── policy.reload         # Trigger file for policy reload (PaperEA hot-reload implemented)
+├── insights.reload       # Trigger file for insights reload (LiveEA uses this to request rebuilds)
+└── policy.reload         # Trigger file for policy reload (PaperEA_v2 uses this; LiveEA requires restart)
 ```
 
 ## Current Implementation Status
@@ -96,8 +96,8 @@ Terminal/Common/Files/DualEA/
 
 **PaperEA v2 System (2793 lines)**
 - 8-stage gate system with unified configuration (ConfigManager, EventBus, SystemMonitor)
-- 21 active trading strategies with asset-class registry (FX, Indices, Metals, Crypto, Energy)
-- CPaperPosition class for paper trading with real-time PnL tracking and SL/TP management
+- 23 indicator-based signal generators (e.g., `ADXStrategy`, `RSIStrategy`, `MACDStrategy`) with asset-class registry
+- Real MT5 order execution on demo accounts via `CTradeManager::ExecuteOrder()`
 - Advanced optimization: AdaptiveSignalOptimizer, PolicyUpdater, PositionReviewer, GateLearningSystem
 - Comprehensive input parameters (180+ settings for fine-tuning)
 - Circuit breakers, news filtering, regime detection, session management
@@ -132,7 +132,7 @@ Terminal/Common/Files/DualEA/
 - Test suite: 8 test files for integration, gates, managers, system health
 
 ### 🔄 Implemented with Minor Gaps
-- **Policy hot-reload**: PaperEA active (CheckPolicyReload reads `Common\Files\DualEA\policy.reload` on timer/tick). LiveEA: not yet wired for hot-reload.
+- **Insights auto-reload**: LiveEA watches for `insights.reload` request and polls for `insights.ready` to auto-reload. PaperEA's `CheckInsightsReload()` exists but only deletes the file (rebuild logic commented out).
 - **LSTM sequence training**: Code exists but needs min sequence validation
 - **Multi-timeframe confirmation**: P5_MTFConfirmEnable parameter exists, needs gate implementation
 
@@ -189,24 +189,19 @@ See [UnifiedSystemGuide.md](UnifiedSystemGuide.md) for detailed integration docu
 - **Yahoo Finance Integration**: Market data enrichment for training
 - **Time Series Validation**: Proper temporal splits for backtesting
 
-### Strategy Library (21 Active Strategies)
+### Strategy Library (23 Signal Generators in PaperEA, 21 IStrategies in LiveEA)
 
-**Trend Following:**
+PaperEA_v2 uses **23 indicator-based signal generators** via `StrategySignalGenerators.mqh`:
+- ADX, RSI, MACD, Stochastic, CCI, Momentum, Williams %R, DeMarker, Force Index
+- Bears Power, Bulls Power, RVI, OsMA, TriX, Accelerator Oscillator, Awesome Oscillator
+- Alligator, Gator, Ichimoku, Fractals, ZigZag, Ultimate Oscillator, Moving Average
+
+LiveEA includes **21 IStrategy implementations** via `LiveEA_StrategyBridge.mqh` (available for external orchestration):
 - ADXStrategy, SuperTrendADXKamaStrategy, DonchianATRBreakoutStrategy, ForexTrendStrategy, AlligatorStrategy
-
-**Mean Reversion:**
 - BollAveragesStrategy, MeanReversionBBStrategy, RSI2BBReversionStrategy, VWAPReversionStrategy
-
-**Momentum:**
 - AwesomeOscillatorStrategy, AcceleratorOscillatorStrategy, BearsPowerStrategy, BullsPowerStrategy, KeltnerMomentumStrategy, AroonStrategy
-
-**Multi-Asset Specialized:**
-- GoldVolatilityStrategy (metals), IndicesEnergiesStrategy (equity indices), OpeningRangeBreakoutStrategy (indices/crypto)
-
-**Advanced:**
-- MultiIndicatorStrategy (fusion system), EMAPullbackStrategy (pullback entries)
-
-**Asset-Class Registry:** Strategies automatically selected based on symbol classification (FX Major/Minor, Crypto, Metal, Energy, Index)
+- GoldVolatilityStrategy, IndicesEnergiesStrategy, OpeningRangeBreakoutStrategy
+- MultiIndicatorStrategy, EMAPullbackStrategy, StochasticOscillatorStrategy
 
 ### Data Management
 - **Knowledge Base**: Centralized trade logging with CSV rotation
@@ -249,16 +244,16 @@ InsightsAutoReload, InsightsLiveFreshMinutes, InsightsStaleHours
 ## System Capabilities
 
 ### PaperEA_v2 Core Features
-- **CPaperPosition**: Paper trading with real-time PnL, SL/TP hit detection
+- **Real MT5 Execution**: Places real orders on demo accounts via `CTradeManager::ExecuteOrder()` (not simulation)
 - **CTradeManager**: Market/pending orders, trailing stops (fixed-points & ATR)
-- **21 Strategies**: Asset-class registry with automatic symbol classification
+- **23 Signal Generators**: Indicator-based registry via `StrategySignalGenerators.mqh`
 - **8-Stage Gates**: ConfigManager/EventBus/SystemMonitor unified architecture
 - **Optimization**: AdaptiveSignalOptimizer, PolicyUpdater, PositionReviewer, GateLearningSystem
 - **Data Export**: features.csv (CFeaturesKB), knowledge_base.csv (CKnowledgeBase), JSON logs (UnifiedTradeLogger)
 - Inputs (PaperEA):
   - Position and risk: `LotSize`, `MagicNumber`, `StopLossPips`, `TakeProfitPips`, `MaxOpenPositions` (0=unlimited)
-  - Trailing defaults (used if a strategy doesn’t set them): `TrailEnabled`, `TrailType=0(fixed)`, `TrailActivationPoints`, `TrailDistancePoints`, `TrailStepPoints`
-  - Mode toggles: `NoConstraintsMode` (bool, default false) — disables all gating and caps for maximum data collection (trading hours, selector gating, insights gating, exploration caps, and open-position limit)
+  - Trailing defaults (used if a strategy doesn't set them): `TrailEnabled`, `TrailType=0(fixed)`, `TrailActivationPoints`, `TrailDistancePoints`, `TrailStepPoints`
+  - Mode toggles: `NoConstraintsMode` (bool, default **true**) — bypasses many constraints for maximum data collection; critical safety checks (circuit breaker, memory) remain enforced
   - Logging: `KBDebugInit` (writes INIT line), `DebugTrailing` (reserved)
   
 - Modules:
@@ -349,13 +344,13 @@ Files produced:
   - Policy reload via `DualEA/policy.reload` checked in `CheckPolicyReload()`; telemetry flush after scans.
   - Timer-based scanning per Phase 6 design may be enabled as parity with LiveEA (see Phase 6) where implemented.
 - Gating and exploration caps:
-  - `NoConstraintsMode` (default false) can bypass all gates/caps for unrestricted exploration (for ML bootstrapping).
+  - `NoConstraintsMode` (default **true**) bypasses many gates/caps for unrestricted exploration; critical safety checks (circuit breaker, memory guard, news filter) remain enforced.
   - Exploration caps persist in Common Files: `DualEA/explore_counts_day.csv`, `DualEA/explore_counts.csv`.
   - No‑slice‑only bypass: exploration only bypasses when a slice truly doesn’t exist; existing under‑threshold slices remain gated.
   - Reset by deleting the above CSVs in `Common\Files\DualEA`.
 - Policy integration and fallback:
   - Inputs: `UsePolicyGating`, `DefaultPolicyFallback`, `FallbackWhenNoPolicy`, `FallbackDemoOnly`.
-  - When policy is loaded and slice exists, `ApplyPolicyScaling()` adjusts SL/TP/trailing.
+  - When policy is loaded and slice exists, `ApplyPolicyGating()` checks confidence (per-slice scaling currently minimal in PaperEA; LiveEA has full scaling).
   - On fallback (no policy or slice missing), trades use neutral scaling, do not consume exploration quotas, and bypass caps (demo‑only by default).
 - Persistence paths (MT5 Common Files):
   - `knowledge_base.csv`, `knowledge_base_events.csv`, `features.csv`, `insights.json`, exploration CSVs under `Common\Files\DualEA`.

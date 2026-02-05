@@ -10,7 +10,7 @@ A practical, end-to-end runbook for bringing up DualEA on PaperEA, validating, p
 - DualEA source tree present (this repo)
 
 ## 1) PaperEA Bring-up
-- Attach `../PaperEA/PaperEA.mq5` to a demo chart.
+- Attach `../PaperEA/PaperEA_v2.mq5` to a demo chart.
 - Configure inputs (suggested initial values):
   - `NoConstraintsMode = true` (max data collection)
   - `UsePolicyGating = false` (start baseline without ML)
@@ -101,7 +101,7 @@ A practical, end-to-end runbook for bringing up DualEA on PaperEA, validating, p
   - `DualEA\telemetry\*.jsonl`
   - `DualEA\policy.reload`, `DualEA\insights.reload`
 - Source (relative):
-  - `../PaperEA/PaperEA.mq5`, `../LiveEA/LiveEA.mq5`
+  - `../PaperEA/PaperEA_v2.mq5`, `../LiveEA/LiveEA.mq5`
   - `../Include/` (Insights Builder, Telemetry, KB)
   - `../ML/README.md`, `../ML/policy_builder.py`
   - Docs: `./Operations.md`, `./PaperEA_README.md`, `./LiveEA_README.md`, `./PaperEA_IMPLEMENTATION_PLAN.md`, `./LiveEA_IMPLEMENTATION_PLAN.md`

@@ -1,10 +1,14 @@
 # Policy JSON Schema (DualEA)
 
-This document defines the expected structure of `policy.json` consumed by `PaperEA`.
+This document defines the expected structure of `policy.json` consumed by both `PaperEA_v2` and `LiveEA`.
+
+> **Implementation Note:** LiveEA has full per-slice policy parsing with scaling support. PaperEA_v2 has minimal policy parsing (checks `min_confidence` string presence only).
 
 ## Location
 - MT5 Common Files: typically `C:\Users\<you>\AppData\Roaming\MetaQuotes\Terminal\Common\Files\DualEA\policy.json`
-- Reload signal: touching `Common\Files\DualEA\policy.reload` prompts the EA to reload the policy on the next timer tick.
+- Reload signal: `Common\Files\DualEA\policy.reload`
+  - **PaperEA_v2**: Hot-reload supported via timer polling + optional HTTP
+  - **LiveEA**: Policy loaded on init only; restart required for updates
 
 ## Top-level Fields
 - `min_confidence` (number): gating threshold; trades require `p_win >= min_confidence` unless a fallback path is taken.

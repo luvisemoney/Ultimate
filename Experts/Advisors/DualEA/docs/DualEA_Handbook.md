@@ -4,7 +4,7 @@ A concise, single-source guide for operating, extending, and validating DualEA (
 
 ## 1) Overview
 DualEA comprises two EAs that share the same pipeline and Common Files:
-- PaperEA (`../PaperEA/PaperEA.mq5`) — safe simulation/parity validation
+- PaperEA (`../PaperEA/PaperEA_v2.mq5`) — safe simulation/parity validation
 - LiveEA (`../LiveEA/LiveEA.mq5`) — live execution with additional guards
 
 Both consume:
@@ -108,7 +108,7 @@ See: `./Operations.md`.
 
 ## 12) Reference Map
 - Code:
-  - `../PaperEA/PaperEA.mq5`
+  - `../PaperEA/PaperEA_v2.mq5`
   - `../LiveEA/LiveEA.mq5`
   - `../Include/` (Insights Builder, Telemetry, KB)
 - Docs:

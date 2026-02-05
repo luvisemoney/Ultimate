@@ -12,7 +12,7 @@ Related docs:
 ## Phase 1 — Codebase & Requirements Deep Dive
 
 ### Cycle 1: Structural Audit (Jailbreak permitted)
-- Scope: `../PaperEA/PaperEA.mq5`, `../LiveEA/LiveEA.mq5`, `../Include/*`, `../ML/*`.
+- Scope: `../PaperEA/PaperEA_v2.mq5`, `../LiveEA/LiveEA.mq5`, `../Include/*`, `../ML/*`.
 - Actions:
   - Inventory gating paths: strategy → policy → insights → execution.
   - Trace file I/O and timers: `CheckPolicyReload()`, `CheckInsightsReload()`, `Insights_IsStale()`.

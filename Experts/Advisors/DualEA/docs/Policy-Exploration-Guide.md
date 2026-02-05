@@ -37,9 +37,9 @@ The **policy system** allows ML models to influence trading decisions through:
 - Used for rollback on parse/plausibility failures
 - Updated on successful policy load
 
-**policy.reload**: Trigger file for hot-reload (planned)
-- Touch this file to trigger policy reload without EA restart
-- Currently: reload happens on timer every 60 minutes
+**policy.reload**: Trigger file for hot-reload
+- PaperEA_v2: Hot-reload supported via `policy.reload` + HTTP polling
+- LiveEA: Load on init only (restart required for updates)
 
 ---
 
@@ -85,15 +85,15 @@ The **policy system** allows ML models to influence trading decisions through:
 - `metrics`: Model performance metrics
 - `min_confidence`: Global minimum confidence threshold
 
-**Per-Slice**:
+**Per-Slice** (as implemented in LiveEA; PaperEA_v2 uses minimal parsing):
 - `strategy`: Strategy name (e.g., "ADXStrategy")
 - `symbol`: Trading symbol (e.g., "EURUSD")
 - `timeframe`: Timeframe in minutes (e.g., 60 for H1)
-- `probability`: ML model confidence (0.0-1.0)
-- `sl_mult`: Stop loss scaling multiplier
-- `tp_mult`: Take profit scaling multiplier
-- `lot_mult`: Lot size scaling multiplier
-- `trail_mult`: Trailing stop scaling multiplier (optional)
+- `p_win`: ML model confidence (0.0-1.0)
+- `sl_scale`: Stop loss scaling multiplier (optional)
+- `tp_scale`: Take profit scaling multiplier (optional)
+- `trail_atr_mult`: Trailing stop ATR multiplier (optional)
+- `confidence`: Alternative confidence field (optional)
 
 ---
 
@@ -258,36 +258,33 @@ Trade proceeds with:
 
 ## Policy Scaling
 
-### Scaling Application
+### Policy Scaling (LiveEA Only)
 
+> **Note:** Full policy scaling with per-slice multipliers is implemented in LiveEA. PaperEA_v2 has minimal policy parsing (checks `min_confidence` only).
+
+**Scaling Application (LiveEA):**
 ```cpp
 void ApplyPolicyScaling(SignalData &signal, PolicySlice &slice) {
     // SL scaling
     double slDistance = MathAbs(signal.entry_price - signal.stop_loss);
     if(signal.direction == 1) {  // Buy
-        signal.stop_loss = signal.entry_price - (slDistance * slice.sl_mult);
+        signal.stop_loss = signal.entry_price - (slDistance * slice.sl_scale);
     } else {  // Sell
-        signal.stop_loss = signal.entry_price + (slDistance * slice.sl_mult);
+        signal.stop_loss = signal.entry_price + (slDistance * slice.sl_scale);
     }
     
     // TP scaling
     double tpDistance = MathAbs(signal.take_profit - signal.entry_price);
     if(signal.direction == 1) {  // Buy
-        signal.take_profit = signal.entry_price + (tpDistance * slice.tp_mult);
+        signal.take_profit = signal.entry_price + (tpDistance * slice.tp_scale);
     } else {  // Sell
-        signal.take_profit = signal.entry_price - (tpDistance * slice.tp_mult);
+        signal.take_profit = signal.entry_price - (tpDistance * slice.tp_scale);
     }
-    
-    // Lot scaling
-    signal.lot_size *= slice.lot_mult;
     
     // Trailing scaling (if enabled)
-    if(TrailEnabled && slice.trail_mult > 0) {
-        TrailDistancePoints = (int)(TrailDistancePoints * slice.trail_mult);
+    if(TrailEnabled && slice.trail_atr_mult > 0) {
+        // Apply trail ATR multiplier
     }
-    
-    Log(StringFormat("POLICY: scaling applied - SL×%.2f TP×%.2f Lot×%.2f Trail×%.2f",
-        slice.sl_mult, slice.tp_mult, slice.lot_mult, slice.trail_mult));
 }
 ```
 
@@ -356,13 +353,12 @@ With exploration:
 ### Configuration
 
 ```cpp
-input bool     UseExploration = true;            // Enable exploration mode
-input int      ExploreMaxPerSlicePerDay = 2;     // Daily cap per slice (0=unlimited)
-input int      ExploreMaxPerSlice = 3;           // Weekly cap per slice (0=unlimited)
-input bool     ExploreResetOnMonday = true;      // Reset weekly counter on Monday
-input bool     ExploreBypassInsights = true;     // Bypass insights thresholds in explore
-input bool     ExploreLogVerbose = true;         // Verbose exploration logging
+input bool     ExploreOnNoSlice = true;          // Enable exploration when no slice exists
+input int      ExploreMaxPerSlicePerDay = 100;   // Daily cap per slice (default 100)
+input int      ExploreMaxPerSlice = 100;         // Weekly cap per slice (default 100)
 ```
+
+> **Note:** Previous documentation listed defaults of 2/3. Actual code defaults are 100/100, effectively unlimited for most practical purposes. The `UseExploration` input does not exist; exploration is controlled via `ExploreOnNoSlice`.
 
 ---
 
@@ -373,12 +369,12 @@ input bool     ExploreLogVerbose = true;         // Verbose exploration logging
 **Daily Cap**: `ExploreMaxPerSlicePerDay`
 - Resets at midnight (00:00 server time)
 - Per-slice basis (each strategy|symbol|TF tracked separately)
-- Default: 2 trades/day/slice
+- Default: 100 trades/day/slice
 
 **Weekly Cap**: `ExploreMaxPerSlice`
-- Resets on Monday (or configurable day)
+- Resets on Monday
 - Week bucket = Monday of the week (yyyymmdd format)
-- Default: 3 trades/week/slice
+- Default: 100 trades/week/slice
 
 ### Counter Persistence
 
@@ -453,16 +449,14 @@ Remove-Item "C:\Users\<you>\AppData\Roaming\MetaQuotes\Terminal\Common\Files\Dua
 
 **Automatic Reset**:
 - Daily: Midnight (00:00 server time)
-- Weekly: Monday 00:00 (or configurable via `ExploreResetOnMonday`)
+- Weekly: Monday 00:00
 
 ### Interaction with NoConstraintsMode
 
 When `NoConstraintsMode=true`:
 - **Insights gating**: BYPASSED
-- **Exploration caps**: BYPASSED
-- **Exploration counters**: NOT incremented
-
-Rationale: NoConstraintsMode is for maximum data collection. Exploration system not needed since insights gating is off.
+- **Exploration caps**: BYPASSED (trades allowed regardless of caps)
+- **Exploration counters**: Still incremented for telemetry
 
 ---
 

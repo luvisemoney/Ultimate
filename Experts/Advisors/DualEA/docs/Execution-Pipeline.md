@@ -9,21 +9,19 @@
 ```
 OnTick/OnTimer
     ↓
-[1. Signal Generation] ← Strategy.CheckSignal()
-    ↓
-[2. Early Validation] ← Market hours, news, spread, margin
+[1. Early Safety & Filters] ← circuit breaker, memory guard, news filter (PaperEA); risk/spread/session/news/etc (LiveEA)
     ↓ PASS
-[3. 8-Stage Gates] ← Progressive filtering
-    ↓ PASS
-[4. Strategy Selection] ← Scoring, insights gating, exploration
+[2. Strategy Selection] ← selector scoring (PaperEA) or external orchestration (LiveEA)
     ↓ SELECTED
-[5. Policy Application] ← ML confidence, SL/TP/lot scaling
+[3. Signal Generation] ← PaperEA: indicator signal generator registry; LiveEA: strategy bridge is available but not called from OnTick
+    ↓ SIGNAL
+[4. 8-Stage Gates] ← GateManager (PaperEA) / LiveEA early + risk4 gates
     ↓ PASS
-[6. Risk Management] ← Position sizing, correlation, circuit breakers
-    ↓ APPROVED
-[7. Trade Execution] ← TradeManager.Execute()
+[5. Policy & Insights Gating] ← LiveEA: per-slice policy + insights gating + exploration; PaperEA: minimal policy load + min_conf gate
+    ↓ PASS
+[6. Trade Execution] ← TradeManager.ExecuteOrder() (both EAs)
     ↓ SUCCESS
-[8. Post-Execution] ← KB logging, features export, telemetry, learning
+[7. Post-Execution] ← KB logging, features export, telemetry, learning
 ```
 
 ---
@@ -32,19 +30,16 @@ OnTick/OnTimer
 
 **Entry Points:**
 - `OnTick()`: Real-time tick processing
-- `OnTimer()`: Periodic scanning (Phase 6 - planned)
+- `OnTimer()`: Used today for maintenance and reload polling (PaperEA); LiveEA uses a timer for insights auto-reload polling
 
-**Asset-Class Filtering:**
-```cpp
-AssetClass symbolClass = AssetRegistry::ClassifySymbol(symbol);
+**PaperEA_v2 Signal Generation (actual):**
+- Strategy selection chooses from a **23-strategy list** (e.g., `ADXStrategy`, `RSIStrategy`, `MACDStrategy`, `IchimokuStrategy`, etc.).
+- Signal generation is executed through `Include/StrategySignalGenerators.mqh` via `GenerateSignalFromStrategy()`.
+- Output is a `TradingSignal` (from `Include/GateManager.mqh`) with `price`, `sl`, `tp`, `volume`, and `confidence` seeded.
 
-for(each strategy) {
-    if(!strategy.IsApplicableTo(symbolClass)) continue;
-    
-    int signal = strategy.CheckSignal(symbol, timeframe);
-    if(signal != 0) ProcessSignal(strategy, signal);
-}
-```
+**LiveEA Signal Generation (actual):**
+- `LiveEA.mq5` provides the gating and execution pipeline but **does not call the strategy bridge from `OnTick()`**.
+- Strategy generation exists as `LiveEA_StrategyBridge.mqh` (21 default `IStrategy` implementations) and can be used by an external orchestrator or future wiring.
 
 **Signal Structure:**
 - `strategy_name`, `direction` (1=Buy, -1=Sell)
@@ -59,18 +54,22 @@ for(each strategy) {
 Quick rejection before expensive gate processing.
 
 **Checks:**
-1. **Market Hours**: Within `SessionStartTime` / `SessionEndTime`
-2. **News Blackout**: Check news_calendar.csv for high-impact events
-3. **Spread**: Must be ≤ `G7_MaxSpreadPips`
-4. **Margin**: Margin level ≥ `LiveMinMarginLevel`
+1. **Circuit breakers / risk limits**
+2. **News blackout** (Common Files CSV `DualEA\news_blackouts.csv`)
+3. **Session/trading hours caps** (where enabled)
+4. **Spread and margin checks** (LiveEA)
 
-**NoConstraintsMode**: Logs shadow decisions but doesn't block.
+**NoConstraintsMode**:
+- PaperEA default is `true` and bypasses many constraints, but **circuit breaker + memory guard remain enforced**.
+- LiveEA default is `false`; when `true`, many gates become **shadow/diagnostic only** (it logs but does not block on early gates).
 
 ---
 
 ## Stage 3: 8-Stage Gate Processing
 
 Progressive filtering through configurable gates.
+
+**Important reality check:** In `Include/GateManager.mqh`, several gates are currently implemented as simplified/deterministic checks (for repeatable Strategy Tester runs), not a full production-grade market simulation.
 
 ### Gate 1: Signal Rinse
 - **Purpose**: Basic validation
@@ -110,14 +109,14 @@ Progressive filtering through configurable gates.
 
 ## Stage 4: Strategy Selection
 
-### StrategySelector Scoring
+### StrategySelector Scoring (PaperEA)
 
 ```cpp
 score = (winRate × W1) + (normRMultiple × W2) + (normSharpe × W3) + (normTrades × W4)
 if(SelectorUseRecency) score ×= recencyDecay^daysSinceLastTrade
 ```
 
-**Weights**: `SelectorWinRateWeight`, `SelectorRMultipleWeight`, `SelectorSharpeWeight`, `SelectorTradeCountWeight`
+**Weights (actual PaperEA inputs):** `SelW_PF`, `SelW_Exp`, `SelW_WR`, `SelW_DD` with optional recency overlay.
 
 ### Insights Gating
 
@@ -130,9 +129,9 @@ Load insights.json slice for `strategy|symbol|timeframe`:
 
 **Triggered when**: No insights slice exists
 
-**Caps**:
-- Daily: `ExploreMaxPerSlicePerDay` (default 2)
-- Weekly: `ExploreMaxPerSlice` (default 3)
+**Caps (current defaults in code):**
+- Daily: `ExploreMaxPerSlicePerDay` (default 100)
+- Weekly: `ExploreMaxPerSlice` (default 100)
 
 **Counters**: Persist in `explore_counts.csv` and `explore_counts_day.csv`
 
@@ -144,9 +143,19 @@ Load insights.json slice for `strategy|symbol|timeframe`:
 
 ### Policy Loading
 
-Load `policy.json` from Common Files:
-- Contains slices with `strategy|symbol|timeframe` → probability, scaling multipliers
-- `min_confidence` threshold for gating
+**LiveEA (actual):**
+- Loads `DualEA\policy.json` from **Common Files**.
+- Parses per-slice fields including `p_win`, and optional scaling keys `sl_scale`, `tp_scale`, `trail_scale`.
+- Applies a slice lookup order:
+  - Exact `strategy+symbol+timeframe`
+  - Aggregate `strategy+symbol` with `timeframe=-1`
+  - Aggregate `strategy` with `symbol="*"` and `timeframe=-1`
+
+**PaperEA_v2 (actual):**
+- Loads `DualEA\policy.json` from Common Files and treats the policy as “loaded” if it can find the string `min_confidence`.
+- `g_policy_min_conf` defaults to `0.5`.
+- Per-slice parsing/scaling is **not currently wired** in PaperEA’s `Policy_Load()`.
+- HTTP polling exists (see `PolicyServerUrl`, `PolicyHttpPollPercent`) but still only checks for `min_confidence`.
 
 ### Policy Gating Logic
 
@@ -172,10 +181,12 @@ else:
 
 ### Policy Scaling
 
-- `SL = entry ± (slDistance × slice.sl_mult)`
-- `TP = entry ± (tpDistance × slice.tp_mult)`
-- `Lot ×= slice.lot_mult`
-- `TrailDistance ×= slice.trail_mult` (if trailing enabled)
+**LiveEA (actual):**
+- Adjusts SL/TP distance from entry using `sl_scale` / `tp_scale`.
+- Adjusts trailing distance using `trail_scale`.
+
+**PaperEA_v2 (current):**
+- Policy gating is applied as a **minimum confidence check** (and the scaling path is currently neutral/placeholder in `ApplyPolicyGating()`).
 
 ---
 
@@ -212,12 +223,9 @@ adjustedLots = max(adjustedLots, max(lots × PM_CorrMinMult, PM_CorrMinLots))
 
 ### TradeManager.Execute()
 
-**PaperEA**: Creates `CPaperPosition` for simulated trading
-- Real-time PnL tracking based on current prices
-- SL/TP hit detection via tick monitoring
-- Logs to Knowledge Base as if real
+**PaperEA_v2 (actual):** Places **real MT5 orders on demo accounts** via `CTradeManager::ExecuteOrder()`.
 
-**LiveEA**: Places real orders via MT5 `OrderSend()`
+**LiveEA (actual):** Places **real MT5 orders** via `CTradeManager::ExecuteOrder()`.
 - Market orders: Immediate execution
 - Pending orders: BuyStop, SellStop, BuyLimit, SellLimit
 - SL/TP normalization to broker tick size
@@ -250,7 +258,7 @@ timestamp,strategy,retcode,deal,order
 timestamp,symbol,timeframe,strategy,direction,confidence,...,indicator_1,indicator_2,...
 ```
 - 50+ features per trade
-- Automatic 100MB rotation with compression
+- Automatic ~100MB rotation (rename to `*.bak`); no compression is performed in MQL5
 
 ### Telemetry & Logging
 
@@ -296,29 +304,12 @@ timestamp,symbol,timeframe,strategy,direction,confidence,...,indicator_1,indicat
 
 ---
 
-## Paper Trading Flow (PaperEA)
-
-**CPaperPosition Class**:
-- Simulates trade execution without real broker orders
-- Real-time PnL calculation: `(currentPrice - entryPrice) × direction × lots × tickValue`
-- SL/TP hit detection: Checks every tick if price crosses SL or TP levels
-- Position lifecycle: OPEN → RUNNING → CLOSED
-- Logs to KB as if real trades for ML training data consistency
-
-**Benefits**:
-- Zero risk data collection
-- Identical pipeline to LiveEA (except execution)
-- Full strategy testing with realistic constraints
-
----
-
 ## Live Trading Flow (LiveEA)
 
-**Differences from PaperEA**:
-1. **Stricter gating**: Higher insights thresholds, tighter risk limits
-2. **PositionManager**: Correlation-adjusted sizing, dynamic risk caps
-3. **Real execution**: Actual broker orders with retcode handling
-4. **Policy gating**: ML confidence required (vs optional in Paper)
+**Differences from PaperEA_v2 (as wired today):**
+1. **Insights auto-reload loop**: LiveEA requests rebuild by creating `DualEA\insights.reload` and waits for `DualEA\insights.ready`.
+2. **Per-slice policy scaling**: LiveEA parses per-slice policy entries and applies SL/TP/trailing scaling.
+3. **Risk gates**: LiveEA includes spread/session/margin/consecutive-loss gating in the EA itself.
 
 **Safety Features**:
 - Shadow mode possible (log decisions, don't execute)

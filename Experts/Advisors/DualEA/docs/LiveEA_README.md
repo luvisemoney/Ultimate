@@ -1,13 +1,12 @@
 # LiveEA - DualEA Live Trading Expert Advisor
 
 ## Overview
-LiveEA is the live-trading counterpart of DualEA, consuming the same strategy signals and ML policy gating used by `../PaperEA/PaperEA.mq5`, with added live-safety guards. It executes real orders when the ML filter and risk checks permit.
+LiveEA is the live-trading counterpart of DualEA, consuming insights and ML policy gating from `../PaperEA/PaperEA_v2.mq5`, with added live-safety guards. It executes real orders when the ML filter and risk checks permit.
 
 Highlights:
-- Always-on ML gating via `Common\Files\DualEA\policy.json`
-- Insights auto-build on timer and manual reload via `DualEA\insights.reload`
-- Policy hot-reload via `DualEA\policy.reload`
-- Telemetry stream to `Common\Files\DualEA\telemetry/*.jsonl`
+- ML gating via `Common\Files\DualEA\policy.json` (loaded on init; restart required for updates)
+- Insights auto-reload via `DualEA\insights.reload` request + `insights.ready` polling
+- Telemetry stream to `Common\Files\DualEA\telemetry\live_*.jsonl`
 - Optional PositionManager integration behind a flag (future work)
 
 ## Architecture
@@ -38,9 +37,9 @@ graph TD
 
 ## File Map (relative)
 - `../LiveEA/LiveEA.mq5` — main EA
-- `../PaperEA/PaperEA.mq5` — paper EA (parity reference)
-- `../Include/` — shared utilities (InsightsBuilder, Telemetry, KnowledgeBase)
-- `../ML/` — Python scaffolding (README, `policy_builder.py`)
+- `../PaperEA/PaperEA_v2.mq5` — PaperEA (data collection reference)
+- `../Include/` — shared utilities (InsightsLoader, Telemetry, KnowledgeBase)
+- `../ML/` — Python scaffolding (`train.py`, `policy_export.py`)
 
 ## Common Files I/O
 - `DualEA/policy.json` — gating probabilities and optional SL/TP/Trail scales
@@ -49,10 +48,10 @@ graph TD
 - `DualEA/telemetry/*.jsonl` — runtime telemetry
 - `DualEA/policy.reload`, `DualEA/insights.reload` — control flags
 
-## Key Behaviors
-- `UsePolicyGating` governs gating and scaling; filter is designed to be always-on with safe fallbacks
-- `OnTimer()` calls `CheckPolicyReload()` and `CheckInsightsReload()`
-- Auto-rebuild of insights when stale via `Insights_IsStale()` + `Insights_RebuildAndReload()`
+## Key Behaviours
+- `UsePolicyGating` governs gating and scaling; loads `policy.json` on `OnInit()` (restart required for policy changes)
+- `OnTimer()` calls `CheckInsightsReload()` and `CheckInsightsReady()` for insights auto-reload
+- Insights rebuild is requested via `InsightsAutoReload` + `Insights_IsStale()` but performed by external script (`Scripts/InsightsRebuild.mq5`)
 - Neutral fallback when slices are missing if enabled by inputs
 
 ## Telemetry (Phase 5)
@@ -70,23 +69,24 @@ Existing Phase 5 keys used elsewhere:
 ## Quick Start
 1. Compile `LiveEA.mq5` in MetaEditor.
 2. Attach to a live/demo chart with file operations allowed.
-3. Ensure `DualEA/policy.json` exists in Common Files.
+3. Ensure `DualEA/policy.json` exists in Common Files (loaded on init; restart to update).
 4. Monitor the Experts tab and `DualEA/telemetry` for gating/scaling decisions and order flow.
 
 ## ML Integration
-- Trainer stub at `../ML/policy_builder.py`
+- Trainer: `../ML/train.py` and `../ML/policy_export.py`
 - Reads `DualEA/features.csv` and `DualEA/knowledge_base.csv`
-- Writes `DualEA/policy.json` with `min_confidence` and slice entries per strategy/symbol/timeframe
+- Writes `DualEA/policy.json` with `min_confidence` and slice entries per strategy/symbol/timeframe (LiveEA uses full per-slice policy gating with scaling)
 
 ## Position Manager (Planned)
 - See `../Include/PositionManager.mqh`. Integrate behind a `UsePositionManager` input to control scaling, exits, correlation, and bracket logic.
 
 ## Maintenance
-- Use `Scripts/DualEA/ValidateInsights.mq5` to verify `insights.json` freshness and coverage
-- Drop `DualEA/policy.reload` or `DualEA/insights.reload` to refresh on-demand
+- Use `Scripts/ValidateInsights.mq5` to verify `insights.json` freshness and coverage
+- Run `Scripts/InsightsRebuild.mq5` to rebuild insights; LiveEA will auto-reload when `insights.ready` appears
+- Policy changes require EA restart (no hot-reload in LiveEA)
 
 ## See Also
-- `../PaperEA/PaperEA.mq5`
+- `../PaperEA/PaperEA_v2.mq5`
 - `./PaperEA_README.md`
 - `./CORE_IMPLEMENTATION_PLAN.md`
 - `../ML/README.md`

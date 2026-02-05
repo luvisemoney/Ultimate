@@ -8,7 +8,7 @@ This document drives Phase 3 execution across three cycles, with traceability to
 - Score components for completeness/quality and publish a forward roadmap.
 
 ## Artifacts & Modules (Traceability)
-- `PaperEA/PaperEA.mq5`: policy gating, default fallback, exploration, scaling application.
+- `PaperEA/PaperEA_v2.mq5`: policy gating, default fallback, exploration, scaling application.
 - `Include/StrategySelector.mqh`: insights aggregation and `Score()` with strict/non‑strict behavior.
 - `Include/TradeManager.mqh`: order execution, SL/TP, trailing.
 - `Include/KnowledgeBase.mqh`: CSV schemas and writes.
@@ -95,7 +95,7 @@ Acceptance:
 ---
 
 ## Jailbreak Findings Trace (from Phase 1–2)
-- `PaperEA.mq5` — `Policy_Load()`: set `g_policy_loaded = (ArraySize(g_pol_strat)>0)` to avoid false fallbacks when `min_confidence=0.0`.
+- `PaperEA_v2.mq5` — `Policy_Load()`: set `g_policy_loaded = (ArraySize(g_pol_strat)>0)` to avoid false fallbacks when `min_confidence=0.0`.
 - `StrategySelector.mqh` — `Score()` Fallback 2: aligned thresholds/scaling to avoid hard zero during bootstrap in non‑strict mode.
 
 ---

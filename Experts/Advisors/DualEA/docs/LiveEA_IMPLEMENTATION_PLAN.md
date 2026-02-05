@@ -2,7 +2,7 @@
 
 ## 1. Objectives
 - Execute live trades safely using DualEA signals + ML gating
-- Maintain behavior parity with `../PaperEA/PaperEA.mq5` (where applicable)
+- Maintain behavior parity with `../PaperEA/PaperEA_v2.mq5` (where applicable)
 - Provide operational controls for policy/insights reload and robust telemetry
 
 ## 2. Architecture

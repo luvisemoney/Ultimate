@@ -58,8 +58,8 @@ Hot-reload suggestion:
 
 **DualEA** is a production-ready Expert Advisor ecosystem for MetaTrader 5:
 
-- **PaperEA_v2** (2793 lines): Paper trading with 8-stage gates, 21 strategies, ML integration
-- **LiveEA** (1702 lines): Real trading with insights/policy gating and advanced risk management  
+- **PaperEA_v2**: Executes real MT5 orders on a demo account for data collection, gating validation, and ML/ONNX integration.
+- **LiveEA**: Executes real MT5 orders with a risk/insights/policy gating scaffold and an insights auto-reload watcher.
 - **ML Pipeline**: TensorFlow/Keras training with policy export
 - **Knowledge Base**: Shared CSV/JSON data in Common Files
 
@@ -68,12 +68,12 @@ Hot-reload suggestion:
 ```mermaid
 graph TB
     subgraph MT5["MetaTrader 5 Terminal"]
-        subgraph PaperEA["PaperEA_v2 (Paper Trading)"]
+        subgraph PaperEA["PaperEA_v2 (Demo Execution)"]
             P_TICK[OnTick/OnTimer]
-            P_STRAT[21 Strategies]
+            P_STRAT[23 Signal Generators]
             P_GATES[8-Stage Gates]
             P_POLICY[Policy Engine]
-            P_EXEC[Paper Execution]
+            P_EXEC[Real MT5 Execution]
             
             P_TICK --> P_STRAT
             P_STRAT --> P_GATES
@@ -83,8 +83,8 @@ graph TB
         
         subgraph LiveEA["LiveEA (Real Trading)"]
             L_TICK[OnTick/OnTimer]
-            L_STRAT[21 Strategies]
-            L_GATES[8-Stage Gates]
+            L_STRAT[Strategy Bridge Available]
+            L_GATES[Early + Risk4 Gates]
             L_POLICY[Policy Engine]
             L_RISK[Risk Manager]
             L_EXEC[Real Execution]
@@ -342,12 +342,12 @@ run_train_and_export.bat
 
 ## Implementation Status
 
-### ✅ Production Ready
+### Production Ready
 
 **PaperEA_v2**
 - 8-stage unified gate system (ConfigManager, EventBus, SystemMonitor)
-- 21 strategies with asset-class registry  
-- Paper positions with real-time PnL tracking
+- 23 strategies with asset-class registry  
+- Real MT5 orders on demo for data collection and ML/ONNX integration
 - Advanced optimizers: AdaptiveSignalOptimizer, PolicyUpdater, PositionReviewer, GateLearningSystem
 - Knowledge Base with 100MB rotation, UnifiedTradeLogger with daily JSON logs
 - 180+ input parameters for fine-tuning
@@ -369,7 +369,7 @@ run_train_and_export.bat
 - Test suite: 8 integration/unit tests
 - Build scripts and CI hooks
 
-### 🔄 Partial / Planned
+### Partial / Planned
 
 - Policy hot-reload via .reload triggers
 - LSTM sequence validation
@@ -381,13 +381,13 @@ run_train_and_export.bat
 
 ## Architecture
 
-### 21 Active Strategies
+### 23 Active Strategies
 
 **Trend (5):** ADX, SuperTrendADXKama, DonchianATRBreakout, ForexTrend, Alligator  
 **Mean Reversion (4):** BollAverages, MeanReversionBB, RSI2BBReversion, VWAPReversion  
 **Momentum (6):** AwesomeOscillator, AcceleratorOscillator, BearsPower, BullsPower, KeltnerMomentum, Aroon  
 **Multi-Asset (3):** GoldVolatility, IndicesEnergies, OpeningRangeBreakout  
-**Advanced (3):** MultiIndicator, EMAPullback, Stub  
+**Advanced (5):** MultiIndicator, EMAPullback, Stub, StochasticOscillator, IchimokuCloud  
 
 Strategies auto-selected via asset-class registry (FX Major/Minor, Crypto, Metal, Energy, Index).
 
@@ -441,11 +441,11 @@ Common/Files/DualEA/
 
 **Trading**: `LotSize`, `MagicNumber`, `StopLossPips`, `TakeProfitPips`, `MaxOpenPositions`, `TrailEnabled`  
 **Gating**: `UseInsightsGating`, `UseExploration`, `UsePolicyGating`, `NoConstraintsMode`  
-**Exploration**: `ExploreMaxPerSlicePerDay` (default 2), `ExploreMaxPerSlice` (default 3)  
+**Exploration**: `ExploreMaxPerSlicePerDay` (default 100), `ExploreMaxPerSlice` (default 100)  
 **Policy Fallback**: `DefaultPolicyFallback`, `FallbackDemoOnly`, `FallbackWhenNoPolicy`  
 **Risk**: Circuit breakers, news filters, regime gates, session limits  
 
-**NoConstraintsMode=true** (default): Bypasses ALL gates for maximum data collection.
+**NoConstraintsMode=true** (default in PaperEA_v2): Bypasses many constraints for data collection, but critical safety checks (e.g., circuit breaker and resource guards) still run.
 
 ### Key LiveEA Parameters
 
@@ -460,14 +460,13 @@ Inherits PaperEA params plus:
 
 ## Execution Pipeline
 
-1. **Signal Generation** (OnTick/OnTimer) → Strategy.CheckSignal()
-2. **Early Validation** → Trading hours, news, spread, margin
-3. **8-Stage Gates** → Progressive filtering with learning
-4. **Strategy Selection** → Performance scoring, insights gating
-5. **Policy Application** → ML confidence, SL/TP scaling, fallbacks
-6. **Risk Management** → Position sizing, correlation, circuit breakers
-7. **Trade Execution** → TradeManager, SL/TP normalization, trailing
-8. **Post-Execution** → KB logging, features export, telemetry, learning updates
+1. **Early safety & filters** → circuit breaker/memory/news (PaperEA) and risk/spread/session/news (LiveEA)
+2. **Strategy selection** → PaperEA selector scoring; LiveEA is designed for an external orchestrator (strategy bridge exists)
+3. **Signal generation** → PaperEA 23 indicator signal generators; LiveEA strategy bridge is not called from `OnTick()`
+4. **Gating** → PaperEA 8-stage GateManager; LiveEA early + risk4 gates
+5. **Insights/policy gating** → LiveEA uses per-slice policy + insights gating; PaperEA policy load is currently minimal
+6. **Execution** → `CTradeManager::ExecuteOrder()`
+7. **Post execution** → KB logging, features export, telemetry, learning updates
 
 ---
 
@@ -478,8 +477,8 @@ Inherits PaperEA params plus:
 **Rules**:
 - Bypass ONLY when NO slice exists (no-slice-only)
 - If slice exists but fails thresholds → BLOCKED
-- Daily cap: `ExploreMaxPerSlicePerDay` (default 2)
-- Weekly cap: `ExploreMaxPerSlice` (default 3)
+- Daily cap: `ExploreMaxPerSlicePerDay` (default 100)
+- Weekly cap: `ExploreMaxPerSlice` (default 100)
 - Counters persist in `explore_counts*.csv`
 
 **NoConstraintsMode**: Bypasses insights gating AND exploration caps entirely.
@@ -546,7 +545,8 @@ python policy_export.py --model artifacts/tf_model.keras --scaler artifacts/scal
 
 ### Deployment
 
-Copy `policy.json` to `Common/Files/DualEA/policy.json` and restart LiveEA (or touch `policy.reload` for hot-reload when implemented).
+- **LiveEA** loads `policy.json` on `OnInit()`; policy changes typically require a restart.
+- **PaperEA_v2** supports `DualEA\policy.reload` (Common Files) to trigger `Policy_Load()` and also polls HTTP/file at a timer cadence.
 
 ---
 
@@ -567,12 +567,12 @@ python policy_server.py --host 127.0.0.1 --port 5005 --policy "%APPDATA%/MetaQuo
   - Tools → Options → Expert Advisors → Allow WebRequest for listed URL
   - Add: `http://127.0.0.1:5005`
 
-- PaperEA/LiveEA Settings:
-  - `PolicyServerUrl` (e.g. `http://127.0.0.1:5005/policy.json`)
+- PaperEA Settings:
+  - `PolicyServerUrl` (base URL, e.g. `http://127.0.0.1:5005`)
   - `PolicyHttpPollPercent` (rate-based split between HTTP and file polling)
   - `HotReloadIntervalSec` (default 10s)
 
-Hot-reload flow: on each timer tick, EA rolls a percentage to decide HTTP vs file polling for policy and reloads on size/hash changes.
+Hot-reload flow (PaperEA_v2): on timer/maintenance, PaperEA rolls a percentage to decide HTTP vs file polling.
 
 ---
 

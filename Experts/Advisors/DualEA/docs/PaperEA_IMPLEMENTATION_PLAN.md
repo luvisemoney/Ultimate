@@ -22,7 +22,7 @@ Mermaid (see `./PaperEA_README.md`)
 - [ ] Manual reload by `DualEA/policy.reload`
 
 Related files:
-- `../PaperEA/PaperEA.mq5`
+- `../PaperEA/PaperEA_v2.mq5`
 - `../ML/README.md`, `../ML/policy_builder.py`
 
 ## 4. Data and Insights

@@ -118,7 +118,7 @@ flowchart LR
 - Reload trigger: touch `DualEA/policy.reload`
 - The EA checks this in both `OnTimer()` and `OnTick()` (`CheckPolicyReload()`); when present, it reloads `policy.json`, logs `Policy reload signal detected: reloaded|failed`, and on success logs `Policy gating: min_conf=..., slices=N`.
 - Loaded state: "loaded" iff one or more slices exist (slices > 0)
-- Tracked via `ArraySize(g_pol_strat) > 0` in `PaperEA/PaperEA.mq5`
+- Tracked via `ArraySize(g_pol_strat) > 0` in `PaperEA/PaperEA_v2.mq5`
 
 ## Fallback Behavior
 - When `UsePolicyGating=true`:

@@ -1,22 +1,21 @@
-# PaperEA - DualEA Paper Trading Expert Advisor
+# PaperEA_v2 - DualEA Demo Execution Expert Advisor
 
 ## Overview
-PaperEA is the paper-trading counterpart of DualEA, used to validate strategies, ML policy gating, and position/risk logic before promoting changes to LiveEA. It runs in demo/simulation contexts while mirroring the execution flow of `../LiveEA/LiveEA.mq5` as closely as possible.
+PaperEA_v2 executes real MT5 orders on demo accounts to validate strategies, ML policy gating, and position/risk logic before promoting changes to LiveEA. It mirrors the execution flow of `../LiveEA/LiveEA.mq5` as closely as possible.
 
 Key traits:
-- Always-on ML filter via `Common\Files\DualEA\policy.json` with safe fallbacks
-- Insights auto-build and manual reload wiring (`DualEA\insights.reload`)
-- Telemetry to `Common\Files\DualEA\telemetry/*.jsonl`
+- Real MT5 order execution on demo accounts via `CTradeManager::ExecuteOrder()` (not simulation)
+- Policy reload via `DualEA\policy.reload` with HTTP/file polling support
+- Telemetry to `Common\Files\DualEA\telemetry\paper_*.jsonl`
 - Knowledge base and feature logging to `Common\Files\DualEA\knowledge_base.csv` and `features.csv`
-- Parity with LiveEA timer flow and policy reload (`DualEA\policy.reload`)
+- Policy reload via `DualEA\policy.reload` (LiveEA requires restart for policy changes)
 
 ## Architecture
 ```mermaid
 graph TD
     A[Market Data] --> B[Strategy Signals]
     B --> C[ML Policy Gating]
-    C -->|allow/scale/block| D[Paper Execution Engine]
-    D --> E[Positions/Orders (sim)]
+    D -->|ExecuteOrder()| E[Real MT5 Orders (Demo)]
 
     %% Side channels
     E --> F[Telemetry JSONL]
@@ -47,48 +46,54 @@ graph TD
 - `DualEA/insights.reload` — signal to rebuild/reload insights
 
 ## Source Layout (relative)
-- `../PaperEA/PaperEA.mq5` — main EA
+- `../PaperEA/PaperEA_v2.mq5` — main EA
 - `../LiveEA/LiveEA.mq5` — live EA (parity target)
 - `../Include/` — shared utilities (e.g., insights builder, telemetry, KB)
-- `../ML/` — Python ML scaffolding (README, `policy_builder.py`)
+- `../ML/` — Python ML scaffolding (README, `train.py`, `policy_export.py`)
 
 ## Configuration Highlights
-These inputs exist in `PaperEA.mq5` and govern ML gating and insights behavior:
-- `UsePolicyGating` — enable policy gating and scaling
+These inputs exist in `PaperEA_v2.mq5` and govern ML gating and insights behaviour:
+- `UsePolicyGating` — enable policy gating (minimal implementation: checks `min_confidence` only)
 - `DefaultPolicyFallback` — allow neutral trading when a policy slice is missing
-- `FallbackDemoOnly` — restrict fallback behavior to demo accounts
+- `FallbackDemoOnly` — restrict fallback behaviour to demo accounts
 - `FallbackWhenNoPolicy` — allow trading when `policy.json` is absent
-- `InsightsAutoBuild` — enable periodic insights refresh
-- `InsightsCheckOnTimer` — enable timer-based staleness checks
-- `InsightsStaleHours` — threshold for auto-rebuild
+- `PolicyServerUrl` — HTTP endpoint for policy polling (e.g., `http://127.0.0.1:5005`)
+- `PolicyHttpPollPercent` — percentage chance to poll HTTP vs file
+- `HotReloadIntervalSec` — timer interval for policy reload checks (default 10s)
+
+Note: `InsightsAutoBuild` input exists but auto-rebuild is not currently implemented in `CheckInsightsReload()`; use `Scripts/InsightsRebuild.mq5` to rebuild insights manually.
 
 Signals and timers:
-- `OnTimer()` checks `CheckPolicyReload()` and `CheckInsightsReload()`
-- Manual trigger by creating `Common\Files\DualEA\policy.reload` or `insights.reload`
+- `OnTick()` drives scan→gate→execute with 23 signal generators
+- `OnTimer()` checks `CheckPolicyReload()` and performs HTTP/file polling
+- Manual trigger by creating `Common\Files\DualEA\policy.reload`
 
 ## Quick Start
-1. Attach `PaperEA` to a chart.
+1. Attach `PaperEA_v2` to a chart.
 2. Ensure file operations are allowed in MT5 (Common tab).
-3. Optionally run `Scripts/DualEA/ValidateInsights.mq5` to verify `insights.json` freshness.
-4. Drop `DualEA/policy.json` built by `../ML/policy_builder.py` into Common Files.
+3. Optionally run `Scripts/InsightsRebuild.mq5` to generate `insights.json` from existing data.
+4. Drop `DualEA/policy.json` built by `../ML/policy_export.py` into Common Files.
 5. Observe telemetry and gating logs in Experts tab and `telemetry/*.jsonl`.
 
 ## ML Integration
-- Trainer stub: `../ML/policy_builder.py`
+- Trainer: `../ML/train.py` and `../ML/policy_export.py`
 - Reads: `DualEA/features.csv`, `DualEA/knowledge_base.csv`
 - Writes: `DualEA/policy.json` with fields: `min_confidence`, slices with `strategy`, `symbol`, `timeframe`, `p_win`, optional `sl_scale`, `tp_scale`, `trail_atr_mult`.
 
+Note: PaperEA_v2's policy parsing is minimal (detects `min_confidence` string); per-slice probability and scaling parsing is not fully implemented. Use LiveEA for full per-slice policy gating.
+
 ## Insights Workflow
-- Builder lives in `Include` and is invoked by PaperEA via `Insights_RebuildAndReload(reason)`
-- Auto-rebuild occurs on staleness; manual via `DualEA/insights.reload`
+- Builder lives in `Include/KnowledgeBase.mqh` (`CInsightsBuilder` class)
+- Run `Scripts/InsightsRebuild.mq5` manually to rebuild `insights.json` from `features.csv` and `knowledge_base.csv`
+- PaperEA_v2's `CheckInsightsReload()` detects `insights.reload` but only deletes it (rebuild logic is commented out)
 
 ## Telemetry
 - Buffered JSONL written to `Common\Files\DualEA\telemetry` with EA lifecycle, gating decisions, and trade events
 
 ## Safety and Parity Notes
 - Fallbacks ensure safe demo operation when policy is missing or slices are absent
-- Timer wiring matches LiveEA to surface issues before promotion
-- Scaling helpers apply only when a matching policy slice exists
+- Real MT5 order execution (not simulation) via `CTradeManager`
+- Timer wiring for policy reload; insights rebuild requires external script
 
 ## See Also
 - `../LiveEA/LiveEA.mq5`

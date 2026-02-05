@@ -12,7 +12,7 @@ This document defines the exact CSV schemas produced and consumed by DualEA comp
 - File API: MT5 `FileOpen(..., FILE_CSV | FILE_COMMON, ',')`; exploration counters use `FILE_ANSI`
 - Share mode: writers generally use `FILE_SHARE_WRITE` to permit concurrent access
 
-Source of truth: `Include/KnowledgeBase.mqh`, `PaperEA/PaperEA.mq5`.
+Source of truth: `Include/KnowledgeBase.mqh`, `PaperEA/PaperEA_v2.mq5`.
 
 ---
 
@@ -86,7 +86,7 @@ Header (exact):
 ```
 key,week_monday_yyyymmdd,count
 ```
-Managed by `SaveExploreCounts()`, `LoadExploreCounts()` in `PaperEA/PaperEA.mq5`.
+Managed by `SaveExploreCounts()`, `LoadExploreCounts()` in `PaperEA/PaperEA_v2.mq5`.
 
 Columns:
 - key: string — slice key `strategy|symbol|timeframe`
@@ -124,4 +124,4 @@ Common journal prefixes related to these files:
 - `FALLBACK: policy slice missing -> neutral scaling used for <strat> on <symbol>/<tf> demo=<true|false>`
 - `FALLBACK: no policy loaded -> neutral scaling used for <strat> on <symbol>/<tf> demo=<true|false>`
 
-These strings are emitted by `PaperEA/PaperEA.mq5` and help interpret how counters and CSV rows are produced.
+These strings are emitted by `PaperEA/PaperEA_v2.mq5` and help interpret how counters and CSV rows are produced.

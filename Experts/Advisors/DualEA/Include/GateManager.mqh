@@ -158,18 +158,28 @@ public:
          return result;
       }
       
-      // Adjust signal based on market regime
-      if(signal.regime == "ranging")
+      // Adjust signal based on market regime - only if SL/TP are valid
+      if(signal.sl > 0.0 && signal.tp > 0.0)
       {
-         result.tweaks[0] = signal.price * 0.998; // Tighter entry
-         result.tweaks[1] = signal.sl * 0.8;      // Tighter SL
-         result.tweaks[2] = signal.tp * 0.8;      // Tighter TP
+         if(signal.regime == "ranging")
+         {
+            result.tweaks[0] = signal.price * 0.998; // Tighter entry
+            result.tweaks[1] = signal.sl * 0.8;      // Tighter SL
+            result.tweaks[2] = signal.tp * 0.8;      // Tighter TP
+         }
+         else if(signal.regime == "trending")
+         {
+            result.tweaks[0] = signal.price * 1.002; // Slightly looser entry
+            result.tweaks[1] = signal.sl * 1.2;      // Wider SL
+            result.tweaks[2] = signal.tp * 1.5;      // Wider TP
+         }
       }
-      else if(signal.regime == "trending")
+      else
       {
-         result.tweaks[0] = signal.price * 1.002; // Slightly looser entry
-         result.tweaks[1] = signal.sl * 1.2;      // Wider SL
-         result.tweaks[2] = signal.tp * 1.5;      // Wider TP
+         // SL/TP invalid, don't apply regime-based adjustments
+         result.tweaks[0] = signal.price; // Keep price
+         result.tweaks[1] = 0.0;          // No SL change
+         result.tweaks[2] = 0.0;          // No TP change
       }
       
       result.passed = true;
@@ -208,10 +218,17 @@ public:
          return result;
       }
       
-      // Adjust parameters based on strategy performance
+      // Adjust parameters based on strategy performance - only if SL/TP are valid
       result.tweaks[0] = signal.price; // No price adjustment
-      result.tweaks[1] = signal.sl * (0.95 + signal.confidence * 0.1); // Dynamic SL
-      result.tweaks[2] = signal.tp * (1.05 + signal.confidence * 0.15); // Dynamic TP
+      if(signal.sl > 0.0)
+         result.tweaks[1] = signal.sl * (0.95 + signal.confidence * 0.1); // Dynamic SL
+      else
+         result.tweaks[1] = 0.0; // No SL adjustment if invalid
+         
+      if(signal.tp > 0.0)
+         result.tweaks[2] = signal.tp * (1.05 + signal.confidence * 0.15); // Dynamic TP
+      else
+         result.tweaks[2] = 0.0; // No TP adjustment if invalid
       
       result.passed = true;
       result.reason = "Strategy validated";
@@ -232,17 +249,53 @@ public:
       GateResult result;
       result.processed_at = TimeCurrent();
       
+      // Validate inputs first
+      if(signal.symbol == "")
+      {
+         result.passed = false;
+         result.reason = "Invalid symbol";
+         return result;
+      }
+      
       double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      double risk_amount     = account_balance * 0.02;
-      double sl_distance     = MathAbs(signal.price - signal.sl);
-      double tick_value      = 0.0;
-      SymbolInfoDouble(signal.symbol, SYMBOL_TRADE_TICK_VALUE, tick_value);
-      if(sl_distance <= 0.0 || tick_value <= 0.0)
-        {
+      if(account_balance <= 0.0)
+      {
+         result.passed = false;
+         result.reason = "Invalid account balance";
+         return result;
+      }
+      
+      double risk_amount = account_balance * 0.02;
+      double sl_distance = MathAbs(signal.price - signal.sl);
+      
+      // Additional validation: sl_distance must be reasonable
+      double point = SymbolInfoDouble(signal.symbol, SYMBOL_POINT);
+      if(point <= 0.0) point = 0.00001; // Fallback
+      double min_sl_distance = 10 * point; // Minimum 10 points
+      
+      if(sl_distance <= 0.0 || sl_distance > 1e6 || !MathIsValidNumber(sl_distance))
+      {
          result.passed = false;
          result.reason = "Invalid SL distance or tick value";
          return result;
-        }
+      }
+      
+      if(sl_distance < min_sl_distance)
+      {
+         result.passed = false;
+         result.reason = "SL distance too small";
+         return result;
+      }
+      
+      double tick_value = 0.0;
+      SymbolInfoDouble(signal.symbol, SYMBOL_TRADE_TICK_VALUE, tick_value);
+      if(tick_value <= 0.0 || !MathIsValidNumber(tick_value))
+      {
+         result.passed = false;
+         result.reason = "Invalid tick value";
+         return result;
+      }
+      
       double optimal_size = risk_amount / (sl_distance * tick_value);
       
       if(signal.volume > 0.0)

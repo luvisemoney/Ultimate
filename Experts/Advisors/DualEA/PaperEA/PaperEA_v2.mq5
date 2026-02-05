@@ -77,6 +77,7 @@
 #include "..\Include\GateManager.mqh"
 #include "..\Include\FileBasedFeatureExport.mqh"  // Replaces DLL-based export
 #include "..\Include\StrategySignalGenerators.mqh"  // Extensible strategy signal generators
+#include "..\Include\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 
 // ===================[ PAPER vs LIVE EA CLARIFICATION ]===================
 // IMPORTANT: "Paper" refers to DEMO ACCOUNT, NOT simulated trades!
@@ -330,6 +331,7 @@ CGateManager *g_gate_manager = NULL;
 CTradeManager *g_trade_manager = NULL;
 CTelemetryStandard *g_telemetry = NULL;
 CStrategySignalRegistry *g_signal_registry = NULL;  // Extensible strategy signal generators
+CIncrementalInsightEngine* g_insight_engine = NULL; // Real-time statistics engine
 // g_paper_positions removed - using REAL MT5 positions via PositionSelect()
 
 // ===================[ DYNAMIC PARAMETER ENGINE ]===================
@@ -1213,6 +1215,14 @@ int OnInit()
       LOG("✅ Gate Learning System initialized: Hybrid updates enabled");
    }
    
+   // Initialize Incremental Insight Engine (O(1) real-time statistics)
+   g_insight_engine = new CIncrementalInsightEngine();
+   if(CheckPointer(g_insight_engine) != POINTER_INVALID)
+   {
+      g_insight_engine.SetPromotionCriteria(30, 0.52, 1.2, 10.0);
+      LOG("✅ Incremental Insight Engine initialized: O(1) real-time stats");
+   }
+   
    // Initialize Unified Trade Logger (JSON lifecycle tracking)
    g_trade_logger = new CUnifiedTradeLogger();
    if(CheckPointer(g_trade_logger) != POINTER_INVALID)
@@ -1557,6 +1567,13 @@ void OnDeinit(const int reason)
       g_gate_learning.SaveLearningData();  // Final save before shutdown
       delete g_gate_learning;
       g_gate_learning = NULL;
+   }
+   
+   if(g_insight_engine != NULL)
+   {
+      g_insight_engine.SaveState();  // Final state save
+      delete g_insight_engine;
+      g_insight_engine = NULL;
    }
    
    if(g_position_reviewer != NULL)
@@ -2596,6 +2613,15 @@ void OnTick()
    // Log strategy ONLY after confirming a valid signal was generated
    g_gate_audit.LogStrategyProcessed(selected_strategy);
 
+   // Normalize confidence early so GateManager doesn't replace it with heuristic 0.50
+   // when a strategy produces an out-of-range value.
+   if(signal.strategy == "")
+      signal.strategy = selected_strategy;
+   if(MathIsValidNumber(signal.confidence) == false || signal.confidence <= 0.0)
+      signal.confidence = HeuristicConfidence(signal);
+   if(signal.confidence < 0.0) signal.confidence = 0.0;
+   if(signal.confidence > 1.0) signal.confidence = 1.0;
+
    // Evaluate ML probability before gates to seed confidence
    if(UseOnnxPredictor)
    {
@@ -2604,12 +2630,31 @@ void OnTick()
          double pre_prob = EvaluateModelProbability(signal, selected_strategy, NULL, "generated", "pre_gate");
          if(pre_prob >= 0.0)
          {
-            double blended = pre_prob;
-            // If the model is neutral (common when the model provides no information),
-            // fall back to deterministic heuristic confidence so live/tester behaviour matches.
-            if(MathAbs(pre_prob - 0.5) < 1e-6)
-               blended = HeuristicConfidence(signal);
-            signal.confidence = blended;
+            // Ensure signal.strategy is populated for any heuristic logic.
+            if(signal.strategy == "")
+               signal.strategy = selected_strategy;
+
+            // Preserve strategy-generated confidence. The ONNX model can be neutral (~0.5)
+            // which would otherwise permanently block StrategyScrub (min_wr=0.55).
+            double strategy_conf = signal.confidence;
+            if(MathIsValidNumber(strategy_conf) == false || strategy_conf <= 0.0)
+               strategy_conf = HeuristicConfidence(signal);
+            if(strategy_conf < 0.0) strategy_conf = 0.0;
+            if(strategy_conf > 1.0) strategy_conf = 1.0;
+
+            const double neutral_band = 0.02; // treat 0.48..0.52 as neutral/no-op
+            double final_conf = strategy_conf;
+
+            if(MathAbs(pre_prob - 0.5) > neutral_band)
+            {
+               // If ML is providing a non-neutral opinion, allow it to raise confidence,
+               // but don't let a weak/buggy model suppress a valid strategy signal.
+               final_conf = MathMax(strategy_conf, pre_prob);
+            }
+
+            if(final_conf < 0.0) final_conf = 0.0;
+            if(final_conf > 1.0) final_conf = 1.0;
+            signal.confidence = final_conf;
             if(ShouldLog(LOG_INFO))
                LOG(StringFormat("MLPRED pre_gate signal=%s strategy=%s prob=%.3f conf=%.3f", signal.id, selected_strategy, pre_prob, signal.confidence));
          }
@@ -4120,6 +4165,32 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       }
       // If still open, treat as partial close; wait for final close
       if(PositionSelectByTicket(pid)) return;
+      
+      // Calculate R-multiple for IncrementalInsightEngine
+      if(CheckPointer(g_insight_engine) != POINTER_INVALID && idx >= 0)
+      {
+         double entry_price = g_pos_entry_price[idx];
+         double exit_price = HistoryDealGetDouble(deal, DEAL_PRICE);
+         double sl_price = g_pos_entry_price[idx] - g_pos_initial_risk[idx]; // Approximate SL
+         double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
+         
+         if(g_pos_initial_risk[idx] > 0)
+         {
+            double r_multiple = profit / g_pos_initial_risk[idx];
+            // Normalize for position type
+            if(g_pos_type[idx] == POSITION_TYPE_SELL)
+               r_multiple = -r_multiple;
+               
+            string strat = g_pos_strats[idx];
+            int tf = (int)_Period; // Use chart timeframe
+            
+            g_insight_engine.RecordTradeOutcome(strat, _Symbol, tf, r_multiple);
+            
+            if(ShouldLog(LOG_INFO))
+               LOG(StringFormat("[InsightEngine] Recorded outcome: %s R=%.2f", strat, r_multiple));
+         }
+      }
+      
       // Fully closed -> log and remove
       HandlePositionClosed(idx, deal);
       return;

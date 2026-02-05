@@ -1,40 +1,46 @@
 # Configuration Reference — DualEA System
 
-**Complete guide to all 180+ input parameters**
+**Actual input parameters from PaperEA_v2.mq5 and LiveEA.mq5**
+
+> **IMPORTANT:** Previous versions of this document listed aspirational/planned inputs that do not exist in the code. This version documents only the actual `input` declarations found in the source files.
 
 ---
 
-## Table of Contents
+## Quick Reference: Key Differences Between EAs
 
-1. [PaperEA_v2 Parameters](#paperea_v2-parameters)
-2. [LiveEA Parameters](#liveea-parameters)
-3. [Configuration Patterns](#configuration-patterns)
-4. [Gate Configuration](#gate-configuration)
-5. [Best Practices](#best-practices)
+| Feature | PaperEA_v2 | LiveEA |
+|---------|-----------|--------|
+| **NoConstraintsMode** | default `true` | default `false` |
+| **Policy Reload** | Hot-reload via `policy.reload` + HTTP polling | Load on init only (restart required) |
+| **Insights Rebuild** | Input exists but not implemented | Requests rebuild via `insights.reload` |
+| **Signal Generation** | 23 indicator signal generators | Strategy bridge (not called from OnTick) |
+| **Telemetry** | `TelemetryEnabled = true` | `TelemetryEnabled = false` |
+| **Exploration Caps** | 100/100 (daily/weekly) | 100/100 (daily/weekly) |
 
 ---
 
-## PaperEA_v2 Parameters
+## PaperEA_v2 Input Parameters
+
+Located in: `PaperEA/PaperEA_v2.mq5`
 
 ### Basic Trading Parameters
 
-**Position & Risk**
-```cpp
-input double   LotSize = 0.1;                    // Base position size in lots
-input int      MagicNumber = 20250101;           // EA identification number (unique per instance)
-input double   StopLossPips = 50.0;              // Default stop loss in pips
-input double   TakeProfitPips = 100.0;           // Default take profit in pips
-input int      MaxOpenPositions = 0;             // Max concurrent positions (0=unlimited)
-```
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `LotSize` | double | 0.0 | Position size in lots (0 = use VolatilitySizer) |
+| `MagicNumber` | int | 12345 | EA identification number |
+| `StopLossPips_Input` | double | 150.0 | Initial SL in pips (adaptive) |
+| `TakeProfitPips_Input` | double | 300.0 | Initial TP in pips (adaptive) |
+| `MaxOpenPositions` | int | 0 | Max concurrent positions (0 = unlimited) |
 
 **Trailing Stop Configuration**
 ```cpp
 input bool     TrailEnabled = true;              // Enable trailing stops
-input int      TrailType = 0;                    // 0=Fixed points, 1=ATR-based
-input int      TrailActivationPoints = 100;      // Profit points before trail activates
-input int      TrailDistancePoints = 50;         // Distance from current price in points
-input int      TrailStepPoints = 10;             // Minimum step size for SL adjustment
-input double   TrailATRPeriod = 14;              // ATR period for ATR-based trailing (TrailType=1)
+input int      TrailType = 2;                    // 0=fixed points, 2=ATR-based
+input int      TrailActivationPoints = 30;       // Profit points before trail activates
+input int      TrailDistancePoints = 20;         // Distance from current price
+input int      TrailStepPoints = 5;              // Minimum step for SL adjustment
+input int      TrailATRPeriod = 14;              // ATR period for dynamic trailing
 input double   TrailATRMultiplier = 2.0;         // ATR multiplier for trail distance
 ```
 
@@ -42,73 +48,20 @@ input double   TrailATRMultiplier = 2.0;         // ATR multiplier for trail dis
 
 **Master Switches**
 ```cpp
-input bool     NoConstraintsMode = true;         // BYPASS ALL GATES for maximum data collection
+input bool     NoConstraintsMode = true;         // Bypass many gates (circuit/memory/news still enforced)
 input bool     UseInsightsGating = true;         // Enable insights-based gating
-input bool     UseExploration = true;            // Enable exploration mode for new slices
-input bool     UsePolicyGating = false;          // Enable ML policy gating
-input bool     UseUnifiedSystem = true;          // Use ConfigManager/EventBus/SystemMonitor
+input int      GateMinTrades = 0;                // Minimum trades required in slice
+input double   GateMinWinRate = 0.00;            // Minimum win rate (0 = no minimum)
+input double   GateMinExpectancyR = -10.0;       // Minimum expectancy R
+input double   GateMaxDrawdownR = 1000000.0;     // Maximum drawdown R
+input double   GateMinProfitFactor = 0.00;       // Minimum profit factor
 ```
 
-**Gate 1: Signal Rinse**
-```cpp
-input bool     G1_SignalRinseEnable = true;      // Enable signal rinse gate
-input double   G1_MinConfidence = 0.6;           // Minimum signal confidence (0.0-1.0)
-input double   G1_MinStrength = 0.5;             // Minimum signal strength
-```
-
-**Gate 2: Market Soap**
-```cpp
-input bool     G2_MarketSoapEnable = true;       // Enable market analysis gate
-input double   G2_MinVolatility = 0.0001;        // Minimum ATR in decimal (0=no minimum)
-input double   G2_MaxVolatility = 0.01;          // Maximum ATR (0=no maximum)
-input double   G2_MaxCorrelation = 0.8;          // Maximum portfolio correlation (-1 to 1)
-```
-
-**Gate 3: Strategy Scrub**
-```cpp
-input bool     G3_StrategyScrubEnable = true;    // Enable strategy validation gate
-input double   G3_MinScore = 0.5;                // Minimum strategy score from selector
-input int      G3_MinHistoryBars = 100;          // Minimum bars required for strategy
-```
-
-**Gate 4: Risk Wash**
-```cpp
-input bool     G4_RiskWashEnable = true;         // Enable risk validation gate
-input double   G4_MaxRiskPct = 2.0;              // Maximum risk per trade (% of balance)
-input double   G4_MaxPortfolioRisk = 10.0;       // Maximum total portfolio risk (%)
-input double   G4_MinRiskReward = 1.5;           // Minimum risk:reward ratio
-```
-
-**Gate 5: Performance Wax**
-```cpp
-input bool     G5_PerformanceWaxEnable = true;   // Enable performance validation gate
-input double   G5_MinBacktestWinRate = 0.45;     // Minimum backtest win rate
-input double   G5_MinBacktestRMultiple = 0.5;    // Minimum avg R-multiple from backtest
-input int      G5_MinBacktestTrades = 30;        // Minimum backtest sample size
-```
-
-**Gate 6: ML Polish**
-```cpp
-input bool     G6_MLPolishEnable = true;         // Enable ML confidence gate
-input double   G6_MinMLConfidence = 0.55;        // Minimum ML model confidence
-input bool     G6_RequireMLAvailable = false;    // Block if ML model unavailable
-```
-
-**Gate 7: Live Clean**
-```cpp
-input bool     G7_LiveCleanEnable = true;        // Enable live market validation gate
-input double   G7_MaxSpreadPips = 3.0;           // Maximum spread in pips
-input bool     G7_CheckMarketHours = true;       // Validate trading hours
-input bool     G7_CheckLiquidity = true;         // Check market liquidity
-```
-
-**Gate 8: Final Verify**
-```cpp
-input bool     G8_FinalVerifyEnable = true;      // Enable final verification gate
-input bool     G8_VerifyBrokerConstraints = true;// Check broker lot/margin limits
-input bool     G8_VerifyDuplicates = true;       // Check for duplicate signals
-input int      G8_DuplicateWindowSeconds = 60;   // Deduplication window in seconds
-```
+**Note:** The 8-stage gate system (`G1_SignalRinse` through `G8_FinalVerify`) described in earlier documentation was aspirational. The actual implementation uses:
+- `NoConstraintsMode` to bypass non-critical gates
+- `UseInsightsGating` with threshold inputs above
+- `UsePolicyGating` for ML policy filtering
+- Risk gates (circuit breakers, news filter, regime detection) always enforced
 
 ### Insights Gating Configuration
 
@@ -122,26 +75,26 @@ input double   InsightsMinSharpe = 0.0;          // Minimum Sharpe ratio (0=disa
 
 **Freshness & Auto-Reload**
 ```cpp
-input bool     InsightsAutoReload = true;        // Auto-reload insights.json periodically
-input int      InsightsReloadMinutes = 60;       // Reload interval in minutes
-input int      InsightsLiveFreshMinutes = 30;    // Freshness for live trading (warn if older)
-input int      InsightsStaleHours = 24;          // Consider stale after this many hours
+input bool     InsightsAutoReload = true;        // Input exists but auto-rebuild NOT IMPLEMENTED
+input int      InsightsStaleHours = 48;          // Consider stale after this many hours
+input int      InsightsMinSourceAdvanceHours = 48; // Min hours source files must be ahead
+input int      InsightsMinIntervalHours = 24;    // Minimum interval between rebuilds
+input bool     InsightsCheckOnTimer = true;      // Enable timer-based staleness checks
+input int      InsightsRebuildTimeoutMs = 1800000; // Timeout for rebuild (30 min)
 ```
+
+> **Note:** `InsightsAutoReload` input exists but the actual auto-rebuild logic is commented out in `CheckInsightsReload()`. Use `Scripts/InsightsRebuild.mq5` to manually rebuild insights.
 
 ### Exploration Mode Configuration
 
 **Caps & Limits**
 ```cpp
-input int      ExploreMaxPerSlicePerDay = 2;     // Daily exploration cap per slice (0=unlimited)
-input int      ExploreMaxPerSlice = 3;           // Weekly exploration cap per slice (0=unlimited)
-input bool     ExploreResetOnMonday = true;      // Reset weekly counter on Monday
+input int      ExploreMaxPerSlicePerDay = 100;   // Daily exploration cap per slice (default 100)
+input int      ExploreMaxPerSlice = 100;         // Weekly exploration cap per slice (default 100)
+input bool     ExploreOnNoSlice = true;          // Allow exploration when no slice exists
 ```
 
-**Behavior**
-```cpp
-input bool     ExploreBypassInsights = true;     // Bypass insights thresholds in explore mode
-input bool     ExploreLogVerbose = true;         // Verbose logging for exploration events
-```
+> **Note:** Previous documentation listed defaults of 2/3. Actual code defaults are 100/100 for both daily and weekly caps, effectively unlimited for most practical purposes.
 
 ### Policy Gating Configuration
 
@@ -153,164 +106,175 @@ input bool     FallbackWhenNoPolicy = true;      // Fallback when policy.json no
 input bool     FallbackWhenSliceMissing = true;  // Fallback when specific slice missing
 ```
 
-**Policy Scaling**
+**Policy Scaling & Hot-Reload**
 ```cpp
-input double   PolicySLMultiplier = 1.0;         // SL scaling multiplier (from policy)
-input double   PolicyTPMultiplier = 1.0;         // TP scaling multiplier (from policy)
-input double   PolicyTrailMultiplier = 1.0;      // Trailing stop scaling multiplier
-input double   PolicyLotMultiplier = 1.0;        // Lot size scaling multiplier
+input bool     UsePolicyGating = true;           // Enable policy gating (minimal: checks min_confidence only)
+input string   PolicyServerUrl = "";             // HTTP endpoint for policy polling
+input int      PolicyHttpPollPercent = 20;       // % chance to poll HTTP vs file
+input int      HotReloadIntervalSec = 10;        // Timer interval for reload checks
 ```
 
-**Hot-Reload (Planned)**
-```cpp
-input bool     PolicyHotReload = false;          // Enable policy hot-reload (planned)
-input int      PolicyReloadCheckSeconds = 60;    // Check for .reload file every N seconds
-```
+> **Note:** PaperEA_v2 supports policy hot-reload via `policy.reload` file and HTTP polling. LiveEA loads policy on init only (restart required for updates).
 
 ### Risk Management Configuration
 
 **Circuit Breakers**
 ```cpp
-input bool     CircuitBreakerEnable = true;      // Enable circuit breaker system
-input double   MaxDailyLossPct = 5.0;            // Max daily loss (% of starting balance)
-input double   MaxDrawdownPct = 15.0;            // Max drawdown from peak (%)
-input int      CircuitCooldownSec = 3600;        // Cooldown period after breaker trips (seconds)
-input int      MaxConsecutiveLosses = 5;         // Max consecutive losing trades
+input bool     UseCircuitBreakers = true;        // Enable circuit breaker system
+input double   CBDailyLossLimitPct_Input = 5.0;  // Max daily loss (% of starting balance)
+input double   CBDrawdownLimitPct = 10.0;        // Max drawdown from peak (%)
+input int      CBCooldownMinutes = 60;           // Cooldown period after breaker trips
+input bool     GuardsEnabled = true;             // Enable trade guards
+input double   GuardMaxSpreadPoints = 0.0;       // Max spread in points (0=disabled)
 ```
 
 **News Filtering**
 ```cpp
 input bool     UseNewsFilter = true;             // Enable news blackout filtering
-input string   NewsCSVPath = "DualEA/news_calendar.csv"; // News events CSV path
 input int      NewsBufferBeforeMin = 30;         // Minutes before news to stop trading
-input int      NewsBufferAfterMin = 15;          // Minutes after news to resume
+input int      NewsBufferAfterMin = 30;          // Minutes after news to resume
 input int      NewsImpactMin = 2;                // Minimum impact level (1=Low, 2=Med, 3=High)
-input bool     NewsDetectCurrency = true;        // Auto-detect symbol currency for news
+input bool     NewsUseFile = true;               // Read news from CSV file
+input string   NewsFileRelPath = "DualEA\\news_blackouts.csv"; // News events CSV path
 ```
 
 **Regime Detection**
 ```cpp
 input bool     UseRegimeGate = true;             // Enable market regime detection
-input int      RegimeATRPeriod = 20;             // ATR period for regime classification
-input double   RegimeMinATRPct = 0.5;            // Minimum ATR percentile (0-1)
-input double   RegimeMaxATRPct = 0.95;           // Maximum ATR percentile
+input string   RegimeMethod = "combined";        // ATR + ADX method
+input int      RegimeATRPeriod = 14;             // ATR period for regime classification
+input double   RegimeMinATRPct = 0.5;            // Low volatility threshold
+input double   RegimeMaxATRPct = 2.5;            // High volatility threshold
 input int      RegimeADXPeriod = 14;             // ADX period for trend strength
-input double   RegimeMinADX = 20.0;              // Minimum ADX for trending regime
-input int      RegimeRSIPeriod = 14;             // RSI period for momentum
+input double   RegimeADXTrendThreshold = 25.0;   // ADX trend threshold
+input bool     ATRRegimeEnable = false;          // ATR regime filtering
+input int      ATRRegimePeriod = 14;             // ATR period
+input int      ATRRegimeLookback = 100;          // Lookback for percentile calc
+input double   ATRMinPercentile = 0.3;           // Minimum ATR percentile
+input double   ATRMaxPercentile = 0.8;           // Maximum ATR percentile
+input double   ATRRegimeMinATRPct = 0.5;         // Low volatility threshold
+input double   ATRRegimeMaxATRPct = 2.5;         // High volatility threshold
 ```
 
 **Session Management**
 ```cpp
-input bool     UseSessionGate = true;            // Enable session-based gating
-input string   SessionStartTime = "09:00";       // Trading session start (HH:MM)
-input string   SessionEndTime = "17:00";         // Trading session end (HH:MM)
-input int      SessionMaxTrades = 10;            // Max trades per session (0=unlimited)
-input bool     SessionResetDaily = true;         // Reset session counters daily
+input bool     UseSessionManager = true;         // Enable session management
+input int      SessionEndHour = 20;              // Session end hour
+input bool     UsePromotionGate = false;         // Enable promotion window
+input bool     PromoLiveOnly = false;            // Apply only on live accounts
+input int      PromoStartHour = 0;               // Promotion window start
+input int      PromoEndHour = 24;                // Promotion window end
 ```
 
 **Correlation Management**
 ```cpp
-input bool     UseCorrelationGate = true;        // Enable correlation-based gating
-input double   MaxPortfolioCorrelation = 0.75;   // Max avg correlation in portfolio
-input int      CorrelationLookback = 100;        // Bars for correlation calculation
-input bool     CorrelationUsePearson = true;     // Use Pearson correlation (vs simple)
+input bool     UseCorrelationManager = true;     // Enable correlation-based gating
+input double   MaxCorrelationLimit = 0.7;        // Max avg correlation in portfolio
+input int      CorrLookbackDays = 30;            // Days for correlation calculation
 ```
 
 ### Strategy Selector Configuration
 
 **Scoring & Selection**
 ```cpp
-input bool     SelectorEnable = true;            // Enable strategy selector
-input double   SelectorMinScore = 0.5;           // Minimum score to consider strategy
-input int      SelectorTopN = 5;                 // Select top N strategies per signal
-input bool     SelectorUseRecency = true;        // Apply recency weighting to scores
-input double   SelectorRecencyDecay = 0.95;      // Recency decay factor (0-1)
-input int      SelectorRecencyDays = 30;         // Days to consider for recency
+input bool     UseStrategySelector = true;       // Enable strategy selector
+input double   SelW_PF = 1.0;                    // Weight: profit factor
+input double   SelW_Exp = 1.0;                   // Weight: expectancy
+input double   SelW_WR = 0.5;                    // Weight: win rate
+input double   SelW_DD = 0.3;                    // Weight: drawdown
+input bool     SelStrictThresholds = false;      // Use strict vs probabilistic thresholds
+input bool     SelUseRecency = true;             // Weight recent performance
+input int      SelRecentDays = 14;               // Recent performance lookback
+input double   SelRecAlpha = 0.5;                // Recency decay factor
 ```
 
-**Performance Weighting**
-```cpp
-input double   SelectorWinRateWeight = 0.3;      // Weight for win rate in scoring
-input double   SelectorRMultipleWeight = 0.4;    // Weight for R-multiple in scoring
-input double   SelectorSharpeWeight = 0.2;       // Weight for Sharpe ratio in scoring
-input double   SelectorTradeCountWeight = 0.1;   // Weight for sample size in scoring
-```
+> **Note:** Previous documentation listed inputs like `SelectorEnable`, `SelectorMinScore`, `SelectorTopN` which do not exist in the code.
 
 ### Knowledge Base Configuration
 
 **File Management**
 ```cpp
-input bool     KBEnable = true;                  // Enable Knowledge Base logging
 input string   KBBasePath = "DualEA/";           // Base path in Common Files
 input bool     KBRotateFiles = true;             // Enable file rotation
-input int      KBRotateSizeMB = 100;             // Rotate after N MB (features.csv)
+input int      KBRotateSizeMB = 100;             // Rotate after N MB
 input bool     KBCompressRotated = true;         // Compress rotated files
 ```
 
 **Logging Options**
 ```cpp
 input bool     KBDebugInit = false;              // Write INIT line to KB on startup
-input bool     KBLogEvents = true;               // Log trade events to KB
-input bool     KBLogFeatures = true;             // Export features for ML training
-input bool     KBLogTelemetry = true;            // Export telemetry data
+input int      KBInitIntervalSec = 60;           // Interval for INIT writes
 ```
+
+> **Note:** Knowledge Base is always enabled. Previous inputs like `KBEnable`, `KBLogEvents`, `KBLogFeatures` do not exist as configurable inputs.
 
 ### Telemetry & Monitoring Configuration
 
 **Telemetry System**
 ```cpp
-input bool     TelemetryEnable = true;           // Enable telemetry system
+input bool     TelemetryEnabled = true;          // Enable telemetry emission
 input bool     TelemetryVerbose = false;         // Verbose telemetry logging
-input bool     TelemetryStandard = true;         // Use TelemetryStandard wrapper
-input int      TelemetryFlushSeconds = 300;      // Flush telemetry every N seconds
+input int      TelemetryFlushInterval = 300;     // Flush interval in seconds
+input bool     TelemetryUseCSV = false;          // Use CSV format (vs JSONL)
 ```
 
-**System Monitor**
+> **Note:** System Monitor and Event Bus are initialized via `ConfigManager` without individual input toggles. Previous inputs like `MonitorEnable`, `EventBusEnable` do not exist.
+
+### Phase 5 Advanced Features
+
+**Auto-Disable / Auto-Reenable**
 ```cpp
-input bool     MonitorEnable = true;             // Enable SystemMonitor
-input int      MonitorUpdateSeconds = 60;        // Update health score every N seconds
-input double   MonitorHealthThreshold = 70.0;    // Minimum health score (0-100)
-input bool     MonitorAlertOnDegradation = true; // Alert when health degrades
+input bool     P5_AutoDisableEnable = true;      // Auto-disable underperforming strategies
+input double   P5_MinPF_Input = 1.20;            // Minimum profit factor threshold
+input double   P5_MinWR_Input = 0.45;            // Minimum win rate threshold
+input double   P5_MinExpR = -0.05;               // Minimum expectancy R
+input int      P5_AutoDisableCooldownM = 1440;   // Cooldown minutes before re-enable
+input bool     P5_AutoReenable = true;           // Auto-reenable after cooldown
 ```
 
-**Event Bus**
+**Auto-Tune**
 ```cpp
-input bool     EventBusEnable = true;            // Enable EventBus
-input int      EventBusPriority = 2;             // Min priority to log (0=all, 1=low, 2=med, 3=high, 4=critical)
-input int      EventBusMaxQueueSize = 1000;      // Max events in queue
+input bool     P5_AutoTuneEnable = true;         // Auto-tune strategy parameters
+input int      P5_AutoTuneEveryMin = 60;         // Auto-tune interval
 ```
 
-### Advanced Optimization Configuration
-
-**AdaptiveSignalOptimizer**
+**Timer Rescore**
 ```cpp
-input bool     AdaptiveOptimizerEnable = true;   // Enable adaptive signal optimization
-input double   AdaptiveMinImprovement = 0.05;    // Minimum improvement to adjust (5%)
-input int      AdaptiveWindowTrades = 50;        // Rolling window size for optimization
+input bool     P5_TimerRescoreEnable = true;     // Enable periodic rescoring
+input int      P5_TimerRescoreEveryMin = 60;     // Rescoring interval
 ```
 
-**PolicyUpdater**
+**Correlation Pruning**
 ```cpp
-input bool     PolicyUpdaterEnable = true;       // Enable automatic policy updates
-input int      PolicyUpdateMinutes = 60;         // Update policy every N minutes
-input int      PolicyUpdateMinTrades = 100;      // Minimum trades required for update
+input bool     P5_CorrPruneEnable = true;        // Enable correlation pruning
+input double   P5_CorrMax = 0.80;                // Max correlation threshold
+input int      P5_CorrLookbackDays = 30;         // Correlation lookback
 ```
 
-**PositionReviewer**
+**MTF Confirmation**
 ```cpp
-input bool     PositionReviewerEnable = true;    // Enable position review system
-input int      PositionReviewMinutes = 5;        // Review positions every N minutes
-input bool     PositionReviewAdjustSL = true;    // Allow SL adjustments
-input bool     PositionReviewAdjustTP = false;   // Allow TP adjustments
+input bool     P5_MTFConfirmEnable = true;       // Enable MTF confirmation
+input string   P5_MTFHigherTFs = "H1,H4";        // Higher timeframe pairs
+input int      P5_MTFMinAgree = 1;               // Minimum MTF confirmations
 ```
 
-**GateLearningSystem**
+**Stability Gate**
 ```cpp
-input bool     GateLearningEnable = true;        // Enable gate learning system
-input double   GateLearningRate = 0.05;          // Learning rate (0-1)
-input int      GateLearningBatchSize = 20;       // Batch size for updates
-input bool     GateLearningImmediate = true;     // Enable immediate learning updates
+input bool     P5_StabilityGateEnable = false;   // Enable stability filtering
+input int      P5_StabilityWindowDays = 14;      // Stability window
+input double   P5_StabilityMaxStdR = 1.00;       // Max std dev R for stability
 ```
+
+**Other**
+```cpp
+input bool     P5_PersistLossCounters = false;   // Persist loss counters
+input bool     P5_PickBestEnable = false;        // Enable best strategy selection
+input int      GateAuditMinSignals = 100;        // Min signals before audit alert
+input int      GateAuditMinUptimeMin = 60;       // Min uptime before audit alert
+input int      GateAuditAlertCooldownMin = 5;    // Audit alert cooldown
+```
+
+> **Note:** Previous inputs for `AdaptiveOptimizerEnable`, `PolicyUpdaterEnable`, `PositionReviewerEnable`, and `GateLearningEnable` were aspirational and do not exist in the code.
 
 ### Logging & Debug Configuration
 
@@ -335,91 +299,119 @@ input bool     LogToJournal = true;              // Enable MT5 Journal logging
 
 ## LiveEA Parameters
 
-LiveEA inherits all PaperEA parameters plus the following:
+Located in: `LiveEA/LiveEA.mq5`
 
-### Live-Specific Risk Controls
+> **IMPORTANT:** LiveEA does NOT inherit PaperEA parameters. It has its own independent input set shown below.
 
-**Stricter Gating**
-```cpp
-input double   LiveInsightsMinWinRate = 0.55;    // Higher win rate requirement (vs 0.50 in Paper)
-input int      LiveInsightsMinTotalTrades = 30;  // More trades required (vs 10 in Paper)
-input double   LiveInsightsMinAvgR = 0.5;        // Higher R-multiple (vs 0.3 in Paper)
-```
+### Core Settings
 
-**Spread Controls**
-```cpp
-input double   LiveMaxSpreadPips = 2.0;          // Stricter spread limit (vs 3.0 in Paper)
-input bool     LiveRejectOnSpreadSpike = true;   // Reject if spread suddenly widens
-input double   LiveSpreadSpikeMultiplier = 2.0;  // Spike = N × normal spread
-```
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `MagicNumber` | long | 123456 | EA identification number |
+| `Verbosity` | int | 1 | 0=errors, 1=warn, 2=info, 3=debug |
+| `TelemetryEnabled` | bool | **false** | Enable telemetry emission |
+| `NoConstraintsMode` | bool | **false** | Shadow-gate only, do not block |
 
-**Daily Limits**
-```cpp
-input double   LiveMaxDailyLossPct = 3.0;        // Stricter daily loss limit (vs 5.0 in Paper)
-input int      LiveMaxDailyTrades = 20;          // Max trades per day
-input double   LiveMaxDailyVolume = 5.0;         // Max total volume per day (lots)
-```
+### Telemetry
 
-**Margin & Drawdown**
-```cpp
-input double   LiveMinMarginLevel = 200.0;       // Minimum margin level (%)
-input double   LiveMaxDrawdownPct = 10.0;        // Stricter drawdown limit (vs 15.0 in Paper)
-input bool     LiveStopOnMarginCall = true;      // Stop trading if margin < threshold
-```
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `TelemetryExperiment` | string | "live" | Experiment name for telemetry |
+| `TelemetryBufferMax` | int | 1000 | Max events before flush |
 
-**Consecutive Loss Protection**
-```cpp
-input int      LiveMaxConsecutiveLosses = 3;     // Stricter consecutive loss limit (vs 5 in Paper)
-input int      LiveConsecutiveLossCooldown = 7200; // Longer cooldown (2 hours vs 1 hour)
-```
+### Risk Management
 
-### Position Manager Integration
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `SpreadMaxPoints` | double | 0.0 | Max spread (0=disabled) |
+| `SessionStartHour` | int | 0 | Trading session start |
+| `SessionMaxTrades` | int | 0 | Max trades per session |
+| `MaxDailyLossPct` | double | 0.0 | Max daily loss % (0=disabled) |
+| `MaxDrawdownPct` | double | 0.0 | Max drawdown % (0=disabled) |
+| `MinMarginLevel` | double | 0.0 | Min margin % (0=disabled) |
+| `ConsecutiveLossLimit` | int | 0 | Max consecutive losses |
 
-**Core Settings**
-```cpp
-input bool     UsePositionManager = true;        // Enable PositionManager
-input int      PM_ScalingProfile = 1;            // 0=Aggressive, 1=Moderate, 2=Conservative
-```
+### Insights Gating (same threshold names as PaperEA)
 
-**Correlation Sizing**
-```cpp
-input bool     PM_EnableCorrelationSizing = true;    // Enable correlation-adjusted sizing
-input double   PM_CorrMinMult = 0.25;                // Min multiplier after correlation dampening
-input double   PM_CorrMinLots = 0.01;                // Absolute minimum lots floor
-input double   PM_CorrMaxPortfolio = 0.75;           // Max portfolio correlation
-```
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `UseInsightsGating` | bool | true | Enable insights gating |
+| `GateMinTrades` | int | 0 | Min trades in slice |
+| `GateMinWinRate` | double | 0.00 | Min win rate |
+| `GateMinExpectancyR` | double | -10.0 | Min expectancy R |
+| `GateMaxDrawdownR` | double | 1000000.0 | Max drawdown R |
+| `GateMinProfitFactor` | double | 0.00 | Min profit factor |
 
-**Adaptive Sizing**
-```cpp
-input bool     PM_EnableAdaptiveSizing = true;   // Enable performance-based sizing
-input double   PM_MinSizeMult = 0.5;             // Minimum size multiplier
-input double   PM_MaxSizeMult = 2.0;             // Maximum size multiplier
-input int      PM_AdaptiveWindowTrades = 20;     // Rolling window for adaptive calc
-```
+### Exploration
 
-**Dynamic Risk Caps**
-```cpp
-input bool     PM_EnableDynamicRiskCaps = true;  // Enable dynamic risk management
-input double   PM_MaxDailyDDPct = 2.0;           // Max daily drawdown (%)
-input double   PM_MaxPosRiskPct = 1.5;           // Max risk per position (%)
-input double   PM_MaxPortfolioRiskPct = 8.0;     // Max total portfolio risk (%)
-input double   PM_RiskDecay = 0.9;               // Risk cap decay factor after loss
-```
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ExploreOnNoSlice` | bool | true | Allow exploration when no slice |
+| `ExploreMaxPerSlice` | int | **100** | Weekly cap |
+| `ExploreMaxPerSlicePerDay` | int | **100** | Daily cap |
 
-**Volatility Exit**
-```cpp
-input bool     PM_EnableVolatilityExit = true;   // Enable volatility-based exits
-input double   PM_VolatilityExitATRMult = 3.0;   // Exit if ATR > N × normal
-input int      PM_VolatilityExitPeriod = 20;     // ATR period for volatility exit
-```
+### Policy Gating
 
-### Exploration Mode (LiveEA)
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `UsePolicyGating` | bool | true | Enable policy gating |
+| `DefaultPolicyFallback` | bool | true | Allow neutral when slice missing |
+| `FallbackDemoOnly` | bool | true | Restrict fallback to demo |
+| `FallbackWhenNoPolicy` | bool | true | Allow when policy absent |
 
-**Stricter Caps**
-```cpp
-input int      LiveExploreMaxPerSlicePerDay = 1; // More conservative (vs 2 in Paper)
-input int      LiveExploreMaxPerSlice = 2;       // More conservative (vs 3 in Paper)
-```
+> **Note:** LiveEA loads policy on `OnInit()` only. Restart required for policy updates (no hot-reload).
+
+### Auto-Reload Controls
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `InsightsAutoReload` | bool | true | Request rebuild when stale |
+| `InsightsLiveFreshMinutes` | int | 10 | Consider fresh if < N min old |
+| `InsightsReadyPollSec` | int | 5 | Poll frequency for ready signal |
+
+### News / Promotion / Regime
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `UseNewsFilter` | bool | false | Block around news windows |
+| `NewsBufferBeforeMin` | int | 30 | Minutes before event |
+| `NewsBufferAfterMin` | int | 30 | Minutes after event |
+| `NewsImpactMin` | int | 2 | Min impact level |
+| `NewsUseFile` | bool | true | Read from CSV |
+| `NewsFileRelPath` | string | "DualEA\\news_blackouts.csv" | CSV path |
+| `UsePromotionGate` | bool | false | Allow only in windows |
+| `PromoLiveOnly` | bool | false | Apply only on live |
+| `PromoStartHour` | int | 0 | Window start |
+| `PromoEndHour` | int | 24 | Window end |
+| `UseRegimeGate` | bool | false | Filter by volatility |
+| `RegimeATRPeriod` | int | 14 | ATR period |
+| `RegimeMinATRPct` | double | 0.0 | 0=disabled |
+| `RegimeMaxATRPct` | double | 1000.0 | 1000=disabled |
+| `CircuitCooldownSec` | int | 0 | Cooldown (0=disabled) |
+
+### Session & Correlation
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `UseSessionManager` | bool | true | Enable session controls |
+| `SessionEndHour` | int | 20 | Session end hour |
+| `MaxTradesPerSession` | int | 10 | Max trades |
+| `UseCorrelationManager` | bool | true | Enable correlation checks |
+| `MaxCorrelationLimit` | double | 0.7 | Max correlation |
+| `CorrLookbackDays` | int | 30 | Lookback period |
+| `P5_CorrMax` | double | 1.0 | 1.0=no pruning |
+| `P5_CorrLookbackDays` | int | 5 | Lookback if PM unavailable |
+
+### Position & Volatility
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `PMMaxOpenPositions` | int | 10 | Max open positions |
+| `UsePositionManager` | bool | false | Enable PositionManager |
+| `UseVolatilitySizer` | bool | false | ATR-based sizing |
+| `VolSizerATRPeriod` | int | 14 | ATR period |
+| `VolSizerBaseATRPct` | double | 1.0 | Base ATR % |
+| `VolSizerMinMult` | double | 0.1 | Min lot multiplier |
 
 ---
 
@@ -430,57 +422,51 @@ input int      LiveExploreMaxPerSlice = 2;       // More conservative (vs 3 in P
 For initial data gathering phase:
 
 ```cpp
-input bool     NoConstraintsMode = true;         // BYPASS ALL GATES
+input bool     NoConstraintsMode = true;         // Bypass non-critical gates
 input int      MaxOpenPositions = 0;             // Unlimited positions
 input bool     UseInsightsGating = false;        // Disable insights gating
-input bool     UseExploration = false;           // Not needed with NoConstraints
-input int      ExploreMaxPerSlicePerDay = 0;     // Unlimited if exploration enabled
-input int      ExploreMaxPerSlice = 0;           // Unlimited
+input int      ExploreMaxPerSlicePerDay = 100;   // High exploration cap
+input int      ExploreMaxPerSlice = 100;         // High weekly cap
 
 // Still collect data
-input bool     KBEnable = true;
-input bool     KBLogFeatures = true;
-input bool     TelemetryEnable = true;
+input bool     TelemetryEnabled = true;
+input bool     TelemetryVerbose = true;
 ```
 
-### Pattern 2: Cautious Paper Trading
+### Pattern 2: Cautious Demo Trading
 
-For paper trading with realistic constraints:
+For demo trading with realistic constraints:
 
 ```cpp
-input bool     NoConstraintsMode = false;        // Enable all gates
+input bool     NoConstraintsMode = false;        // Enable gates
 input int      MaxOpenPositions = 5;             // Reasonable limit
 input bool     UseInsightsGating = true;
-input double   InsightsMinWinRate = 0.50;
-input int      InsightsMinTotalTrades = 10;
-input bool     UseExploration = true;
-input int      ExploreMaxPerSlicePerDay = 2;
-input int      ExploreMaxPerSlice = 3;
+input double   GateMinWinRate = 0.50;
+input int      GateMinTrades = 10;
+input int      ExploreMaxPerSlicePerDay = 10;
+input int      ExploreMaxPerSlice = 20;
 
 // Conservative risk
-input double   MaxDailyLossPct = 3.0;
-input int      MaxConsecutiveLosses = 3;
+input double   CBDailyLossLimitPct_Input = 3.0;
 ```
 
 ### Pattern 3: Live Trading (Conservative)
 
-For initial live deployment:
+For initial live deployment (using LiveEA):
 
 ```cpp
+// LiveEA inputs
 input bool     NoConstraintsMode = false;        // All gates active
-input int      MaxOpenPositions = 3;             // Very limited
+input int      PMMaxOpenPositions = 3;           // Very limited
 input bool     UseInsightsGating = true;
-input double   LiveInsightsMinWinRate = 0.60;    // Stricter than paper
-input int      LiveInsightsMinTotalTrades = 50;  // More data required
+input double   GateMinWinRate = 0.55;            // Stricter than paper
+input int      GateMinTrades = 30;               // More data required
 input bool     UsePolicyGating = true;
-input double   G6_MinMLConfidence = 0.65;        // High ML confidence required
 
 // Strict risk controls
-input double   LiveMaxDailyLossPct = 2.0;
-input int      LiveMaxConsecutiveLosses = 2;
-input double   LiveMinMarginLevel = 300.0;
-input bool     UsePositionManager = true;
-input int      PM_ScalingProfile = 2;            // Conservative
+input double   MaxDailyLossPct = 2.0;
+input double   MaxDrawdownPct = 10.0;
+input double   MinMarginLevel = 200.0;
 ```
 
 ### Pattern 4: ML Training Focus
@@ -489,13 +475,11 @@ Optimize for ML training data quality:
 
 ```cpp
 input bool     NoConstraintsMode = true;         // Max coverage
-input bool     KBLogFeatures = true;             // Essential
-input bool     TelemetryEnable = true;
+input bool     TelemetryEnabled = true;
 input bool     TelemetryVerbose = true;          // Capture all details
 
 // Diverse strategy exposure
-input bool     SelectorEnable = true;
-input int      SelectorTopN = 10;                // More strategies
+input bool     UseStrategySelector = true;
 
 // Policy fallback for coverage
 input bool     UsePolicyGating = true;
@@ -507,34 +491,32 @@ input bool     FallbackDemoOnly = false;         // Allow everywhere for data
 
 ## Gate Configuration
 
-### Gate Threshold Tuning
+### Actual Gate Implementation
 
-Each gate supports dynamic threshold adjustment via learning system:
+The DualEA system uses a simplified gate architecture compared to the aspirational 8-stage pipeline documented earlier:
 
-```cpp
-// Initial thresholds (inputs)
-G1_MinConfidence = 0.6
-G2_MaxCorrelation = 0.8
-G3_MinScore = 0.5
-// ... etc
+**Always-Enforced Gates (not bypassed by NoConstraintsMode):**
+- Circuit breaker checks (`UseCircuitBreakers`)
+- Memory limit validation
+- News filter (`UseNewsFilter`)
 
-// Learning system adjusts based on outcomes
-if (GateLearningEnable) {
-    // Thresholds adjust automatically based on pass/fail success rates
-    // Target: achieve configured success rate per gate
-}
-```
+**Optional Gates (bypassed when `NoConstraintsMode=true`):**
+- Insights gating (`UseInsightsGating` with threshold inputs)
+- Policy gating (`UsePolicyGating`)
+- Session management (`UseSessionManager`)
+- Correlation management (`UseCorrelationManager`)
+- Regime detection (`UseRegimeGate`)
 
 ### Shadow Mode for Testing
 
-Test gate changes without blocking trades:
+Test gate decisions without blocking trades:
 
 ```cpp
 input bool     NoConstraintsMode = true;         // Enable shadow mode
 input bool     TelemetryVerbose = true;          // Capture shadow decisions
 
 // Gates still evaluate but don't block
-// Check telemetry for: LogGatingShadow() events
+// Check telemetry for shadow gating events
 ```
 
 ---

@@ -2,7 +2,7 @@
 
 ## Current State Analysis
 
-### Legacy Gate System (`PaperEA.mq5`)
+### Legacy Gate System (`PaperEA_v2.mq5`)
 Uses `GatingPipeline.mqh` with these gates:
 - Circuit breaker gates
 - News filtering gates  
@@ -25,7 +25,7 @@ Uses `GateManager.mqh` with these gates:
 ## Migration Strategy
 
 ### Phase 1: Parallel Testing (Current)
-- Keep `PaperEA.mq5` running as production
+- Keep `PaperEA_v2.mq5` running as production
 - Run `PaperEA_v2.mq5` in parallel for testing
 - Compare gate decisions and performance
 
@@ -35,7 +35,7 @@ Uses `GateManager.mqh` with these gates:
 - Test paper-to-live signal pipeline
 
 ### Phase 3: Full Migration
-- Replace `PaperEA.mq5` with `PaperEA_v2.mq5`
+- Replace `PaperEA_v2.mq5` with `PaperEA_v2.mq5`
 - Implement `LiveEA_v2.mq5` with enhanced gates
 - Activate bidirectional learning
 

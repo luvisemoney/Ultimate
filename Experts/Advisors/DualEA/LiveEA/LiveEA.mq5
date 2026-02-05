@@ -18,6 +18,7 @@
 #include "..\\Include\\CorrelationManager.mqh"
 #include "..\\Include\\VolatilitySizer.mqh"
 #include "..\\Include\\InsightsLoader.mqh"
+#include "..\\Include\\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 #include "LiveEA_StrategyBridge.mqh"
 
 //+------------------------------------------------------------------+
@@ -138,6 +139,7 @@ CPositionManager *g_position_manager = NULL;
 CSessionManager* g_session_manager = NULL;
 CCorrelationManager* g_correlation_manager = NULL;
 CVolatilitySizer* g_volatility_sizer = NULL;
+CIncrementalInsightEngine* g_insight_engine = NULL; // Real-time statistics engine
 bool              g_eval_busy        = false;
 datetime          g_last_trade_placed= 0;
 
@@ -1302,6 +1304,18 @@ bool Insights_Allow(const string strategy, const string symbol, const int timefr
     // Insights/Policy gate (fail-closed unless NoConstraintsMode)
     if(!NoConstraintsMode)
       {
+       // Check IncrementalInsightEngine for auto-promoted strategies
+       if(CheckPointer(g_insight_engine) != POINTER_INVALID)
+       {
+          if(!g_insight_engine.IsStrategyApproved(order.strategy_name, _Symbol, (int)_Period))
+          {
+             // Strategy not yet promoted - block trade
+             if(ShouldLog(LOG_INFO)) PrintFormat("[INSIGHTS] blocked %s on %s/%s reason=not_approved", 
+                                                  order.strategy_name, _Symbol, EnumToString(_Period));
+             g_eval_busy=false; return;
+          }
+       }
+       
        string gate_reason="";
        bool ins_ok = Insights_Allow(order.strategy_name, _Symbol, (int)_Period, gate_reason);
        if(TelemetryEnabled && CheckPointer(g_telemetry)!=POINTER_INVALID)
@@ -1454,6 +1468,13 @@ int OnInit()
    EnsureSessionManager();
    EnsureCorrelationManager();
    EnsureVolatilitySizer();
+   
+   // Initialize Incremental Insight Engine for real-time strategy approval
+   g_insight_engine = new CIncrementalInsightEngine();
+   if(CheckPointer(g_insight_engine) != POINTER_INVALID)
+   {
+      if(ShouldLog(LOG_INFO)) Print("[LiveEA] Incremental Insight Engine initialized");
+   }
    // Load exploration counters and gating caches
    LoadExploreCounts();
    LoadExploreCountsDay();
@@ -1515,6 +1536,7 @@ void OnDeinit(const int reason)
    if(CheckPointer(g_session_manager)!=POINTER_INVALID)  { delete g_session_manager;  g_session_manager=NULL; }
    if(CheckPointer(g_correlation_manager)!=POINTER_INVALID) { delete g_correlation_manager; g_correlation_manager=NULL; }
    if(CheckPointer(g_volatility_sizer)!=POINTER_INVALID) { delete g_volatility_sizer; g_volatility_sizer=NULL; }
+   if(CheckPointer(g_insight_engine)!=POINTER_INVALID)   { delete g_insight_engine;   g_insight_engine=NULL; }
    if(InsightsAutoReload && InsightsReadyPollSec>0)
       EventKillTimer();
   }
