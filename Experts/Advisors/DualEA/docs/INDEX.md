@@ -1,47 +1,70 @@
 # DualEA Documentation Index
 
-## All Documentation Files
+**Last Updated**: February 2026
+**System Version**: PaperEA v2 with P0-P5 Advanced Hardening
 
-1. [# FUCKING SCIENTIFIC PROTOCOL FOR SUNNY-.md](# FUCKING SCIENTIFIC PROTOCOL FOR SUNNY-.md)
-2. [Appendices.md](Appendices.md)
-3. [COMPILATION_FIXES.md](COMPILATION_FIXES.md)
-4. [CORE_IMPLEMENTATION_PLAN.md](CORE_IMPLEMENTATION_PLAN.md)
-5. [Configuration-Reference.md](Configuration-Reference.md)
-6. [DOCUMENTATION_SUMMARY.md](DOCUMENTATION_SUMMARY.md)
-7. [DualEA_Action_Framework.md](DualEA_Action_Framework.md)
-8. [DualEA_Handbook.md](DualEA_Handbook.md)
-9. [DualEA_Lifecycle_Handbook.md](DualEA_Lifecycle_Handbook.md)
-10. [ENHANCED_STRATEGIES.md](ENHANCED_STRATEGIES.md)
-11. [Execution-Pipeline.md](Execution-Pipeline.md)
-12. [GATE_MIGRATION_GUIDE.md](GATE_MIGRATION_GUIDE.md)
-13. [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)
-14. [INDEX.md](INDEX.md)
-15. [KB-Schemas.md](KB-Schemas.md)
-16. [LiveEA_IMPLEMENTATION_PLAN.md](LiveEA_IMPLEMENTATION_PLAN.md)
-17. [LiveEA_README.md](LiveEA_README.md)
-18. [NUCLEAR_IMPLEMENTATION_COMPLETE.md](NUCLEAR_IMPLEMENTATION_COMPLETE.md)
-19. [NUCLEAR_SYSTEM_README.md](NUCLEAR_SYSTEM_README.md)
-20. [Observability-Guide.md](Observability-Guide.md)
-21. [Operations.md](Operations.md)
-22. [PaperEA_IMPLEMENTATION_PLAN.md](PaperEA_IMPLEMENTATION_PLAN.md)
-23. [PaperEA_README.md](PaperEA_README.md)
-24. [Phase-Implementation.md](Phase-Implementation.md)
-25. [Phase3.md](Phase3.md)
-26. [Policy-Exploration-Guide.md](Policy-Exploration-Guide.md)
-27. [PolicySchema.md](PolicySchema.md)
-28. [PositionManager_Guide.md](PositionManager_Guide.md)
-29. [README.md](README.md)
-30. [README_NEW.md](README_NEW.md)
-31. [README_PRODUCTION.md](README_PRODUCTION.md)
-32. [Redis_Schema.md](Redis_Schema.md)
-33. [SL_TP_FIX_SUMMARY.md](SL_TP_FIX_SUMMARY.md)
-34. [STRATEGY_UNLOCK_IMPLEMENTATION_PLAN.md](STRATEGY_UNLOCK_IMPLEMENTATION_PLAN.md)
-35. [UNIVERSAL_AUTO_DETECTION_IMPLEMENTATION.md](UNIVERSAL_AUTO_DETECTION_IMPLEMENTATION.md)
-36. [UnifiedSystemGuide.md](UnifiedSystemGuide.md)
+---
 
-## Quick Links
+## 📚 Core Documentation
 
-- [Documentation Summary](DOCUMENTATION_SUMMARY.md) - Overview of all documentation files
-- [README_NEW.md](README_NEW.md) - Simplified documentation index
-- [README_PRODUCTION.md](README_PRODUCTION.md) - Quick reference guide
+| Document | Purpose |
+|----------|---------|
+| **[README.md](README.md)** | Main system overview, architecture, and quick start |
+| **[Configuration-Reference.md](Configuration-Reference.md)** | Complete input parameter reference (180+ settings) |
 
+---
+
+## 🛡️ System Components
+
+| Document | Purpose |
+|----------|---------|
+| **[NUCLEAR_IMPLEMENTATION_COMPLETE.md](NUCLEAR_IMPLEMENTATION_COMPLETE.md)** | Nuclear-grade optimization (VaR, Kelly, correlation engine) |
+| **[ONNX_INTEGRATION_README.md](ONNX_INTEGRATION_README.md)** | ML model integration via ONNX Runtime |
+| **[EFFICIENT_GATE_SYSTEM_IMPLEMENTATION.md](EFFICIENT_GATE_SYSTEM_IMPLEMENTATION.md)** | 8-stage gate system architecture |
+| **[ENHANCED_STRATEGIES.md](ENHANCED_STRATEGIES.md)** | 23 signal generator strategies |
+
+---
+
+## 🔧 Operational Guides
+
+| Document | Purpose |
+|----------|---------|
+| **[Observability-Guide.md](Observability-Guide.md)** | Monitoring, telemetry, and health checks |
+| **[Operations.md](Operations.md)** | Day-to-day operations and maintenance |
+| **[Execution-Pipeline.md](Execution-Pipeline.md)** | Trade execution flow and pipeline |
+
+---
+
+## 📊 Data & Schema
+
+| Document | Purpose |
+|----------|---------|
+| **[KB-Schemas.md](KB-Schemas.md)** | Knowledge Base CSV schemas |
+| **[Redis_Schema.md](Redis_Schema.md)** | Redis data structures for coordination |
+| **[PolicySchema.md](PolicySchema.md)** | Policy.json structure and validation |
+| **[Policy-Exploration-Guide.md](Policy-Exploration-Guide.md)** | Policy exploration and optimization |
+| **[PositionManager_Guide.md](PositionManager_Guide.md)** | Position management internals |
+
+---
+
+## 🚀 Quick Reference
+
+### P0-P5 Priority System
+- **P0**: Production Risk (Nuclear Risk Engine, SQLite, Shadow Logging)
+- **P1**: Architectural Hardening (Feature Cache, System Monitor, Volatility Exits)
+- **P2**: Intelligence (Concept Drift, Auto-Promotion, MTF Gate, Correlation Pruner)
+- **P3**: Performance (CPU Budgeting, Ring Buffers, Batch Telemetry)
+- **P4**: Evolution (gRPC ML Bridge, Adversarial Fuzzer)
+
+### Key Files
+- `PaperEA/PaperEA_v2.mq5` - Main EA (3109+ lines)
+- `Include/CDualEAController.mqh` - P0-P5 Master Controller
+- `Include/PaperEA_v2_P0P5_Integration.mqh` - Integration layer
+
+### Common Data Locations
+```
+Terminal/Common/Files/DualEA/
+├── features.csv       # Feature data for ML
+├── knowledge_base.csv  # Trade execution records
+├── insights.json      # Performance analytics
+└── policy.json        # ML-generated trading policy

@@ -143,7 +143,65 @@ Terminal/Common/Files/DualEA/
 - **Advanced Correlation Pruning**: More sophisticated portfolio correlation algorithms beyond Pearson
 - **Distributed Training**: Multi-machine ML training for large datasets
 
-## 🔧 Unified System Architecture (NEW)
+## �️ P0-P5 Advanced Hardening & Intelligence (NEW)
+
+The EA now includes a comprehensive hardening and intelligence upgrade with P0 through P5 priority levels:
+
+### **P0 (Production Risk) - CRITICAL**
+- **Nuclear Risk Engine**: VaR 95%, CVaR, Kelly Criterion, correlation matrix monitoring
+- **SQLite Knowledge Base**: Parallel CSV migration with 30-day transition period
+- **Shadow Logging**: Atomic CSV writes with checksums and file locking
+
+### **P1 (Architectural Hardening)**
+- **Feature Cache**: Pre-warmed indicator handles (ADX, ATR, RSI) to eliminate redundant calculations
+- **System Monitor**: Real-time CPU and memory tracking with automatic circuit breakers
+- **Volatility Exits**: Trailing stop system with volatility-adjusted sizing
+
+### **P2 (Intelligence Enhancements)**
+- **Concept Drift Detector**: Welford's Algorithm-based gate threshold auto-adjustment
+- **Auto-Promotion System**: Performance-based strategy promotion from PaperEA to LiveEA
+- **Shadow Trading Bridge**: Parallel demo execution to detect slippage
+- **Multi-Timeframe Confirmation Gate**: MTF entry validation to reduce false signals
+- **Correlation-Aware Pruner**: Prevents strategy over-concentration (0.70 max correlation)
+
+### **P3 (Performance Optimizations)**
+- **CPU Budgeting**: 10ms fail-fast with risk gate protection (G1/G4/G7/G8 never skipped)
+- **Indicator Cache**: Pre-warmed handles for all technical indicators
+- **Lock-Free Ring Buffers**: 8192-element capacity for zero-contention logging
+- **Batch Telemetry Writes**: Batched I/O to reduce disk pressure
+- **Timer Strategy Scanner**: Centralized low-tick strategy scanning
+
+### **P4 (Strategic Evolution)**
+- **gRPC ML Bridge**: Real-time ML inference with latency monitoring
+- **Adversarial Fuzzer**: Automated jailbreak testing for robustness validation
+- **Nuclear Risk Engine** (comprehensive): VaR, Kelly, correlation-based circuit breakers
+- **Feature Drift Detector**: Real-time distribution shift detection
+
+### **Integration Architecture**
+```cpp
+// P0-P5 systems are managed by CDualEAController singleton
+// Integrated via PaperEA_v2_P0P5_Integration.mqh
+
+// OnInit:
+InitializeP0P5Systems();  // Initializes all P0-P5 subsystems
+
+// OnTick:
+OnTickP0P5();  // Processes drift detection, CPU budgeting, risk checks
+
+// OnTimer:
+OnTimerP0P5();  // Periodic maintenance (telemetry flush, shadow trades)
+
+// OnDeinit:
+ShutdownP0P5Systems();  // Clean shutdown of all P0-P5 components
+```
+
+**Key Design Decisions**:
+- Risk gates (G1, G4, G7, G8) are never skipped under CPU pressure
+- Multi-symbol management remains chart-per-symbol with Redis coordination
+- SQLite runs parallel to CSV for 30-day migration period
+- All P0-P5 features have enable/disable input parameters for gradual rollout
+
+## �🔧 Unified System Architecture (NEW)
 The DualEA system features a **Unified Architecture** that eliminates redundancy by consolidating insights management and gating pipeline into three core components:
 
 **Core Components:**

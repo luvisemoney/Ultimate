@@ -593,6 +593,79 @@ Gradually increase risk exposure:
 
 ---
 
+## P0-P5 Advanced Hardening Inputs
+
+**Location**: `Include/PaperEA_v2_P0P5_Integration.mqh`
+
+All P0-P5 features can be enabled/disabled via input parameters for gradual rollout.
+
+### P0 - Production Risk Controls
+```cpp
+input bool     InpEnableNuclearRiskEngine = true;         // Enable VaR/Kelly/CVaR risk engine
+input bool     InpEnableSQLiteKB = true;                  // Enable SQLite parallel KB
+input int      InpSQLiteMigrationDays = 30;               // CSV migration period
+input bool     InpEnableShadowLogging = true;             // Atomic CSV writes with checksums
+input double   InpMaxPortfolioRiskPct = 15.0;             // Max portfolio risk %
+input double   InpMaxCorrelationForPruning = 0.70;        // Correlation threshold for strategy pruning
+```
+
+### P1 - Architectural Hardening
+```cpp
+input bool     InpEnableFeatureCache = true;                // Pre-warmed indicator handles
+input bool     InpEnableSystemMonitor = true;               // CPU/memory monitoring
+input bool     InpEnableVolatilityExits = true;               // Trailing volatility exits
+input int      InpFeatureCacheSize = 100;                 // Cache size per indicator
+```
+
+### P2 - Intelligence Enhancements
+```cpp
+input bool     InpEnableConceptDriftDetection = true;      // Auto-adjust gate thresholds
+input bool     InpEnableAutoDriftAdjustment = true;         // Welford's algorithm adjustment
+input double   InpDriftZScoreThreshold = 2.5;              // Drift detection threshold
+input bool     InpEnableAutoPromotionSystem = true;        // Paper to Live promotion
+input bool     InpEnableShadowTradingBridge = true;         // Parallel demo execution
+input bool     InpEnableMTFConfirmationGate = true;          // Multi-timeframe confirmation
+input bool     InpEnableCorrelationPruner = true;            // Correlation-aware pruning
+input int      InpMTFConfirmationTimeframes = 2;             // Number of TF confirmations required
+```
+
+### P3 - Performance Optimizations
+```cpp
+input bool     InpEnableCPUBudgeting = true;                // CPU fail-fast processing
+input int      InpCPUBudgetMsPerTick = 10;                  // Max CPU ms per tick
+input bool     InpEnableIndicatorCache = true;              // Pre-warm indicator handles
+input bool     InpEnableRingBuffers = true;                 // Lock-free logging
+input bool     InpEnableBatchTelemetry = true;              // Batched I/O writes
+input int      InpRingBufferSize = 8192;                    // Ring buffer capacity
+input int      InpTelemetryBatchSize = 100;                   // Batch write size
+input bool     InpEnableTimerStrategyScanner = true;           // Timer-based scanning
+input int      InpStrategyScanIntervalSec = 60;              // Scan interval
+```
+
+### P4 - Strategic Evolution
+```cpp
+input bool     InpEnableGrpcMLBridge = false;               // gRPC ML inference (disabled by default)
+input string   InpGrpcServerAddress = "localhost:50051";   // gRPC server
+input bool     InpEnableAdversarialFuzzer = false;          // Jailbreak testing (debug only)
+input bool     InpEnableFeatureDriftDetector = true;        // Distribution shift detection
+```
+
+### Cross-Chart Coordination
+```cpp
+input bool     InpEnableSymbolCoordinator = false;          // Redis coordination (disabled by default)
+input string   InpRedisServerAddress = "localhost:6379";   // Redis server
+input int      InpMaxPositionsPerSymbol = 5;                // Per-symbol position cap
+```
+
+**Key Design Decisions**:
+- Risk gates (G1, G4, G7, G8) are never skipped under CPU pressure
+- Multi-symbol management remains chart-per-symbol with Redis coordination
+- SQLite runs parallel to CSV for 30-day migration period
+- gRPC ML Bridge disabled by default (local ONNX preferred)
+- Redis coordination disabled by default (single-chart mode)
+
+---
+
 **See Also:**
 - [Execution-Pipeline.md](Execution-Pipeline.md) - Detailed execution flow
 - [Observability-Guide.md](Observability-Guide.md) - Monitoring and telemetry
