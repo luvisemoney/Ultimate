@@ -5,8 +5,6 @@
 class CAroonStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
    int              m_period;
    int              m_upThreshold;
    int              m_downThreshold;
@@ -16,9 +14,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CAroonStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CAroonStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("AroonStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_period = 14; m_upThreshold = 70; m_downThreshold = 30;
       m_aroon_up = m_aroon_down = 0;
       m_close0 = m_close1 = 0;
@@ -28,13 +25,13 @@ public:
    
    virtual void Refresh()
    {
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // Manual Aroon computation: Up = (period - barsSinceHigh)/period * 100
       //                          Down = (period - barsSinceLow)/period * 100
-      int bars_since_high = iHighest(m_symbol, m_tf, MODE_HIGH, m_period, 0);
-      int bars_since_low  = iLowest(m_symbol, m_tf, MODE_LOW,  m_period, 0);
+      int bars_since_high = iHighest(m_symbol, m_timeframe, MODE_HIGH, m_period, 0);
+      int bars_since_low  = iLowest(m_symbol, m_timeframe, MODE_LOW,  m_period, 0);
       if(bars_since_high>=0 && bars_since_low>=0)
       {
          m_aroon_up   = 100.0 * (m_period - bars_since_high) / m_period;

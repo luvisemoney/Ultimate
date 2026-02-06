@@ -5,9 +5,6 @@
 class CAwesomeOscillatorStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-   
    // AO parameters
    int m_fastPeriod, m_slowPeriod;
    
@@ -16,9 +13,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CAwesomeOscillatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CAwesomeOscillatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("AwesomeOscillatorStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_fastPeriod = 5; m_slowPeriod = 34;
       ResetValues();
    }
@@ -34,12 +30,12 @@ public:
    virtual void Refresh()
    {
       ResetValues();
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // Calculate Awesome Oscillator
       double ao_buffer[];
-      int ao_handle = iAO(m_symbol, m_tf);
+      int ao_handle = iAO(m_symbol, m_timeframe);
       if(ao_handle > 0 && CopyBuffer(ao_handle, 0, 0, 3, ao_buffer) == 3)
       {
          m_ao_current = ao_buffer[0];

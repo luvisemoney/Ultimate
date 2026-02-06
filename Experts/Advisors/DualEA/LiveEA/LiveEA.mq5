@@ -9,17 +9,34 @@
 //+------------------------------------------------------------------+
 //| INCLUDES                                                         |
 //+------------------------------------------------------------------+
-#include "..\\Include\\IStrategy.mqh"
-#include "..\\Include\\PositionManager.mqh"
-#include "..\\Include\\TradeManager.mqh"
-#include "..\\Include\\Telemetry.mqh"
-#include "..\\Include\\TelemetryStandard.mqh"
-#include "..\\Include\\SessionManager.mqh"
-#include "..\\Include\\CorrelationManager.mqh"
-#include "..\\Include\\VolatilitySizer.mqh"
-#include "..\\Include\\InsightsLoader.mqh"
-#include "..\\Include\\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
+// New Architecture: Auto-learning gate system (unified with PaperEA)
+#include "..\Include\GateSystemAutoLearning.mqh"
+
+#include "..\Include\IStrategy.mqh"
+#include "..\Include\CPositionManager.mqh"
+#include "..\Include\TradeManager.mqh"
+#include "..\Include\Telemetry.mqh"
+#include "..\Include\TelemetryStandard.mqh"
+#include "..\Include\SessionManager.mqh"
+#include "..\Include\CorrelationManager.mqh"
+#include "..\Include\VolatilitySizer.mqh"
+#include "..\Include\InsightsLoader.mqh"
+#include "..\Include\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 #include "LiveEA_StrategyBridge.mqh"
+
+// Undefine logging macros from included headers to avoid clashes with LogLevel enum
+#ifdef LOG_DEBUG
+ #undef LOG_DEBUG
+#endif
+#ifdef LOG_INFO
+ #undef LOG_INFO
+#endif
+#ifdef LOG_WARNING
+ #undef LOG_WARNING
+#endif
+#ifdef LOG_ERROR
+ #undef LOG_ERROR
+#endif
 
 //+------------------------------------------------------------------+
 //| ENUMS AND CONSTANTS                                              |
@@ -133,13 +150,15 @@ input double BaseLotSize           = 0.01;   // base lot size used when sizing v
 //+------------------------------------------------------------------+
 //| GLOBAL VARIABLES                                                 |
 //+------------------------------------------------------------------+
+CEfficientGateManagerEnhanced* g_gate_manager = NULL;  // New unified gate system
 CTelemetry       *g_telemetry        = NULL;
 CTelemetryStandard* g_tel_standard = NULL;
-CPositionManager *g_position_manager = NULL;
 CSessionManager* g_session_manager = NULL;
 CCorrelationManager* g_correlation_manager = NULL;
 CVolatilitySizer* g_volatility_sizer = NULL;
-CIncrementalInsightEngine* g_insight_engine = NULL; // Real-time statistics engine
+// g_position_manager and g_insight_engine are defined in their respective modules
+// CPositionManager* g_position_manager;
+// CIncrementalInsightEngine* g_insight_engine;
 bool              g_eval_busy        = false;
 datetime          g_last_trade_placed= 0;
 
@@ -851,6 +870,18 @@ int WeekMondayId(datetime t)
    return (md.year*10000 + md.mon*100 + md.day);
   }
 
+// P0-3: Checksum calculation for exploration counters
+uint CalculateExploreChecksum(string key, int week, int count)
+{
+   string data = key + "|" + IntegerToString(week) + "|" + IntegerToString(count);
+   uint checksum = 0;
+   for(int i = 0; i < StringLen(data); i++)
+   {
+      checksum = ((checksum << 5) + checksum) + (uchar)StringGetCharacter(data, i);
+   }
+   return checksum;
+}
+
 string ExploreCountsPath()
   {
    return "DualEA\\explore_counts.csv"; // FILE_COMMON
@@ -861,14 +892,60 @@ void SaveExploreCounts()
    string path = ExploreCountsPath();
    int h = FileOpen(path, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h==INVALID_HANDLE){ PrintFormat("Explore persist: cannot open %s for write. Err=%d", path, GetLastError()); return; }
-   // header
-   FileWrite(h, "key,week_monday_yyyymmdd,count");
+   // P0-3: Add checksum column to header
+   FileWrite(h, "key", "week_monday_yyyymmdd", "count", "checksum");
    for(int i=0;i<ArraySize(g_exp_keys);++i)
      {
-      FileWrite(h, g_exp_keys[i], IntegerToString(g_exp_weeks[i]), IntegerToString(g_exp_counts[i]));
+      // P0-3: Calculate and write checksum
+      uint checksum = CalculateExploreChecksum(g_exp_keys[i], g_exp_weeks[i], g_exp_counts[i]);
+      FileWrite(h, g_exp_keys[i], IntegerToString(g_exp_weeks[i]), IntegerToString(g_exp_counts[i]), IntegerToString((long)checksum));
      }
    FileClose(h);
+   // P0-3: Verify file was written correctly
+   if(!VerifyExploreCountsFile())
+   {
+      Print("[P0-3] WARNING: Explore counts file verification failed - data may be corrupted");
+   }
  }
+
+// P0-3: Verify the saved file by reading it back and checking consistency
+bool VerifyExploreCountsFile()
+{
+   string path = ExploreCountsPath();
+   int h = FileOpen(path, FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
+   if(h==INVALID_HANDLE) return false;
+   
+   bool first = true;
+   int row = 0;
+   bool valid = true;
+   
+   while(!FileIsEnding(h) && valid)
+   {
+      string k = FileReadString(h);
+      if(k=="" && FileIsEnding(h)) break;
+      
+      string wk_s = FileReadString(h);
+      string cnt_s = FileReadString(h);
+      string checksum_s = FileReadString(h);  // P0-3: Read checksum
+      
+      if(first) { first = false; continue; }  // Skip header
+      
+      // P0-3: Verify checksum
+      if(StringLen(checksum_s) > 0)
+      {
+         uint expected = CalculateExploreChecksum(k, (int)StringToInteger(wk_s), (int)StringToInteger(cnt_s));
+         uint actual = (uint)StringToInteger(checksum_s);
+         if(expected != actual)
+         {
+            PrintFormat("[P0-3] Checksum mismatch at row %d: key=%s", row, k);
+            valid = false;
+         }
+      }
+      row++;
+   }
+   FileClose(h);
+   return valid;
+}
 
 bool LoadExploreCounts()
   {
@@ -877,19 +954,50 @@ bool LoadExploreCounts()
    int h = FileOpen(path, FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(h==INVALID_HANDLE) { if(ShouldLog(LOG_INFO)) PrintFormat("Explore persist: no prior %s (ok)", path); return true; }
    bool first=true;
+   int corrupted_rows = 0;
+   int total_rows = 0;
+   
    while(!FileIsEnding(h))
      {
       string k = FileReadString(h); if(k=="" && FileIsEnding(h)) break;
       string wk_s = FileReadString(h);
       string cnt_s = FileReadString(h);
+      string checksum_s = FileReadString(h);  // P0-3: Read checksum column
+      
       // skip header if present
       if(first && (StringFind(k, "key", 0)==0)) { first=false; continue; }
       first=false;
-      int n = ArraySize(g_exp_keys);
-      ArrayResize(g_exp_keys,n+1); ArrayResize(g_exp_weeks,n+1); ArrayResize(g_exp_counts,n+1);
-      g_exp_keys[n]=k; g_exp_weeks[n]=(int)StringToInteger(wk_s); g_exp_counts[n]=(int)StringToInteger(cnt_s);
+      total_rows++;
+      
+      // P0-3: Validate checksum before loading
+      bool valid = true;
+      if(StringLen(checksum_s) > 0)
+      {
+         uint expected = CalculateExploreChecksum(k, (int)StringToInteger(wk_s), (int)StringToInteger(cnt_s));
+         uint actual = (uint)StringToInteger(checksum_s);
+         if(expected != actual)
+         {
+            PrintFormat("[P0-3] Corrupted row detected and skipped: key=%s (checksum mismatch)", k);
+            corrupted_rows++;
+            valid = false;
+         }
+      }
+      
+      if(valid)
+      {
+         int n = ArraySize(g_exp_keys);
+         ArrayResize(g_exp_keys,n+1); ArrayResize(g_exp_weeks,n+1); ArrayResize(g_exp_counts,n+1);
+         g_exp_keys[n]=k; g_exp_weeks[n]=(int)StringToInteger(wk_s); g_exp_counts[n]=(int)StringToInteger(cnt_s);
+      }
      }
    FileClose(h);
+   
+   // P0-3: Log corruption statistics
+   if(corrupted_rows > 0)
+   {
+      PrintFormat("[P0-3] LoadExploreCounts: Recovered from %d corrupted rows out of %d total", corrupted_rows, total_rows);
+   }
+   
    return true;
   }
 

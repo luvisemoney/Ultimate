@@ -6,15 +6,14 @@
 class CDonchianATRBreakoutStrategy : public IStrategy
   {
 private:
-   string m_symbol; ENUM_TIMEFRAMES m_tf;
    CDonchian m_dc; int m_dcPeriod;
    int m_hATR; int m_atrPeriod; double m_atrMult;
    // cached
    double m_up1, m_lo1, m_close1, m_atr1;
 public:
-   CDonchianATRBreakoutStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CDonchianATRBreakoutStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("DonchianATRBreakoutStrategy", symbol, tf)
      {
-      m_symbol=symbol; m_tf=tf; m_dcPeriod=20; m_atrPeriod=14; m_atrMult=2.0;
+      m_dcPeriod=20; m_atrPeriod=14; m_atrMult=2.0;
       m_dc.Init(symbol, tf, m_dcPeriod);
       m_hATR = iATR(symbol, tf, m_atrPeriod);
       m_up1=m_lo1=m_close1=m_atr1=0;
@@ -23,7 +22,7 @@ public:
    virtual void Refresh()
      {
       // closed bar values
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       m_up1 = m_dc.Upper(1);
       m_lo1 = m_dc.Lower(1);
 

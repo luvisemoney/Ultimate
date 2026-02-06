@@ -12,7 +12,6 @@
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 #include <Trade\HistoryOrderInfo.mqh>
-#include "..\\Include\\HistoryDealInfo.mqh"
 #include <Files\File.mqh>
 // Removed ArrayObj since we use native arrays
 

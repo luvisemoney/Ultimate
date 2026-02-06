@@ -5,9 +5,6 @@
 class CGoldVolatilityStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-   
    // Gold-specific parameters
    int m_atrPeriod;
    int m_bollingerPeriod;
@@ -20,9 +17,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CGoldVolatilityStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CGoldVolatilityStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("GoldVolatilityStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_atrPeriod = 14;
       m_bollingerPeriod = 20;
       m_bollingerDeviation = 2.0;
@@ -43,12 +39,12 @@ public:
    virtual void Refresh()
    {
       ResetValues();
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // ATR for volatility measurement
       double atr_buffer[];
-      int atr_handle = iATR(m_symbol, m_tf, m_atrPeriod);
+      int atr_handle = iATR(m_symbol, m_timeframe, m_atrPeriod);
       if(atr_handle > 0 && CopyBuffer(atr_handle, 0, 0, 1, atr_buffer) == 1)
          m_atr = atr_buffer[0];
       
@@ -58,7 +54,7 @@ public:
       int deviation_bb = (int)MathRound(m_bollingerDeviation); // align with iBands signature in this terminal build
       int shift_bb = 0;
       int price_bb = (int)PRICE_CLOSE;
-      int bb_handle = iBands(m_symbol, m_tf, period_bb, deviation_bb, shift_bb, price_bb);
+      int bb_handle = iBands(m_symbol, m_timeframe, period_bb, deviation_bb, shift_bb, price_bb);
       if(bb_handle > 0)
       {
          CopyBuffer(bb_handle, 0, 0, 1, bb_upper);
@@ -72,11 +68,11 @@ public:
       
       // Volume analysis
       double volume_buffer[];
-      m_volume = (double)iVolume(m_symbol, m_tf, 0);
+      m_volume = (double)iVolume(m_symbol, m_timeframe, 0);
       
       // Simple volume MA
       double volume_ma_buffer[];
-      int volume_ma_handle = iMA(m_symbol, m_tf, m_volumeMAPeriod, 0, MODE_SMA, VOLUME_TICK);
+      int volume_ma_handle = iMA(m_symbol, m_timeframe, m_volumeMAPeriod, 0, MODE_SMA, VOLUME_TICK);
       if(volume_ma_handle > 0 && CopyBuffer(volume_ma_handle, 0, 0, 1, volume_ma_buffer) == 1)
          m_volume_ma = volume_ma_buffer[0];
    }

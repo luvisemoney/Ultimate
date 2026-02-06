@@ -209,7 +209,8 @@ public:
      int h = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_COMMON);
      if(h == INVALID_HANDLE)
        {
-        LOG(StringFormat("ConfigManager: Cannot create config file %s, error: %d", filename, GetLastError()));
+        string err_msg = StringFormat("ConfigManager: Cannot create config file %s, error: %d", filename, GetLastError());
+        LOG(err_msg);
         return;
        }
       
@@ -257,7 +258,8 @@ public:
       FileWriteString(h, "}\n");
       FileClose(h);
       
-      LOG(StringFormat("Configuration saved to: %s", filename));
+      string save_msg = StringFormat("Configuration saved to: %s", filename);
+      LOG(save_msg);
   }
    
    void LoadFromFile(const string& filename)
@@ -269,7 +271,8 @@ public:
         h = FileOpen(filename, FILE_READ|FILE_TXT); // Try user files
         if(h == INVALID_HANDLE)
           {
-           LOG(StringFormat("ConfigManager: Cannot open config file %s, error: %d", filename, GetLastError()));
+           string open_err = StringFormat("ConfigManager: Cannot open config file %s, error: %d", filename, GetLastError());
+           LOG(open_err);
            return;
           }
        }

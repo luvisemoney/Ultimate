@@ -38,6 +38,9 @@ public:
    double final_sl;            // Final stop loss
    double final_tp;            // Final take profit
    double final_volume;        // Final lot size
+   double final_confidence;    // Final confidence after gating
+   bool is_adjusted;           // Was signal adjusted by gates?
+   string block_reason;        // Reason for blocking signal
    double outcome;             // Trade result (profit/loss)
    datetime close_time;        // When trade closed
    datetime execution_time;    // Execution time
@@ -69,6 +72,9 @@ public:
       final_sl = 0;
       final_tp = 0;
       final_volume = 0;
+      final_confidence = 0.0;
+      is_adjusted = false;
+      block_reason = "";
       outcome = 0;
       close_time = 0;
       execution_time = 0;

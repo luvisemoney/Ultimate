@@ -8,9 +8,6 @@
 class COpeningRangeBreakoutStrategy : public IStrategy
   {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-
    // ORB params
    int              m_session_open_hour;  // server time hour
    int              m_session_open_min;   // server time minute
@@ -84,12 +81,12 @@ private:
         {
          for(int i=1;i<500;++i)
            {
-            datetime t = iTime(m_symbol, m_tf, i);
+            datetime t = iTime(m_symbol, m_timeframe, i);
             if(t==0) break;
             if(t < m_orb_start_ts) break; // earlier than window
             if(t >= m_orb_end_ts) continue; // opened at/after end
-            double h = iHigh(m_symbol, m_tf, i);
-            double l = iLow(m_symbol,  m_tf, i);
+            double h = iHigh(m_symbol, m_timeframe, i);
+            double l = iLow(m_symbol,  m_timeframe, i);
             if(m_orb_high==0.0 || h>m_orb_high) m_orb_high=h;
             if(m_orb_low==0.0  || l<m_orb_low)  m_orb_low=l;
            }
@@ -97,21 +94,19 @@ private:
      }
 
 public:
-   COpeningRangeBreakoutStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   COpeningRangeBreakoutStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("OpeningRangeBreakoutStrategy", symbol, tf)
      {
-      m_symbol=symbol; m_tf=tf;
-      m_session_open_hour=9; m_session_open_min=30; // default to 09:30 server time (tune per broker)
-      m_orb_minutes=30; m_buffer_points=10.0;
-      m_atrPeriod=14; m_atrMult=2.0; m_hATR=iATR(symbol, tf, m_atrPeriod);
-      m_close1=0.0; m_atr1=0.0; m_orb_high=0.0; m_orb_low=0.0; m_orb_start_ts=0; m_orb_end_ts=0;
-      m_orb_base_tf=PERIOD_M5; m_pending_placed=false; m_anchor_day=0;
+      m_session_open_hour=8; m_session_open_min=0; m_orb_minutes=30; m_buffer_points=0;
+      m_atrPeriod=14; m_atrMult=1.5; m_hATR=iATR(m_symbol, (ENUM_TIMEFRAMES)m_timeframe, m_atrPeriod);
+      m_close1=0; m_atr1=0; m_orb_high=0; m_orb_low=0; m_orb_start_ts=0; m_orb_end_ts=0;
+      m_orb_base_tf = PERIOD_M5; m_pending_placed=false; m_anchor_day=0;
      }
 
    virtual string Name(){ return "OpeningRangeBreakoutStrategy"; }
 
    virtual void Refresh()
      {
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       // ATR(1)
       m_atr1=0.0; if(m_hATR>0){ double b[1]; if(CopyBuffer(m_hATR,0,1,1,b)==1) m_atr1=b[0]; }
       // Window and range

@@ -5,8 +5,6 @@
 class CAcceleratorOscillatorStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
    int              m_aoFast;
    int              m_aoSlow;
    int              m_aoSignal;
@@ -17,9 +15,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CAcceleratorOscillatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CAcceleratorOscillatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("AcceleratorOscillatorStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_aoFast = 5; m_aoSlow = 34; m_aoSignal = 5;
       m_threshold = 0.0001;
       m_ao_current = m_ao_prev = 0;
@@ -30,12 +27,12 @@ public:
    
    virtual void Refresh()
    {
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // Calculate Accelerator Oscillator
       double ao_buffer[];
-      int ao_handle = iAO(m_symbol, m_tf);
+      int ao_handle = iAO(m_symbol, m_timeframe);
       if(ao_handle > 0 && CopyBuffer(ao_handle, 0, 0, 2, ao_buffer) == 2)
       {
          m_ao_current = ao_buffer[0];

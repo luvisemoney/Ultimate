@@ -6,7 +6,6 @@
 class CRSI2BBReversionStrategy : public IStrategy
   {
 private:
-   string m_symbol; ENUM_TIMEFRAMES m_tf;
    CRSI   m_rsi;
    int    m_rsiPeriod;
    int    m_bbPeriod; double m_bbDev;
@@ -19,9 +18,9 @@ private:
    double m_rsi1; double m_bb_up1, m_bb_mid1, m_bb_lo1; double m_close1; double m_atr1;
 
 public:
-   CRSI2BBReversionStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CRSI2BBReversionStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("RSI2BBReversionStrategy", symbol, tf)
      {
-      m_symbol=symbol; m_tf=tf; m_rsiPeriod=2; m_bbPeriod=20; m_bbDev=2.0; m_atrPeriod=14; m_atrMult=2.0;
+      m_rsiPeriod=2; m_bbPeriod=20; m_bbDev=2.0; m_atrPeriod=14; m_atrMult=2.0;
       m_usePending=false; m_pullbackPoints=10;
       m_rsi.Init(symbol, tf, m_rsiPeriod, PRICE_CLOSE);
       m_hBands = iBands(symbol, tf, m_bbPeriod, 2, 0, PRICE_CLOSE);
@@ -33,7 +32,7 @@ public:
 
    virtual void Refresh()
      {
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       double b[1];
       if(m_hBands>0){ if(CopyBuffer(m_hBands,0,1,1,b)==1) m_bb_up1=b[0]; if(CopyBuffer(m_hBands,1,1,1,b)==1) m_bb_mid1=b[0]; if(CopyBuffer(m_hBands,2,1,1,b)==1) m_bb_lo1=b[0]; }
       m_rsi1 = m_rsi.Value(1);

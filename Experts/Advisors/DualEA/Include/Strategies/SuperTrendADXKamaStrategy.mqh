@@ -7,8 +7,6 @@
 class CSuperTrendADXKamaStrategy : public IStrategy
   {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES m_tf;
    int             m_adxPeriod;
    int             m_atrPeriod;
    double          m_atrMult;
@@ -32,9 +30,8 @@ private:
    double m_kama_val1, m_kama_slope1;
 
 public:
-   CSuperTrendADXKamaStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CSuperTrendADXKamaStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("SuperTrendADXKamaStrategy", symbol, tf)
      {
-      m_symbol = symbol; m_tf = tf;
       m_adxPeriod = 14; m_atrPeriod = 14; m_atrMult = 2.0; m_kamaPeriod=30; m_adxThreshold=22;
       m_st.Init(symbol, tf, 10, 3.0);
       m_kama.Init(symbol, tf, 10, 2, 30);
@@ -48,8 +45,8 @@ public:
 
    virtual void Refresh()
      {
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       // Copy ATR(1)
       double buf[1];
       m_atr1 = 0.0; m_adx1 = 0.0;

@@ -5,9 +5,6 @@
 class CMultiIndicatorStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-   
    // Indicator parameters
    int m_rsiPeriod, m_macdFast, m_macdSlow, m_macdSignal;
    int m_stochK, m_stochD, m_stochSlow;
@@ -28,10 +25,8 @@ private:
    int m_min_score_threshold;
    
 public:
-   CMultiIndicatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CMultiIndicatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("MultiIndicatorStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
-      
       // Initialize parameters
       m_rsiPeriod = 14; m_macdFast = 12; m_macdSlow = 26; m_macdSignal = 9;
       m_stochK = 14; m_stochD = 3; m_stochSlow = 3;
@@ -59,18 +54,18 @@ public:
    virtual void Refresh()
    {
       ResetValues();
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // RSI
       double rsi_buffer[];
-      int rsi_handle = iRSI(m_symbol, m_tf, m_rsiPeriod, PRICE_CLOSE);
+      int rsi_handle = iRSI(m_symbol, m_timeframe, m_rsiPeriod, PRICE_CLOSE);
       if(rsi_handle > 0 && CopyBuffer(rsi_handle, 0, 0, 1, rsi_buffer) == 1)
          m_rsi = rsi_buffer[0];
       
       // MACD
       double macd_main[], macd_signal[];
-      int macd_handle = iMACD(m_symbol, m_tf, m_macdFast, m_macdSlow, m_macdSignal, PRICE_CLOSE);
+      int macd_handle = iMACD(m_symbol, m_timeframe, m_macdFast, m_macdSlow, m_macdSignal, PRICE_CLOSE);
       if(macd_handle > 0)
       {
          CopyBuffer(macd_handle, 0, 0, 1, macd_main);
@@ -81,7 +76,7 @@ public:
       
       // Stochastic
       double stoch_k[], stoch_d[];
-      int stoch_handle = iStochastic(m_symbol, m_tf, m_stochK, m_stochD, m_stochSlow, MODE_SMA, STO_LOWHIGH);
+      int stoch_handle = iStochastic(m_symbol, m_timeframe, m_stochK, m_stochD, m_stochSlow, MODE_SMA, STO_LOWHIGH);
       if(stoch_handle > 0)
       {
          CopyBuffer(stoch_handle, 0, 0, 1, stoch_k);
@@ -92,25 +87,25 @@ public:
       
       // CCI
       double cci_buffer[];
-      int cci_handle = iCCI(m_symbol, m_tf, m_cciPeriod, PRICE_TYPICAL);
+      int cci_handle = iCCI(m_symbol, m_timeframe, m_cciPeriod, PRICE_TYPICAL);
       if(cci_handle > 0 && CopyBuffer(cci_handle, 0, 0, 1, cci_buffer) == 1)
          m_cci = cci_buffer[0];
       
       // Williams %R
       double williams_buffer[];
-      int williams_handle = iWPR(m_symbol, m_tf, m_williamsPeriod);
+      int williams_handle = iWPR(m_symbol, m_timeframe, m_williamsPeriod);
       if(williams_handle > 0 && CopyBuffer(williams_handle, 0, 0, 1, williams_buffer) == 1)
          m_williams = williams_buffer[0];
       
       // Momentum
       double momentum_buffer[];
-      int momentum_handle = iMomentum(m_symbol, m_tf, m_momentumPeriod, PRICE_CLOSE);
+      int momentum_handle = iMomentum(m_symbol, m_timeframe, m_momentumPeriod, PRICE_CLOSE);
       if(momentum_handle > 0 && CopyBuffer(momentum_handle, 0, 0, 1, momentum_buffer) == 1)
          m_momentum = momentum_buffer[0];
       
       // ROC (manual): ((Close(0) - Close(period)) / Close(period)) * 100
-      double close_now = iClose(m_symbol, m_tf, 0);
-      double close_n   = iClose(m_symbol, m_tf, m_rocPeriod);
+      double close_now = iClose(m_symbol, m_timeframe, 0);
+      double close_n   = iClose(m_symbol, m_timeframe, m_rocPeriod);
       if(close_n!=0.0)
          m_roc = 100.0 * (close_now - close_n) / close_n;
       

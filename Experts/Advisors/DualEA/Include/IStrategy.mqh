@@ -1,187 +1,188 @@
-// IStrategy.mqh
-// Defines the interface for all trading strategies.
+//+------------------------------------------------------------------+
+//| IStrategy.mqh - Strategy Interface Definition                      |
+//| Defines the base interface for all trading strategies            |
+//+------------------------------------------------------------------+
+#ifndef ISTRATEGY_MQH
+#define ISTRATEGY_MQH
 
-#ifndef DUALEA_INCLUDE_ISTRATEGY_MQH
-#define DUALEA_INCLUDE_ISTRATEGY_MQH
-#property copyright "2025, Windsurf Engineering"
-#property link      "https://www.windsurf.ai"
+#include <Object.mqh>  // Required for CObject base class
 
-#include <Object.mqh> // Required for CObject
-#include <Trade/Trade.mqh>
-// Make ATR helper available to all strategies that include IStrategy
-#include "ATRUtil.mqh"
-// Forward declaration to avoid circular include; concrete users should include KnowledgeBase.mqh
-class CFeaturesKB;
-
-// --- Trade action type for all strategies
-enum TradeAction
-  {
-   ACTION_NONE = 0,
-   ACTION_BUY = 1,
-   ACTION_SELL = -1
-  };
-
-// --- Trailing stop policy
+//+------------------------------------------------------------------+
+//| Trailing Stop Types                                                |
+//+------------------------------------------------------------------+
 enum TrailingType
-  {
-   TRAIL_NONE = 0,
+{
+   TRAIL_NONE = 0,        // No trailing stop
+   TRAIL_FIXED = 1,       // Fixed points trailing
    TRAIL_FIXED_POINTS = 1,
-   TRAIL_ATR = 2
-  };
+   TRAIL_ATR = 2,         // ATR-based trailing
+   TRAIL_PERCENT = 3,     // Percentage trailing
+   TRAIL_STEP = 4         // Step-based trailing
+};
 
+//+------------------------------------------------------------------+
+//| Trading Signal Structure                                           |
+//+------------------------------------------------------------------+
+struct TradingSignal
+{
+   // Core identity
+   string            id;                 // Unique signal id (for logging/telemetry)
+   string            strategy_name;      // Legacy strategy name field
+   string            strategy;           // Canonical strategy identifier
+   string            symbol;             // Symbol
+   ENUM_TIMEFRAMES   timeframe;          // Timeframe
 
-// --- Enum for the type of signal (added for all strategies)
-enum SignalType
-  {
-   SIGNAL_NONE = 0,
-   SIGNAL_BUY = 1,
-   SIGNAL_SELL = -1
-  };
+   // Direction / type
+   int               direction;          // -1=Sell, 0=None, 1=Buy (legacy)
+   int               type;               // 0=buy,1=sell (used by execution logic)
 
-// --- Struct to hold all details for a trade order
+   // Prices and risk
+   double            confidence;         // 0.0-1.0
+   double            entry_price;        // Entry price (for gates)
+   double            stop_loss;          // Stop loss level (for gates)
+   double            take_profit;        // Take profit level (for gates)
+   double            price;              // Canonical price (used by PaperEA and optimizers)
+   double            sl;                 // Canonical SL
+   double            tp;                 // Canonical TP
+   double            volume;             // Lots
+
+   // Context
+   datetime          timestamp;          // Signal timestamp
+   bool              is_exit;            // Is exit signal
+   string            regime;             // Regime tag
+   string            market_regime;      // Market regime tag
+   double            volatility;         // Volatility metric
+   double            correlation;        // Correlation metric
+   
+   TradingSignal() { Init(); }
+
+   void Init()
+   {
+      id              = "";
+      strategy_name   = "";
+      strategy        = "";
+      symbol          = "";
+      timeframe       = PERIOD_CURRENT;
+      direction       = 0;
+      type            = 0;
+      confidence      = 0.0;
+      entry_price     = 0.0;
+      stop_loss       = 0.0;
+      take_profit     = 0.0;
+      price           = 0.0;
+      sl              = 0.0;
+      tp              = 0.0;
+      volume          = 0.0;
+      timestamp       = 0;
+      is_exit         = false;
+      regime          = "";
+      market_regime   = "";
+      volatility      = 0.0;
+      correlation     = 0.0;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| Trade Order Structure                                              |
+//+------------------------------------------------------------------+
 struct TradeOrder
-  {
-   TradeAction       action;         // Buy, Sell, or None
-   ENUM_ORDER_TYPE   order_type;     // Market, Stop, Limit
-   double            lots;           // Requested lot size override (0=use EA default)
-   double            price;          // Entry price for pending orders
-   double            stop_loss;      // Stop loss price
-   double            take_profit;    // Take profit price
-   string            strategy_name;  // Name of the strategy that generated the signal
+{
+   int               action;             // ACTION_BUY, ACTION_SELL, ACTION_NONE
+   ENUM_ORDER_TYPE   order_type;
+   double            lots;
+   double            price;
+   double            stop_loss;
+   double            take_profit;
+   string            strategy_name;
+   datetime          timestamp;
+   double            volume;
 
-    // Trailing policy
-    bool              trailing_enabled;       // Enable trailing stop handling after entry
-    TrailingType      trailing_type;          // Trailing algorithm
-    double            trail_distance_points;  // Distance of SL from price in points
-    double            trail_activation_points;// Profit in points before trailing starts
-    double            trail_step_points;      // Minimum step in points to move SL
-    // ATR-based trailing parameters (used when trailing_type == TRAIL_ATR)
-    int               atr_period;             // ATR period
-    double            atr_multiplier;         // Distance = ATR * multiplier
-
-   // --- Constructor to initialize with default values
-   TradeOrder() 
-     {
-      action = ACTION_NONE;
-      order_type = ORDER_TYPE_BUY; // Default, should be overwritten
+   bool              trailing_enabled;
+   TrailingType      trailing_type;
+   double            trail_distance_points;
+   double            trail_activation_points;
+   double            trail_step_points;
+   int               atr_period;
+   double            atr_multiplier;
+   
+   TradeOrder()
+   {
+      action = 0; // ACTION_NONE
+      order_type = (ENUM_ORDER_TYPE)0;
       lots = 0.0;
-      price = 0;
-      stop_loss = 0;
-      take_profit = 0;
+      price = 0.0;
+      stop_loss = 0.0;
+      take_profit = 0.0;
       strategy_name = "";
+      timestamp = 0;
+      volume = 0.0;
+
       trailing_enabled = false;
       trailing_type = TRAIL_NONE;
-      trail_distance_points = 0;
-      trail_activation_points = 0;
-      trail_step_points = 0;
+      trail_distance_points = 0.0;
+      trail_activation_points = 0.0;
+      trail_step_points = 0.0;
       atr_period = 14;
       atr_multiplier = 2.0;
-     }
+   }
+};
 
-   // --- Copy constructor to handle assignments correctly
-   TradeOrder(const TradeOrder &other)
-     {
-      action = other.action;
-      order_type = other.order_type;
-      lots = other.lots;
-      price = other.price;
-      stop_loss = other.stop_loss;
-      take_profit = other.take_profit;
-      strategy_name = other.strategy_name;
-      trailing_enabled = other.trailing_enabled;
-      trailing_type = other.trailing_type;
-      trail_distance_points = other.trail_distance_points;
-      trail_activation_points = other.trail_activation_points;
-      trail_step_points = other.trail_step_points;
-      atr_period = other.atr_period;
-      atr_multiplier = other.atr_multiplier;
-     }
-  };
+double GetATR(const int period = 14, const int shift = 0)
+{
+   int handle = iATR(_Symbol, _Period, period);
+   if(handle == INVALID_HANDLE) return 0.0;
+   double buf[1];
+   if(CopyBuffer(handle, 0, shift, 1, buf) != 1) { IndicatorRelease(handle); return 0.0; }
+   IndicatorRelease(handle);
+   return buf[0];
+}
 
-// --- The interface for all trading strategies
-class IStrategy : public CObject
-  {
+// Constants for action types
+#define ACTION_NONE     0
+#define ACTION_BUY      1
+#define ACTION_SELL     2
+
+//+------------------------------------------------------------------+
+//| Base Strategy Interface                                            |
+//+------------------------------------------------------------------+
+class IStrategy
+{
 protected:
-   // Internal backing fields for new hooks
-   long    m_id;
-   bool    m_enabled;
-   // Simple in-memory metadata store (parallel arrays)
-   string  m_meta_keys[];
-   string  m_meta_vals[];
-   string  m_name;
+   string            m_name;           // Strategy name
+   string            m_symbol;         // Trading symbol
+   ENUM_TIMEFRAMES   m_timeframe;      // Timeframe
+   bool              m_enabled;        // Enabled flag
 
 public:
-   // Base constructor initializes defaults for new fields
-   IStrategy()
-     {
-      m_id = -1;
-      m_enabled = true;
-      m_name = "IStrategy";
-      ArrayResize(m_meta_keys, 0);
-      ArrayResize(m_meta_vals, 0);
-     }
+   // Constructor
+   IStrategy(string name, string symbol, ENUM_TIMEFRAMES tf)
+      : m_name(name), m_symbol(symbol), m_timeframe(tf), m_enabled(true) {}
 
-   // Core lifecycle and signal hooks
-   virtual void         Refresh() { }
-   virtual TradeOrder   CheckSignal() { TradeOrder order; return order; }
-   virtual string       Name() { return m_name; }
-   virtual void         SetName(const string name) { m_name = name; }
+   // Pure virtual methods that must be implemented
+   virtual void      Refresh() = 0;                    // Update indicator calculations
+   virtual TradeOrder CheckSignal() = 0;               // Check for trading signal
+   virtual string    Name() const { return m_name; }     // Get strategy name
+   virtual string    Symbol() const { return m_symbol; } // Get symbol
+   virtual int       Magic() const { return 0; }         // Get magic number
 
-   // Allow a strategy to export its indicator/context features at a timestamp
-   // Concrete strategies should include KnowledgeBase.mqh and write via kb->WriteKV(ts, symbol, Name(), feature, value)
-   virtual void         ExportFeatures(CFeaturesKB* kb, const datetime ts) { }
+   // Feature export for ML (optional)
+   virtual void      ExportFeatures(CObject* kb, const datetime ts) {} 
 
-   // --- New Phase 5 hooks ---
-   // Unique numeric identifier (set and get)
-   virtual void         SetId(const long id) { m_id = id; }
-   virtual long         Id() const { return m_id; }
+   // Position management (optional overrides)
+   virtual double    GetStopLossPoints() const { return 0; }
+   virtual double    GetTakeProfitPoints() const { return 0; }
+   virtual bool      IsExitSignal() const { return false; }
+   virtual void      SetExitSignal(bool exit) {}
+   virtual bool      IsBullish() const { return false; }
+   virtual bool      IsBearish() const { return false; }
 
-   // Enable/disable state (soft gating at strategy level)
-   virtual void         SetEnabled(const bool enabled) { m_enabled = enabled; }
-   virtual bool         Enabled() const { return m_enabled; }
+   // Lifecycle
+   virtual bool      Init() { return true; }
+   virtual void      Deinit() {}
 
-   // Metadata store (string key/value)
-   virtual void         MetadataSet(const string key, const string value)
-     {
-      int idx = -1;
-      for(int i=0;i<ArraySize(m_meta_keys);++i) { if(m_meta_keys[i]==key) { idx=i; break; } }
-      if(idx<0)
-        {
-         int n = ArraySize(m_meta_keys);
-         ArrayResize(m_meta_keys, n+1);
-         ArrayResize(m_meta_vals, n+1);
-         m_meta_keys[n] = key;
-         m_meta_vals[n] = value;
-        }
-      else
-        {
-         m_meta_vals[idx] = value;
-        }
-     }
+   // Enable/disable
+   void              SetEnabled(bool enabled) { m_enabled = enabled; }
+   bool              IsEnabled() const { return m_enabled; }
+};
 
-   virtual string       MetadataGet(const string key, const string def_value="") const
-     {
-      for(int i=0;i<ArraySize(m_meta_keys);++i) { if(m_meta_keys[i]==key) return m_meta_vals[i]; }
-      return def_value;
-     }
-
-   // Dump metadata in a simple key=value;key2=value2 form for persistence/logging
-   virtual string       MetadataDumpString() const
-     {
-      string out="";
-      for(int i=0;i<ArraySize(m_meta_keys);++i)
-        {
-         if(i>0) out += ";";
-         out += m_meta_keys[i] + "=" + m_meta_vals[i];
-        }
-      return out;
-     }
-
-   // Dynamic indicator auto-tuning hook (return true if parameters changed)
-   // Default: no-op and return false
-   virtual bool         AutoTuneIndicators(const string symbol, const ENUM_TIMEFRAMES timeframe) { return false; }
-   // Phase 6: prewarm indicator handles for low-latency timer scans
-   virtual bool         PrewarmIndicators(const string symbol, const ENUM_TIMEFRAMES timeframe) { return false; }
-  };
-
-#endif // DUALEA_INCLUDE_ISTRATEGY_MQH
+#endif // ISTRATEGY_MQH

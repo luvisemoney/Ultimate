@@ -1,58 +1,72 @@
 //+------------------------------------------------------------------+
-//| LogMiddleware.mqh - Centralized Logging Middleware               |
-//| Routes all Print/PrintFormat calls to local file/terminal        |
+//| LogMiddleware.mqh - Logging Middleware Stub                        |
+//| Provides backward compatible logging functionality                 |
 //+------------------------------------------------------------------+
-#ifndef __LOGMIDDLEWARE_MQH__
-#define __LOGMIDDLEWARE_MQH__
+#ifndef LOGMIDDLEWARE_MQH
+#define LOGMIDDLEWARE_MQH
 
-#include <Files/File.mqh>
+// MQL5 native includes only - no C++ stdlib
+#include <Files\File.mqh>
 
+// Simple LOG macro - just prints to console
+#define LOG(msg) Print(msg)
+
+//+------------------------------------------------------------------+
+//| Simple Log Middleware Class                                        |
+//+------------------------------------------------------------------+
 class CLogMiddleware
 {
 private:
-   string m_log_file;
-   bool   m_to_terminal;
-   int    m_handle;
+   string            m_logFile;
+   bool              m_enabled;
+   bool              m_useDebugPrint;
 
 public:
-   CLogMiddleware(string log_file = "DualEA\\system.log", bool to_terminal = true)
+   // Constructor
+   CLogMiddleware(string logFile = "", bool enabled = true)
    {
-      m_log_file = log_file;
-      m_to_terminal = to_terminal;
-      m_handle = INVALID_HANDLE;
+      m_logFile = logFile;
+      m_enabled = enabled;
+      m_useDebugPrint = true;
    }
 
-   void Log(const string msg)
+   // Destructor
+   ~CLogMiddleware() {}
+
+   // Log a message
+   void Log(string message)
    {
-      // Write to file
-      int handle = FileOpen(m_log_file, FILE_READ|FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
-      if(handle == INVALID_HANDLE)
+      if (!m_enabled) return;
+
+      string timestamp = TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS);
+      string logLine = "[" + timestamp + "] " + message;
+
+      // Print to Experts log
+      Print(logLine);
+
+      // Write to file if specified
+      if (StringLen(m_logFile) > 0)
       {
-         // Fallback: create file if it doesn't exist yet
-         handle = FileOpen(m_log_file, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
+         int handle = FileOpen(m_logFile, FILE_WRITE | FILE_TXT | FILE_COMMON);
+         if (handle != INVALID_HANDLE)
+         {
+            FileSeek(handle, 0, SEEK_END);
+            FileWriteString(handle, logLine + "\r\n");
+            FileClose(handle);
+         }
       }
-      if(handle != INVALID_HANDLE)
-      {
-         FileSeek(handle, 0, SEEK_END);
-         FileWriteString(handle, msg + "\n");
-         FileClose(handle);
-      }
-      // Optionally write to terminal
-      if(m_to_terminal)
-         Print(msg);
    }
 
-   // Variadic user-defined logging is not supported in MQL5.
-   // Use LOG(StringFormat(fmt, ...)) to format then route through middleware.
-   // Example: LOG(StringFormat("value=%d", 42));
+   // Set enabled state
+   void SetEnabled(bool enabled) { m_enabled = enabled; }
+   bool IsEnabled() const { return m_enabled; }
+
+   // Set log file
+   void SetLogFile(string logFile) { m_logFile = logFile; }
+   string GetLogFile() const { return m_logFile; }
 };
 
-// Global logger instance
-static CLogMiddleware* LogMiddleware = NULL;
+// Global singleton for backward compatibility
+CLogMiddleware* LogMiddleware = NULL;
 
-// Helper macros for drop-in replacement (pointer-safe and block-safe)
-// Using a do{...}while(false) wrapper avoids dangling-else issues when used in conditional contexts.
-#define LOG(msg)         do { if(LogMiddleware != NULL) LogMiddleware.Log(msg); else Print(msg); } while(false)
-// Use LOG(StringFormat(fmt, ...)) instead of PrintFormat to route through middleware.
-
-#endif
+#endif // LOGMIDDLEWARE_MQH

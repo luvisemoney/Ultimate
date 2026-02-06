@@ -5,7 +5,6 @@
 #property link      "https://www.windsurf.ai"
 
 #include "..\IStrategy.mqh"
-// For CFeaturesKB
 #include "..\KnowledgeBase.mqh"
 
 // --- Buffer indices for the '2_Averages_with_BollingerBands' custom indicator
@@ -19,8 +18,7 @@ class CBollAveragesStrategy : public IStrategy
   {
 private:
    int               m_indicator_handle;
-   string            m_symbol;
-   ENUM_TIMEFRAMES   m_timeframe;
+   // NOTE: m_symbol and m_timeframe inherited from IStrategy - DO NOT shadow
 
    // --- Data arrays
    double            m_ma1_buffer[];
@@ -32,36 +30,18 @@ public:
 
    // --- IStrategy interface methods
    virtual void      Refresh() override;
-   virtual TradeOrder  CheckSignal() override;
-   virtual string    Name() override { return "BollAveragesStrategy"; }
-   virtual void      ExportFeatures(CFeaturesKB* kb, const datetime ts) override
-     {
-      if(CheckPointer(kb)==POINTER_INVALID) return;
-      if(m_indicator_handle==INVALID_HANDLE) return;
-      // Read latest buffers
-      double ma1[1], ma2[1], bb_up[1], bb_mid[1], bb_lo[1];
-      if(CopyBuffer(m_indicator_handle, MA1_BUFFER, 0, 1, ma1)==1)
-         (*kb).WriteKV(ts, m_symbol, Name(), "ma1", ma1[0]);
-      if(CopyBuffer(m_indicator_handle, MA2_BUFFER, 0, 1, ma2)==1)
-         (*kb).WriteKV(ts, m_symbol, Name(), "ma2", ma2[0]);
-      if(CopyBuffer(m_indicator_handle, BB_UPPER_BUFFER, 0, 1, bb_up)==1)
-         (*kb).WriteKV(ts, m_symbol, Name(), "bb_upper", bb_up[0]);
-      if(CopyBuffer(m_indicator_handle, BB_MIDDLE_BUFFER, 0, 1, bb_mid)==1)
-         (*kb).WriteKV(ts, m_symbol, Name(), "bb_middle", bb_mid[0]);
-      if(CopyBuffer(m_indicator_handle, BB_LOWER_BUFFER, 0, 1, bb_lo)==1)
-         (*kb).WriteKV(ts, m_symbol, Name(), "bb_lower", bb_lo[0]);
-     }
+   virtual TradeOrder CheckSignal() override;
+   virtual string    Name() const override { return "BollAveragesStrategy"; }
+   virtual void      ExportFeatures(CObject* kb, const datetime ts) override;
   };
 
 //+------------------------------------------------------------------+
 //| Constructor                                                      |
 //+------------------------------------------------------------------+
 CBollAveragesStrategy::CBollAveragesStrategy(string symbol, ENUM_TIMEFRAMES timeframe)
+   : IStrategy("BollAveragesStrategy", symbol, timeframe)
   {
-   m_symbol = symbol;
-   m_timeframe = timeframe;
-
-   // --- Get indicator handle
+   // --- Get indicator handle using inherited m_symbol and m_timeframe
    m_indicator_handle = iCustom(m_symbol, m_timeframe, "Downloads\\2_Averages_with_BollingerBands");
 
    // --- Set buffers as series
@@ -133,4 +113,27 @@ TradeOrder CBollAveragesStrategy::CheckSignal()
      }
 
    return order; // Returns order with ACTION_NONE
+  }
+
+//+------------------------------------------------------------------+
+//| ExportFeatures - Export features for ML                            |
+//+------------------------------------------------------------------+
+void CBollAveragesStrategy::ExportFeatures(CObject* kb, const datetime ts)
+  {
+   if(CheckPointer(kb)==POINTER_INVALID) return;
+   if(m_indicator_handle==INVALID_HANDLE) return;
+   CFeaturesKB *features = dynamic_cast<CFeaturesKB*>(kb);
+   if(CheckPointer(features)==POINTER_INVALID) return;
+   // Read latest buffers
+   double ma1[1], ma2[1], bb_up[1], bb_mid[1], bb_lo[1];
+   if(CopyBuffer(m_indicator_handle, MA1_BUFFER, 0, 1, ma1)==1)
+      (*features).WriteKV(ts, m_symbol, Name(), "ma1", ma1[0]);
+   if(CopyBuffer(m_indicator_handle, MA2_BUFFER, 0, 1, ma2)==1)
+      (*features).WriteKV(ts, m_symbol, Name(), "ma2", ma2[0]);
+   if(CopyBuffer(m_indicator_handle, BB_UPPER_BUFFER, 0, 1, bb_up)==1)
+      (*features).WriteKV(ts, m_symbol, Name(), "bb_upper", bb_up[0]);
+   if(CopyBuffer(m_indicator_handle, BB_MIDDLE_BUFFER, 0, 1, bb_mid)==1)
+      (*features).WriteKV(ts, m_symbol, Name(), "bb_middle", bb_mid[0]);
+   if(CopyBuffer(m_indicator_handle, BB_LOWER_BUFFER, 0, 1, bb_lo)==1)
+      (*features).WriteKV(ts, m_symbol, Name(), "bb_lower", bb_lo[0]);
   }

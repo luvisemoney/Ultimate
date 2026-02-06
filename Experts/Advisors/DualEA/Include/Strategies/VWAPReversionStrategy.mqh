@@ -9,9 +9,6 @@
 class CVWAPReversionStrategy : public IStrategy
   {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-
    CVWAP            m_vwap;
    int              m_vwapWindow;
 
@@ -30,9 +27,8 @@ private:
    double           m_adx1;
 
 public:
-   CVWAPReversionStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CVWAPReversionStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("VWAPReversionStrategy", symbol, tf)
      {
-      m_symbol=symbol; m_tf=tf;
       m_vwapWindow=30; m_vwap.Init(symbol, tf, m_vwapWindow);
       m_adxPeriod=14; m_hADX=iADX(symbol, tf, m_adxPeriod);
       m_atrPeriod=14; m_atrMult=1.5; m_devAtrMult=1.0; m_hATR=iATR(symbol, tf, m_atrPeriod);
@@ -43,7 +39,7 @@ public:
 
    virtual void Refresh()
      {
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       m_vwap1  = m_vwap.Value(1);
       m_dev1   = (m_close1>0 && m_vwap1>0? (m_close1 - m_vwap1) : 0.0);
       // ATR(1)

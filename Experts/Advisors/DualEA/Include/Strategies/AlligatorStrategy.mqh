@@ -5,8 +5,6 @@
 class CAlligatorStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
    int              m_jawPeriod;
    int              m_teethPeriod;
    int              m_lipsPeriod;
@@ -19,9 +17,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CAlligatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CAlligatorStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("AlligatorStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_jawPeriod = 13; m_teethPeriod = 8; m_lipsPeriod = 5;
       m_jawShift = 8; m_teethShift = 5; m_lipsShift = 3;
       m_jaw = m_teeth = m_lips = 0;
@@ -32,13 +29,13 @@ public:
    
    virtual void Refresh()
    {
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       double jaw_buffer[], teeth_buffer[], lips_buffer[];
       
       // Alligator Jaw (Blue)
-      int jaw_handle = iAlligator(m_symbol, m_tf, m_jawPeriod, m_jawShift, m_teethPeriod, m_teethShift, m_lipsPeriod, m_lipsShift, MODE_SMMA, PRICE_MEDIAN);
+      int jaw_handle = iAlligator(m_symbol, m_timeframe, m_jawPeriod, m_jawShift, m_teethPeriod, m_teethShift, m_lipsPeriod, m_lipsShift, MODE_SMMA, PRICE_MEDIAN);
       
       if(jaw_handle > 0)
       {

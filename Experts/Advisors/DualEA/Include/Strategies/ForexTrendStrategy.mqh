@@ -5,9 +5,6 @@
 class CForexTrendStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-   
    // Trend indicators
    int m_emaFast, m_emaMedium, m_emaSlow;
    int m_ichimokuTenkan, m_ichimokuKijun, m_ichimokuSenkou;
@@ -23,10 +20,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CForexTrendStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CForexTrendStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("ForexTrendStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
-      
       // EMA periods for trend identification
       m_emaFast = 8; m_emaMedium = 21; m_emaSlow = 50;
       
@@ -55,14 +50,14 @@ public:
    virtual void Refresh()
    {
       ResetValues();
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // EMAs
       double ema_fast_buffer[], ema_medium_buffer[], ema_slow_buffer[];
-      int ema_fast_handle = iMA(m_symbol, m_tf, m_emaFast, 0, MODE_EMA, PRICE_CLOSE);
-      int ema_medium_handle = iMA(m_symbol, m_tf, m_emaMedium, 0, MODE_EMA, PRICE_CLOSE);
-      int ema_slow_handle = iMA(m_symbol, m_tf, m_emaSlow, 0, MODE_EMA, PRICE_CLOSE);
+      int ema_fast_handle = iMA(m_symbol, m_timeframe, m_emaFast, 0, MODE_EMA, PRICE_CLOSE);
+      int ema_medium_handle = iMA(m_symbol, m_timeframe, m_emaMedium, 0, MODE_EMA, PRICE_CLOSE);
+      int ema_slow_handle = iMA(m_symbol, m_timeframe, m_emaSlow, 0, MODE_EMA, PRICE_CLOSE);
       
       if(ema_fast_handle > 0) CopyBuffer(ema_fast_handle, 0, 0, 1, ema_fast_buffer);
       if(ema_medium_handle > 0) CopyBuffer(ema_medium_handle, 0, 0, 1, ema_medium_buffer);
@@ -74,7 +69,7 @@ public:
       
       // Ichimoku
       double tenkan_buffer[], kijun_buffer[], senkou_a_buffer[], senkou_b_buffer[];
-      int ichimoku_handle = iIchimoku(m_symbol, m_tf, m_ichimokuTenkan, m_ichimokuKijun, m_ichimokuSenkou);
+      int ichimoku_handle = iIchimoku(m_symbol, m_timeframe, m_ichimokuTenkan, m_ichimokuKijun, m_ichimokuSenkou);
       
       if(ichimoku_handle > 0)
       {
@@ -91,19 +86,19 @@ public:
       
       // Parabolic SAR
       double sar_buffer[];
-      int sar_handle = iSAR(m_symbol, m_tf, m_parabolicStep, m_parabolicMax);
+      int sar_handle = iSAR(m_symbol, m_timeframe, m_parabolicStep, m_parabolicMax);
       if(sar_handle > 0) CopyBuffer(sar_handle, 0, 0, 1, sar_buffer);
       m_parabolic = sar_buffer[0];
       
       // RSI
       double rsi_buffer[];
-      int rsi_handle = iRSI(m_symbol, m_tf, m_rsiPeriod, PRICE_CLOSE);
+      int rsi_handle = iRSI(m_symbol, m_timeframe, m_rsiPeriod, PRICE_CLOSE);
       if(rsi_handle > 0) CopyBuffer(rsi_handle, 0, 0, 1, rsi_buffer);
       m_rsi = rsi_buffer[0];
       
       // ADX
       double adx_buffer[];
-      int adx_handle = iADX(m_symbol, m_tf, m_adxPeriod);
+      int adx_handle = iADX(m_symbol, m_timeframe, m_adxPeriod);
       if(adx_handle > 0) CopyBuffer(adx_handle, 0, 0, 1, adx_buffer);
       m_adx = adx_buffer[0];
    }

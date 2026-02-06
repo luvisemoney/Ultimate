@@ -8,9 +8,6 @@
 class CEMAPullbackStrategy : public IStrategy
   {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-
    int              m_fastPeriod;
    int              m_slowPeriod;
    int              m_hFast;
@@ -29,9 +26,8 @@ private:
    double           m_adx1, m_atr1;
 
 public:
-   CEMAPullbackStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CEMAPullbackStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("EMAPullbackStrategy", symbol, tf)
      {
-      m_symbol=symbol; m_tf=tf;
       m_fastPeriod=20; m_slowPeriod=50;
       m_hFast = iMA(symbol, tf, m_fastPeriod, 0, MODE_EMA, PRICE_CLOSE);
       m_hSlow = iMA(symbol, tf, m_slowPeriod, 0, MODE_EMA, PRICE_CLOSE);
@@ -44,8 +40,8 @@ public:
 
    virtual void Refresh()
      {
-      m_close1=iClose(m_symbol, m_tf, 1);
-      m_close2=iClose(m_symbol, m_tf, 2);
+      m_close1=iClose(m_symbol, m_timeframe, 1);
+      m_close2=iClose(m_symbol, m_timeframe, 2);
       double b[1];
       m_fast1=0.0; if(m_hFast>0 && CopyBuffer(m_hFast,0,1,1,b)==1) m_fast1=b[0];
       m_slow1=0.0; if(m_hSlow>0 && CopyBuffer(m_hSlow,0,1,1,b)==1) m_slow1=b[0];

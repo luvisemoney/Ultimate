@@ -8,7 +8,9 @@
 #define __ADAPTIVESIGNALOPTIMIZER_MQH__
 
 #include "LearningBridge.mqh"
-#include "GateManager.mqh"
+#include "GateSystemAutoLearning.mqh"
+
+// Forward declaration - CEfficientGateManagerEnhanced is defined in GateSystemAutoLearning
 
 // Strategy-specific adjustment profile
 struct StrategyProfile
@@ -102,7 +104,7 @@ class CAdaptiveSignalOptimizer
 {
 private:
    CLearningBridge* m_learning;
-   CGateManager* m_gate_manager;
+   CEfficientGateManagerEnhanced* m_gate_manager;
    
    // Simple array-based profile storage (MQL5 HashMap doesn't support structs)
    string m_profile_keys[];
@@ -310,7 +312,7 @@ private:
    }
 
 public:
-   CAdaptiveSignalOptimizer(CLearningBridge* learning, CGateManager* gate_mgr, 
+   CAdaptiveSignalOptimizer(CLearningBridge* learning, CEfficientGateManagerEnhanced* gate_mgr, 
                             int max_attempts = 3, bool use_ml = true)
    {
       m_learning = learning;
@@ -343,7 +345,7 @@ public:
       
       // First attempt: Try original signal
       CSignalDecision temp_decision;
-      bool passed = m_gate_manager.ProcessSignal(signal, temp_decision);
+      bool passed = m_gate_manager->ProcessSignal(signal, temp_decision);
       
       if(passed)
       {
@@ -487,7 +489,7 @@ public:
             continue;
          }
 
-         bool adj_passed = m_gate_manager.ProcessSignal(adjusted_signal, adj_decision);
+         bool adj_passed = m_gate_manager->ProcessSignal(adjusted_signal, adj_decision);
          
          att.passed = adj_passed;
          att.gate_blocked = adj_passed ? "NONE" : "Multiple";
@@ -507,7 +509,7 @@ public:
             for(int revalidation = 1; revalidation <= 2; revalidation++)
             {
                CSignalDecision revalidation_decision;
-               bool revalidation_result = m_gate_manager.ProcessSignal(adjusted_signal, revalidation_decision);
+               bool revalidation_result = m_gate_manager->ProcessSignal(adjusted_signal, revalidation_decision);
                
                if(!revalidation_result)
                {

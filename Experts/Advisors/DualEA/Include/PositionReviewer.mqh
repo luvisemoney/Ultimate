@@ -7,7 +7,7 @@
 #define __POSITIONREVIEWER_MQH__
 
 #include "AdaptiveSignalOptimizer.mqh"
-#include "GateManager.mqh"
+#include "GateSystemAutoLearning.mqh"
 #include <Trade/Trade.mqh>
 
 // Position review decision
@@ -52,7 +52,7 @@ struct PositionReview
 class CPositionReviewer
 {
 private:
-   CGateManager* m_gate_manager;
+   CEfficientGateManagerEnhanced* m_gate_manager;
    CAdaptiveSignalOptimizer* m_optimizer;
    
    int m_review_interval_seconds;
@@ -109,7 +109,7 @@ private:
    }
 
 public:
-   CPositionReviewer(CGateManager* gate_mgr, CAdaptiveSignalOptimizer* optimizer,
+   CPositionReviewer(CEfficientGateManagerEnhanced* gate_mgr, CAdaptiveSignalOptimizer* optimizer,
                      int review_interval_seconds = 300)
    {
       m_gate_manager = gate_mgr;

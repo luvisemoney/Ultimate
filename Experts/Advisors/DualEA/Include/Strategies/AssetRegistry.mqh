@@ -8,7 +8,7 @@
 #include <Arrays/ArrayObj.mqh>
 #include "..\\IStrategy.mqh"
 
-// Concrete strategies
+// Concrete strategies - ALL 18 strategies included
 #include "BollAveragesStrategy.mqh"
 #include "MeanReversionBBStrategy.mqh"
 #include "SuperTrendADXKamaStrategy.mqh"
@@ -18,6 +18,17 @@
 #include "VWAPReversionStrategy.mqh"
 #include "EMAPullbackStrategy.mqh"
 #include "KeltnerMomentumStrategy.mqh"
+#include "ADXStrategy.mqh"
+#include "AcceleratorOscillatorStrategy.mqh"
+#include "AlligatorStrategy.mqh"
+#include "AroonStrategy.mqh"
+#include "AwesomeOscillatorStrategy.mqh"
+#include "BearsPowerStrategy.mqh"
+#include "BullsPowerStrategy.mqh"
+#include "ForexTrendStrategy.mqh"
+#include "GoldVolatilityStrategy.mqh"
+#include "IndicesEnergiesStrategy.mqh"
+#include "MultiIndicatorStrategy.mqh"
 
 enum AssetClass
 {
@@ -57,7 +68,7 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
 {
    if (CheckPointer(out) == POINTER_INVALID) return;
 
-   StrategyInfo strategies[20];
+   StrategyInfo strategies[30];
    int count = 0;
 
    AssetClass asset = ClassifySymbol(symbol);
@@ -81,6 +92,22 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
          strategies[count++].strategy = new CEMAPullbackStrategy(symbol, tf);
          strategies[count].name = "OpeningRangeBreakout";
          strategies[count++].strategy = new COpeningRangeBreakoutStrategy(symbol, tf);
+         strategies[count].name = "ADXStrategy";
+         strategies[count++].strategy = new CADXStrategy(symbol, tf);
+         strategies[count].name = "AcceleratorOscillator";
+         strategies[count++].strategy = new CAcceleratorOscillatorStrategy(symbol, tf);
+         strategies[count].name = "Alligator";
+         strategies[count++].strategy = new CAlligatorStrategy(symbol, tf);
+         strategies[count].name = "Aroon";
+         strategies[count++].strategy = new CAroonStrategy(symbol, tf);
+         strategies[count].name = "AwesomeOscillator";
+         strategies[count++].strategy = new CAwesomeOscillatorStrategy(symbol, tf);
+         strategies[count].name = "BearsPower";
+         strategies[count++].strategy = new CBearsPowerStrategy(symbol, tf);
+         strategies[count].name = "BullsPower";
+         strategies[count++].strategy = new CBullsPowerStrategy(symbol, tf);
+         strategies[count].name = "MultiIndicator";
+         strategies[count++].strategy = new CMultiIndicatorStrategy(symbol, tf);
          break;
 
       case ASSET_FX_MINOR:
@@ -88,6 +115,10 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
          strategies[count++].strategy = new CMeanReversionBBStrategy(symbol, tf);
          strategies[count].name = "EMAPullback";
          strategies[count++].strategy = new CEMAPullbackStrategy(symbol, tf);
+         strategies[count].name = "ForexTrend";
+         strategies[count++].strategy = new CForexTrendStrategy(symbol, tf);
+         strategies[count].name = "BollAverages";
+         strategies[count++].strategy = new CBollAveragesStrategy(symbol, tf);
          break;
 
       case ASSET_STOCK:
@@ -100,6 +131,10 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
       case ASSET_COMMODITY:
          strategies[count].name = "KeltnerMomentum";
          strategies[count++].strategy = new CKeltnerMomentumStrategy(symbol, tf);
+         strategies[count].name = "GoldVolatility";
+         strategies[count++].strategy = new CGoldVolatilityStrategy(symbol, tf);
+         strategies[count].name = "IndicesEnergies";
+         strategies[count++].strategy = new CIndicesEnergiesStrategy(symbol, tf);
          break;
 
       case ASSET_CRYPTO:
@@ -110,6 +145,8 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
       default:
          strategies[count].name = "MeanReversionBB";
          strategies[count++].strategy = new CMeanReversionBBStrategy(symbol, tf);
+         strategies[count].name = "TestStrategy";
+         strategies[count++].strategy = new CTestStrategy(symbol, tf);
          break;
    }
 

@@ -5,9 +5,6 @@
 class CIndicesEnergiesStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-   
    // Multi-timeframe analysis
    int m_fastTF, m_mediumTF, m_slowTF;
    
@@ -23,10 +20,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CIndicesEnergiesStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CIndicesEnergiesStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("IndicesEnergiesStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
-      
       m_vwapPeriod = 24; // Daily VWAP for intraday
       m_fractalPeriod = 5;
       m_envelopePeriod = 20;
@@ -47,22 +42,22 @@ public:
    virtual void Refresh()
    {
       ResetValues();
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // VWAP calculation (simplified)
-      double typical_price = (iHigh(m_symbol, m_tf, 0) + iLow(m_symbol, m_tf, 0) + iClose(m_symbol, m_tf, 0)) / 3;
-      double volume = (double)iVolume(m_symbol, m_tf, 0);
+      double typical_price = (iHigh(m_symbol, m_timeframe, 0) + iLow(m_symbol, m_timeframe, 0) + iClose(m_symbol, m_timeframe, 0)) / 3;
+      double volume = (double)iVolume(m_symbol, m_timeframe, 0);
       
       // For now, use a moving average as VWAP proxy
       double vwap_buffer[];
-      int vwap_handle = iMA(m_symbol, m_tf, m_vwapPeriod, 0, MODE_SMA, PRICE_TYPICAL);
+      int vwap_handle = iMA(m_symbol, m_timeframe, m_vwapPeriod, 0, MODE_SMA, PRICE_TYPICAL);
       if(vwap_handle > 0) CopyBuffer(vwap_handle, 0, 0, 1, vwap_buffer);
       m_vwap = vwap_buffer[0];
       
       // Fractals
       double fractal_up_buffer[], fractal_down_buffer[];
-      int fractal_handle = iFractals(m_symbol, m_tf);
+      int fractal_handle = iFractals(m_symbol, m_timeframe);
       if(fractal_handle > 0)
       {
          CopyBuffer(fractal_handle, 0, 0, 1, fractal_up_buffer);
@@ -73,7 +68,7 @@ public:
       
       // Envelope
       double envelope_upper[], envelope_lower[];
-      int envelope_handle = iEnvelopes(m_symbol, m_tf, m_envelopePeriod, 0, MODE_SMA, PRICE_CLOSE, m_envelopeDeviation);
+      int envelope_handle = iEnvelopes(m_symbol, m_timeframe, m_envelopePeriod, 0, MODE_SMA, PRICE_CLOSE, m_envelopeDeviation);
       if(envelope_handle > 0)
       {
          CopyBuffer(envelope_handle, 0, 0, 1, envelope_upper);
@@ -102,10 +97,10 @@ public:
       bool near_lower_envelope = m_close0 <= m_envelope_lower * 1.02;
       
       // Volume spike confirmation
-      double volume = (double)iVolume(m_symbol, m_tf, 0);
+      double volume = (double)iVolume(m_symbol, m_timeframe, 0);
       double volume_ma = 0;
       double volume_ma_buffer[];
-      int volume_ma_handle = iMA(m_symbol, m_tf, 20, 0, MODE_SMA, VOLUME_TICK);
+      int volume_ma_handle = iMA(m_symbol, m_timeframe, 20, 0, MODE_SMA, VOLUME_TICK);
       if(volume_ma_handle > 0) CopyBuffer(volume_ma_handle, 0, 0, 1, volume_ma_buffer);
       volume_ma = volume_ma_buffer[0];
       

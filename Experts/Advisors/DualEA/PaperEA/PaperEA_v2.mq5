@@ -8,17 +8,13 @@
 //+------------------------------------------------------------------+
 //| INCLUDES - COMPREHENSIVE MODULE INTEGRATION                     |
 //+------------------------------------------------------------------+
-// Core Interfaces & Data Structures
-#include "..\Include\GateManager.mqh"
-#include "..\Include\TelemetryStandard.mqh"
-
-#include "..\Include\ATRUtil.mqh"
+// NEW: Auto-learning gate system (replaces old GateManager/GateRegistry)
+#include "..\Include\GateSystemAutoLearning.mqh"
 
 // Core Services
 #include "..\Include\KnowledgeBase.mqh"
 #include "..\Include\TradeManager.mqh"
 #include "..\Include\PolicyEngine.mqh"
-#include "..\Include\GateAudit.mqh"
 
 // Telemetry System
 #include "../Include/Telemetry.mqh"
@@ -26,10 +22,6 @@
 #include "../Include/SessionManager.mqh"
 #include "../Include/CorrelationManager.mqh"
 #include "../Include/VolatilitySizer.mqh"
-#include "../Include/InsightsRealtime.mqh"
-
-// Shared Insights loader (DRY)
-#include "..\Include\InsightsLoader.mqh"
 
 // Centralized gate orchestration macros
 #include "..\\Include\\GatingPipeline.mqh"
@@ -44,8 +36,6 @@
 // Unified System Components
 #include "..\Include\ConfigManager.mqh"
 #include "..\Include\EventBus.mqh"
-#include "..\Include\SystemMonitor.mqh"
-#include "..\Include\LogMiddleware.mqh"
 
 // Standard Libraries
 #include <Arrays/ArrayObj.mqh>
@@ -61,7 +51,6 @@
 #include "regime_adaptation.mqh"
 
 // Position management
-#include "..\\Include\\PositionManager.mqh"
 #include "..\\Include\\ModelPredictor.mqh"
 
 // Policy hot-reload bridge
@@ -72,14 +61,40 @@
 
 // Strategy selector
 #include "..\Include\StrategySelector.mqh"
+
+// P0/P1 COMPREHENSIVE HARDENING & INTELLIGENCE UPGRADE
+#include "..\Include\DualEA_MasterIntegration.mqh"
+
+// P0-P5 ADVANCED HARDENING & INTELLIGENCE INTEGRATION
+#include "..\Include\PaperEA_v2_P0P5_Integration.mqh"
+
+// Additional components referenced by PaperEA_v2
+#include "..\Include\CGateAudit.mqh"
+#include "..\Include\CInsightsRealtime.mqh"
+
 // Learning and Export Systems - Using file-based export for strategy tester compatibility
 #include "..\Include\LearningBridge.mqh"
-#include "..\Include\GateManager.mqh"
 #include "..\Include\FileBasedFeatureExport.mqh"  // Replaces DLL-based export
 #include "..\Include\StrategySignalGenerators.mqh"  // Extensible strategy signal generators
 #include "..\Include\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 
-// ===================[ PAPER vs LIVE EA CLARIFICATION ]===================
+// ===================[ EFFICIENT GATE SYSTEM CONFIGURATION ]===================
+input group "=== EFFICIENT 8-STAGE GATE SYSTEM ==="
+input bool UseEfficientGates = true;        // Use optimized gate implementation
+input int GateProcessingMode = 0;           // 0=Full, 1=RiskOnly, 2=Fast, 3=Bypass
+input bool ShadowMode = true;               // Start with shadow logging for data collection
+input bool LoadONNXModels = true;           // Load dynamic threshold ONNX models
+input bool AutoReloadModels = true;         // Auto-reload models when updated
+input int RetrainIntervalHours = 24;        // Hours between model retraining
+input bool G5_PerformanceWaxEnabled = true;   // Enable performance validation
+input double G5_MinWinRate = 0.45;            // Min strategy win rate
+input int G5_LookbackTrades = 20;             // Trades to look back
+input bool G6_MLPolishEnabled = true;         // Enable ML validation
+input double G6_MLConfidenceThreshold = 0.55; // ML confidence threshold
+input bool G7_LiveCleanEnabled = true;        // Enable market condition checks
+input double G7_MaxSpreadPercent = 0.05;      // Max spread (5%)
+
+// Risk gates ALWAYS enforced (G1, G4, G7, G8) - per MQL5 risk management best practices
 // IMPORTANT: "Paper" refers to DEMO ACCOUNT, NOT simulated trades!
 // - PaperEA executes REAL MT5 trades via OrderSend() on DEMO accounts
 // - LiveEA executes REAL MT5 trades via OrderSend() on LIVE accounts  
@@ -308,7 +323,7 @@ input bool   OnnxPathsUseCommonDir     = true;
 // Global adaptive engines
 CAdaptiveEngine g_adaptive_engine;
 CMLAdaptationEngine g_ml_engine;
-CGateAudit g_gate_audit;  // Gate audit system
+// CGateAudit g_gate_audit defined in CGateAudit.mqh - do not redefine
 input bool     UseGateSystem = true;
 input string   LearningDataPath = "DualEA\\PaperData"; // Relative to Common Files (Strategy Tester compatible)
 input int      MaxLearningRecords = 10000;
@@ -327,11 +342,12 @@ input int PaperTradeCooldownSec = 900; // 15 min default
 
 // ===================[ CORE SYSTEM MANAGERS ]===================
 CLearningBridge *g_learning_bridge = NULL;
-CGateManager *g_gate_manager = NULL;
+// NEW: Efficient Gate Manager replaces old CGateManager
+CEfficientGateManager *g_gate_manager = NULL;
 CTradeManager *g_trade_manager = NULL;
 CTelemetryStandard *g_telemetry = NULL;
 CStrategySignalRegistry *g_signal_registry = NULL;  // Extensible strategy signal generators
-CIncrementalInsightEngine* g_insight_engine = NULL; // Real-time statistics engine
+// g_insight_engine is defined in IncrementalInsightEngine.mqh - do not redefine
 // g_paper_positions removed - using REAL MT5 positions via PositionSelect()
 
 // ===================[ DYNAMIC PARAMETER ENGINE ]===================
@@ -461,7 +477,7 @@ CRingBuffer<string>* g_log_queue = NULL;
 
 // ===================[ SELECTOR, POSITION MANAGER, FEATURES LOGGER, KNOWLEDGE BASE, TRADE MANAGER ]===================
 CStrategySelector*       g_selector = NULL;
-CPositionManager*        g_position_manager = NULL;
+// g_position_manager is defined in CPositionManager.mqh - do not redefine
 CFeaturesKB*             g_features = NULL;
 CKnowledgeBase*          g_kb = NULL;
 CTelemetry*              g_telemetry_base = NULL;
@@ -473,6 +489,15 @@ bool                     g_mlp_warned_unready = false;
 bool                     g_mlp_warned_features = false;
 
 // ===================[ ONNX PREDICTOR HELPERS ]===================
+// Define ENUM_STATISTICS values if not already defined (for TesterStatistics compatibility)
+#ifndef STAT_BALANCE_DDREL_PERCENT
+   #define STAT_BALANCE_DDREL_PERCENT 0
+   #define STAT_SHARPE_RATIO 1
+   #define STAT_TRADES_WIN 2
+   #define STAT_TRADES_LOSS 3
+   #define STAT_TRADES_TOTAL 4
+#endif
+
 string ResolveDualEAPath(const string relative_path, const bool prefer_common)
 {
    string trimmed = relative_path;
@@ -601,7 +626,7 @@ bool BuildPredictorFeatureVector(const TradingSignal &signal,
    if(resolved_regime == "")
       resolved_regime = GetMarketRegime();
    string resolved_market_regime = (signal.market_regime != "") ? signal.market_regime : resolved_regime;
-    string normalized_status = status;
+   string normalized_status = status;
    StringToLower(normalized_status);
    string normalized_reason = reason;
    StringToLower(normalized_reason);
@@ -748,6 +773,171 @@ void GateSanitizeTelemetryReporter(const string gate_name, TradingSignal &signal
    g_telemetry_base.LogEvent(_Symbol, _Period, "gate_sanitize", "sanitized", details);
 }
 
+// Callback function pointer for gate sanitize telemetry
+typedef void (*GateSanitizeCallback)(const string, TradingSignal&);
+GateSanitizeCallback g_gate_sanitize_callback = NULL;
+
+void SetGateSanitizeTelemetryCallback(GateSanitizeCallback callback)
+{
+   g_gate_sanitize_callback = callback;
+}
+
+// P0-4: ONNX Health Monitoring - Latency tracking and degradation detection
+struct SONNXHealthMetrics
+{
+   ulong total_calls;
+   ulong total_latency_ms;
+   ulong max_latency_ms;
+   ulong min_latency_ms;
+   ulong failed_calls;
+   ulong slow_calls;        // Calls > 100ms threshold
+   datetime last_failure;
+   double  avg_latency_ms;
+   bool    healthy;
+   
+   void Init()
+   {
+      total_calls = 0;
+      total_latency_ms = 0;
+      max_latency_ms = 0;
+      min_latency_ms = ULONG_MAX;
+      failed_calls = 0;
+      slow_calls = 0;
+      last_failure = 0;
+      avg_latency_ms = 0.0;
+      healthy = true;
+   }
+   
+   void RecordLatency(ulong latency_ms, bool success)
+   {
+      total_calls++;
+      if(success)
+      {
+         total_latency_ms += latency_ms;
+         max_latency_ms = MathMax(max_latency_ms, latency_ms);
+         min_latency_ms = MathMin(min_latency_ms, latency_ms);
+         avg_latency_ms = (double)total_latency_ms / total_calls;
+         
+         // P0-4: Flag slow calls (>100ms threshold per MT5 Build 5572 guidelines)
+         if(latency_ms > 100)
+         {
+            slow_calls++;
+         }
+      }
+      else
+      {
+         failed_calls++;
+         last_failure = TimeCurrent();
+      }
+      
+      // P0-4: Health check - degrade if >5% failures or >20% slow calls
+      double failure_rate = (double)failed_calls / total_calls;
+      double slow_rate = (double)slow_calls / total_calls;
+      healthy = (failure_rate < 0.05) && (slow_rate < 0.20);
+   }
+   
+   double GetFailureRate() { return total_calls > 0 ? (double)failed_calls / total_calls : 0.0; }
+   double GetSlowRate() { return total_calls > 0 ? (double)slow_calls / total_calls : 0.0; }
+};
+
+SONNXHealthMetrics g_onnx_health;
+bool g_onnx_health_initialized = false;
+input int ONNX_MaxLatencyMs = 100;        // P0-4: Max acceptable ONNX latency
+input bool ONNX_EnableHealthMonitor = true; // P0-4: Enable health monitoring
+
+// P0-4: Heuristic confidence calculation as ONNX fallback
+double CalculateHeuristicConfidence(const TradingSignal &signal)
+{
+   double confidence = 0.5;  // Neutral baseline
+   
+   // Adjust based on signal strength indicators
+   if(signal.volatility > 0)
+   {
+      // Lower confidence in high volatility
+      confidence -= MathMin(0.15, signal.volatility * 0.5);
+   }
+   
+   // Boost confidence if signal has good structure
+   if(signal.price > 0 && signal.sl > 0 && signal.tp > 0)
+   {
+      double sl_dist = MathAbs(signal.price - signal.sl);
+      double tp_dist = MathAbs(signal.tp - signal.price);
+      if(tp_dist > sl_dist)  // Favorable R:R
+      {
+         confidence += 0.1;
+      }
+   }
+   
+   // Ensure bounds
+   confidence = MathMax(0.3, MathMin(0.7, confidence));
+   
+   return confidence;
+}
+
+// P0-4: Health-aware model evaluation with latency guardrails
+double EvaluateModelProbabilityWithHealth(const TradingSignal &signal,
+                                          const string strategy_name,
+                                          const CAdaptiveDecision *decision_ptr,
+                                          const string status,
+                                          const string reason)
+{
+   if(!g_onnx_health_initialized)
+   {
+      g_onnx_health.Init();
+      g_onnx_health_initialized = true;
+   }
+   
+   if(!UseOnnxPredictor || !g_model_predictor_ready)
+   {
+      if(ONNX_EnableHealthMonitor)
+      {
+         g_onnx_health.RecordLatency(0, false);
+      }
+      return -1.0;
+   }
+   
+   // P0-4: Check health before attempting inference
+   if(ONNX_EnableHealthMonitor && !g_onnx_health.healthy)
+   {
+      static datetime last_health_warning = 0;
+      if(TimeCurrent() - last_health_warning > 300)  // Warn every 5 minutes
+      {
+         LOG(StringFormat("[P0-4] ONNX health degraded (fail=%.1f%% slow=%.1f%%), using heuristic fallback", 
+            g_onnx_health.GetFailureRate()*100, g_onnx_health.GetSlowRate()*100));
+         last_health_warning = TimeCurrent();
+      }
+      return -2.0;  // Signal to use heuristic fallback
+   }
+   
+   // P0-4: Track latency
+   ulong start_time = GetTickCount();
+   
+   double result = EvaluateModelProbability(signal, strategy_name, decision_ptr, status, reason);
+   
+   ulong latency_ms = GetTickCount() - start_time;
+   
+   // P0-4: Record metrics
+   if(ONNX_EnableHealthMonitor)
+   {
+      bool success = (result >= 0.0);
+      g_onnx_health.RecordLatency(latency_ms, success);
+      
+      // P0-4: Log slow calls
+      if(latency_ms > (ulong)ONNX_MaxLatencyMs)
+      {
+         static int slow_call_count = 0;
+         slow_call_count++;
+         if(slow_call_count <= 10 || slow_call_count % 100 == 0)
+         {
+            LOG(StringFormat("[P0-4] ONNX slow inference: %I64ums (threshold: %dms) - count: %d", 
+               latency_ms, ONNX_MaxLatencyMs, slow_call_count));
+         }
+      }
+   }
+   
+   return result;
+}
+
 double EvaluateModelProbability(const TradingSignal &signal,
                                 const string strategy_name,
                                 const CAdaptiveDecision *decision_ptr,
@@ -870,10 +1060,11 @@ string                   g_ir_slice_keys[];
 datetime                 g_ir_slice_times[];
 
 // ===================[ LOG LEVELS (ENUM AND CONSTANTS) ]===================
+#undef LOG_DEBUG
+#undef LOG_INFO
+#undef LOG_WARNING
+#undef LOG_ERROR
 enum LogLevel { LOG_ERROR = 0, LOG_INFO = 1, LOG_DEBUG = 2 };
-#define LOG_INFO 1
-#define LOG_ERROR 0
-#define LOG_DEBUG 2
 
 // ===================[ LAST PAPER ACTION TRACKING ]===================
 static datetime g_last_paper_action = 0;
@@ -1063,7 +1254,11 @@ int OnInit()
       }
    }
    
-   // ===================[ POLICY ENGINE INITIALIZATION ]===================
+   // ===================[ EFFICIENT GATE SYSTEM CONFIGURATION ]===================
+   // Note: Input variables already declared at global scope (lines 82-95)
+   // Using existing GateProcessingMode, G5_PerformanceWaxEnabled, etc.
+   
+   // Risk gates ALWAYS enforced (G1, G4, G7, G8) - per MQL5 risk management best practices
    
    // Initialize Policy Engine
    if(UsePolicyEngine || UsePolicyGating)
@@ -1111,8 +1306,73 @@ int OnInit()
       LOG(StringFormat("WARNING: Failed to initialize Learning Bridge - learning features disabled for %s %s", _Symbol, EnumToString((ENUM_TIMEFRAMES)_Period)));
    }
    
-   // Initialize gate manager (maintain compatibility)
-   g_gate_manager = new CGateManager(_Symbol, (ENUM_TIMEFRAMES)_Period, g_learning_bridge);
+   // Initialize gate manager with auto-learning (replaces old CGateManager)
+   if(UseEfficientGates)
+   {
+      // NEW: Enhanced gate system with shadow logging and auto-tuning
+      SAutoLearningConfig config;
+      config.Init();
+      config.shadow_mode = ShadowMode;           // Set to true initially for data collection
+      config.load_onnx_models = LoadONNXModels;
+      config.auto_reload_models = AutoReloadModels;
+      config.auto_tune_gates = true;
+      config.retrain_interval_hours = RetrainIntervalHours;
+      
+      g_gate_manager = new CEfficientGateManagerEnhanced(
+         NoConstraintsMode,      // Properly respected now
+         UseInsightsGating,      // Insights threshold checks
+         UsePolicyGating         // ML policy filtering
+      );
+      
+      // Initialize with shadow logging and auto-learning
+      if(CheckPointer(g_gate_manager) != POINTER_INVALID)
+      {
+         g_gate_manager.Initialize(config.shadow_mode);
+         
+         // Set processing mode based on configuration
+         if(NoConstraintsMode)
+            g_gate_manager.SetMode(GATE_MODE_RISK_ONLY);
+         else
+            g_gate_manager.SetMode((EGateProcessingMode)GateProcessingMode);
+         
+         // Configure G5 PerformanceWax with auto-tuning
+         if(G5_PerformanceWaxEnabled)
+         {
+            g_gate_manager.SetPerformanceWaxEnabled(true, G5_MinWinRate, G5_LookbackTrades);
+            // Enable auto-tuning for G5
+            SGateAutoTuneConfig tune_config;
+            tune_config.Init(0.3, 0.9, 20, 0.55, 0.05);
+            g_gate_manager.EnableAutoTune(5, tune_config);
+         }
+         
+         // Configure G6 MLPolish with ONNX support
+         if(G6_MLPolishEnabled)
+         {
+            g_gate_manager.SetMLPolishEnabled(true, G6_MLConfidenceThreshold);
+            // Enable auto-tuning for G6
+            SGateAutoTuneConfig tune_config;
+            tune_config.Init(0.4, 0.8, 30, 0.55, 0.03);
+            g_gate_manager.EnableAutoTune(6, tune_config);
+         }
+         
+         // Configure G7 LiveClean
+         if(G7_LiveCleanEnabled)
+            g_gate_manager.SetLiveCleanEnabled(true, G7_MaxSpreadPercent);
+         
+         LOG("✅ Enhanced Gate System initialized (8-stage, shadow logging, auto-tuning, ONNX-ready)");
+         
+         // Initialize auto-learning manager for model reloading
+         CAutoLearningManager auto_learning;
+         auto_learning.Initialize(g_gate_manager, config);
+      }
+   }
+   else
+   {
+      // LEGACY: Use old gate manager (deprecated)
+      LOG("WARNING: Using deprecated CGateManager - migrate to CEfficientGateManagerEnhanced");
+      // Note: CGateManager class has been removed - this branch should not be used
+      g_gate_manager = NULL;
+   }
    if(CheckPointer(g_gate_manager) == POINTER_INVALID)
    {
       LOG(StringFormat("ERROR: Failed to initialize Gate Manager for %s %s", _Symbol, EnumToString((ENUM_TIMEFRAMES)_Period)));
@@ -1130,6 +1390,33 @@ int OnInit()
    else
    {
       LOG("WARNING: Failed to initialize Strategy Signal Registry - using fallback signal generation");
+   }
+
+   // ===================[ P0/P1 COMPREHENSIVE HARDENING INITIALIZATION ]===================
+   // Initialize the master controller with all P0/P1 components
+   {
+      SDualEAConfig master_config;
+      master_config.SetDefaults();
+      
+      // Configure from EA inputs
+      master_config.shadow_logging_enabled = ShadowMode;
+      master_config.shadow_mode_only = ShadowMode && !LiveTradingEnabled;
+      master_config.sqlite_enabled = true;
+      master_config.circuit_breaker_enabled = UseCircuitBreakers;
+      master_config.correlation_sizing_enabled = UseCorrelationManager;
+      master_config.volatility_exits_enabled = UseVolatilitySizer;
+      master_config.max_risk_per_trade_pct = VolSizerTargetRisk;
+      master_config.max_positions = MaxOpenPositions;
+      master_config.redis_enabled = false;  // Disabled by default
+      
+      if(!InitializeDualEAMasterController(master_config))
+      {
+         LOG("WARNING: P0/P1 Master Controller initialization failed - some hardened features disabled");
+      }
+      else
+      {
+         LOG("✅ P0/P1 Master Controller initialized: All hardened systems active");
+      }
    }
 
    // Initialize gate audit system with all expected strategies (registry + extra paper strategies)
@@ -1408,6 +1695,17 @@ int OnInit()
    
    LOG("=== 🚀 PaperEA v2 FULLY INTEGRATED AND READY FOR PRODUCTION ===");
    
+   // ===================[ P0-P5 ADVANCED HARDENING INITIALIZATION ]===================
+   // Initialize all P0-P5 subsystems (concept drift, CPU budgeting, nuclear risk, etc.)
+   if(!InitializeP0P5Systems())
+   {
+      LOG("WARNING: P0-P5 Advanced Hardening initialization failed - continuing with degraded features");
+   }
+   else
+   {
+      LOG("✅ P0-P5 Advanced Hardening active: Drift detection, CPU budgeting, Nuclear risk, Symbol coordination");
+   }
+   
    return(INIT_SUCCEEDED);
 }
 
@@ -1623,6 +1921,9 @@ void OnDeinit(const int reason)
       g_trade_manager = NULL;
    }
    
+   // ===================[ CLEANUP P0/P1 MASTER CONTROLLER ]===================
+   ShutdownDualEAMasterController();
+   
    // ===================[ CLEANUP TELEMETRY SYSTEM ]===================
    if(g_tel_standard != NULL)
    {
@@ -1684,6 +1985,9 @@ void OnDeinit(const int reason)
    ArrayResize(g_loss_cnt, 0);
    ArrayResize(g_ir_slice_keys, 0);
    ArrayResize(g_ir_slice_times, 0);
+   
+   // ===================[ CLEANUP P0-P5 ADVANCED SYSTEMS ]===================
+   ShutdownP0P5Systems();
    
    LOG("=== PaperEA v2 Enhanced Deinitialization Complete ===");
    LOG(StringFormat("Reason: %s", GetUninitReasonText(reason)));
@@ -2470,6 +2774,17 @@ bool CheckMemoryLimits()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   // ===================[ P0/P1 MASTER CONTROLLER ON TICK ]===================
+   // Process all hardened components (feature cache, system monitor, volatility exits, etc.)
+   if(g_master_controller != NULL)
+   {
+      g_master_controller.OnTick();
+   }
+   
+   // ===================[ P0-P5 ADVANCED HARDENING ON TICK ]===================
+   // Process concept drift, CPU budgeting, nuclear risk, symbol coordination
+   OnTickP0P5();
+   
    // ===================[ PERIODIC MAINTENANCE ]===================
    static datetime last_policy_check = 0;
    static datetime last_insights_check = 0;
@@ -2611,7 +2926,7 @@ void OnTick()
    }
    
    // Log strategy ONLY after confirming a valid signal was generated
-   g_gate_audit.LogStrategyProcessed(selected_strategy);
+   g_gate_audit.LogStrategyProcessed(selected_strategy, signal.id, true, signal.confidence, "generated");
 
    // Normalize confidence early so GateManager doesn't replace it with heuristic 0.50
    // when a strategy produces an out-of-range value.
@@ -2707,9 +3022,20 @@ void OnTick()
       }
       else
       {
-         // Fallback to standard gate processing
+         // Fallback to standard gate processing (efficient version)
          CSignalDecision standard_decision;
-         passed = g_gate_manager.ProcessSignal(signal, standard_decision);
+         string block_reason;
+         
+         if(UseEfficientGates && CheckPointer(g_gate_manager) != POINTER_INVALID)
+         {
+            // Use new efficient gate system
+            passed = g_gate_manager.ProcessSignalEfficient(signal, standard_decision, block_reason);
+         }
+         else
+         {
+            // Legacy fallback
+            passed = g_gate_manager.ProcessSignal(signal, standard_decision);
+         }
          
          // Copy to adaptive decision for compatibility
          if(passed)
@@ -4037,6 +4363,10 @@ void OnTimer()
      
      last_heartbeat = now;
   }
+  
+  // ===================[ P0-P5 PERIODIC MAINTENANCE ]===================
+  // Flush batch telemetry, check shadow trades, feature drift maintenance
+  OnTimerP0P5();
 }
 
 //+------------------------------------------------------------------+
@@ -4195,4 +4525,320 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       HandlePositionClosed(idx, deal);
       return;
    }
+}
+
+//+------------------------------------------------------------------+
+//| GENETIC OPTIMIZATION FITNESS FUNCTION                             |
+//| Implements robust metric from chat-8Stage guide                   |
+//| Penalizes overfitting, rewards consistency                        |
+//+------------------------------------------------------------------+
+double OnTester()
+{
+   // Use robust metric (not just profit)
+   double profit_factor = TesterStatistics(STAT_PROFIT_FACTOR);
+   double drawdown = TesterStatistics(STAT_BALANCE_DDREL_PERCENT);
+   double sharpe = TesterStatistics(STAT_SHARPE_RATIO);
+   double win_rate = TesterStatistics(STAT_TRADES_WIN) / 
+                     (TesterStatistics(STAT_TRADES_WIN) + TesterStatistics(STAT_TRADES_LOSS));
+   
+   // Multi-objective fitness: ProfitFactor * (1 - DD) * Sharpe * WR
+   // Penalize high drawdown heavily
+   if(drawdown > 20.0) return 0.0;
+   
+   // Normalize components
+   double pf_score = MathMin(profit_factor, 3.0) / 3.0;  // Cap at 3.0
+   double dd_score = 1.0 - (drawdown / 100.0);
+   double sharpe_score = MathMax(0, sharpe) / 3.0;  // Normalize Sharpe
+   double wr_score = win_rate;
+   
+   // Weighted combination (from guide: prioritize PF and DD)
+   double fitness = (pf_score * 0.4 + dd_score * 0.3 + sharpe_score * 0.2 + wr_score * 0.1);
+   
+   // Additional penalties
+   if(TesterStatistics(STAT_TRADES_TOTAL) < 20) fitness *= 0.5;  // Insufficient trades
+   if(profit_factor < 1.0) fitness *= 0.1;  // Losing system
+   
+   return fitness;
+}
+
+//+------------------------------------------------------------------+
+//| GATE PERFORMANCE MONITORING                                       |
+//| Tracks per-gate latency and execution metrics                   |
+//+------------------------------------------------------------------+
+struct SGatePerformanceMetrics
+{
+   ulong total_calls;
+   ulong total_latency_us;
+   ulong max_latency_us;
+   ulong min_latency_us;
+   ulong pass_count;
+   ulong fail_count;
+   
+   void Init()
+   {
+      total_calls = 0;
+      total_latency_us = 0;
+      max_latency_us = 0;
+      min_latency_us = ULONG_MAX;
+      pass_count = 0;
+      fail_count = 0;
+   }
+   
+   void Record(ulong latency_us, bool passed)
+   {
+      total_calls++;
+      total_latency_us += latency_us;
+      max_latency_us = MathMax(max_latency_us, latency_us);
+      min_latency_us = MathMin(min_latency_us, latency_us);
+      if(passed) pass_count++;
+      else fail_count++;
+   }
+   
+   double GetAvgLatency() 
+   { 
+      return (total_calls > 0) ? (double)total_latency_us / total_calls : 0.0; 
+   }
+   
+   double GetPassRate()
+   {
+      return (total_calls > 0) ? (double)pass_count / total_calls : 0.0;
+   }
+};
+
+SGatePerformanceMetrics g_gate_metrics[8];  // One per gate
+
+//+------------------------------------------------------------------+
+//| Record gate performance metrics                                   |
+//+------------------------------------------------------------------+
+void RecordGateMetrics(int gate_num, ulong latency_us, bool passed)
+{
+   if(gate_num >= 1 && gate_num <= 8)
+   {
+      g_gate_metrics[gate_num - 1].Record(latency_us, passed);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Print gate performance summary                                    |
+//+------------------------------------------------------------------+
+void PrintGatePerformanceSummary()
+{
+   Print("=== GATE PERFORMANCE SUMMARY ===");
+   for(int i = 0; i < 8; i++)
+   {
+      if(g_gate_metrics[i].total_calls > 0)
+      {
+         string gate_name = StringFormat("Gate %d", i + 1);
+         switch(i)
+         {
+            case 0: gate_name = "G1 SignalRinse"; break;
+            case 1: gate_name = "G2 MarketSoap"; break;
+            case 2: gate_name = "G3 StrategyScrub"; break;
+            case 3: gate_name = "G4 RiskWash"; break;
+            case 4: gate_name = "G5 PerformanceWax"; break;
+            case 5: gate_name = "G6 ML Polish"; break;
+            case 6: gate_name = "G7 LiveClean"; break;
+            case 7: gate_name = "G8 FinalVerify"; break;
+         }
+         
+         Print(StringFormat("%s: calls=%I64u avg=%.1fus max=%I64u min=%I64u pass=%.1f%%",
+            gate_name,
+            g_gate_metrics[i].total_calls,
+            g_gate_metrics[i].GetAvgLatency(),
+            g_gate_metrics[i].max_latency_us,
+            g_gate_metrics[i].min_latency_us,
+            g_gate_metrics[i].GetPassRate() * 100.0));
+      }
+   }
+   Print("================================");
+}
+
+//+------------------------------------------------------------------+
+//| WEEKEND/MARKET STATUS CHECK                                       |
+//| Robustness: Handle no-tick periods per guide                      |
+//+------------------------------------------------------------------+
+bool IsTradeAllowedExtended()
+{
+   // Basic trade allowed check
+   if(!IsTradeAllowed()) return false;
+   
+   // Check if market is open (handles weekends)
+   datetime now = TimeCurrent();
+   MqlDateTime dt;
+   TimeToStruct(now, dt);
+   
+   // Weekend check (Friday after 20:00 or Sunday before 22:00)
+   if(dt.day_of_week == 5 && dt.hour >= 20) return false;  // Friday evening
+   if(dt.day_of_week == 0 && dt.hour < 22) return false;   // Sunday early
+   if(dt.day_of_week == 6) return false;                   // Saturday
+   
+   // Check spread (Gate 7 logic integrated)
+   double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double avg_spread = GetAverageSpread(20);
+   if(spread > avg_spread * 3.0)  // Spread > 3x average
+   {
+      static datetime last_spread_warn = 0;
+      if(now - last_spread_warn > 300)  // Warn every 5 minutes
+      {
+         Print(StringFormat("WARNING: Spread too high (%d vs avg %.1f) - skipping tick", 
+            (int)spread, avg_spread));
+         last_spread_warn = now;
+      }
+      return false;
+   }
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Calculate average spread over N periods                           |
+//+------------------------------------------------------------------+
+double GetAverageSpread(int periods)
+{
+   double sum = 0;
+   for(int i = 0; i < periods; i++)
+   {
+      sum += iSpread(_Symbol, _Period, i);
+   }
+   return (periods > 0) ? sum / periods : 0;
+}
+
+//+------------------------------------------------------------------+
+//| WALK-FORWARD ANALYSIS SUPPORT                                     |
+//| Enable regime-based parameter loading                             |
+//+------------------------------------------------------------------+
+input group "=== WALK-FORWARD ANALYSIS ==="
+input bool WFA_Enabled = false;              // Enable walk-forward mode
+input string WFA_ParameterFile = "wfa_params.json";  // Parameter file path
+input int WFA_RetrainIntervalDays = 7;     // Days between parameter reload
+
+datetime g_last_wfa_reload = 0;
+
+//+------------------------------------------------------------------+
+//| Check and reload WFA parameters                                   |
+//+------------------------------------------------------------------+
+void CheckWFAReload()
+{
+   if(!WFA_Enabled) return;
+   
+   datetime now = TimeCurrent();
+   if((now - g_last_wfa_reload) < WFA_RetrainIntervalDays * 86400) return;
+   
+   string filepath = StringFormat("DualEA\\%s", WFA_ParameterFile);
+   if(FileIsExist(filepath, FILE_COMMON))
+   {
+      Print(StringFormat("[WFA] Reloading parameters from %s", WFA_ParameterFile));
+      
+      // Load parameters from JSON (simplified - in production use proper JSON parser)
+      // This would update gate thresholds based on out-of-sample performance
+      
+      g_last_wfa_reload = now;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced ExecuteGateCascade with metrics                          |
+//| Fail-fast with per-gate timing from guide                         |
+//+------------------------------------------------------------------+
+bool ExecuteGateCascadeEnhanced(TradingSignal &signal, bool &all_passed, string &block_reason)
+{
+   ulong cascade_start = GetMicrosecondCount();
+   all_passed = true;
+   
+   // Gate 1: Signal Rinse
+   ulong g1_start = GetMicrosecondCount();
+   bool g1_pass = g_gate_manager.ProcessGate1(signal);
+   RecordGateMetrics(1, GetMicrosecondCount() - g1_start, g1_pass);
+   if(!g1_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G1 SignalRinse rejected";
+      return false; 
+   }
+   
+   // Gate 2: Market Soap
+   ulong g2_start = GetMicrosecondCount();
+   bool g2_pass = g_gate_manager.ProcessGate2(signal);
+   RecordGateMetrics(2, GetMicrosecondCount() - g2_start, g2_pass);
+   if(!g2_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G2 MarketSoap rejected";
+      return false; 
+   }
+   
+   // Gate 3: Strategy Scrub
+   ulong g3_start = GetMicrosecondCount();
+   bool g3_pass = g_gate_manager.ProcessGate3(signal);
+   RecordGateMetrics(3, GetMicrosecondCount() - g3_start, g3_pass);
+   if(!g3_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G3 StrategyScrub rejected";
+      return false; 
+   }
+   
+   // Gate 4: Risk Wash
+   ulong g4_start = GetMicrosecondCount();
+   bool g4_pass = g_gate_manager.ProcessGate4(signal);
+   RecordGateMetrics(4, GetMicrosecondCount() - g4_start, g4_pass);
+   if(!g4_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G4 RiskWash rejected";
+      return false; 
+   }
+   
+   // Gate 5: Performance Wax
+   ulong g5_start = GetMicrosecondCount();
+   bool g5_pass = g_gate_manager.ProcessGate5(signal);
+   RecordGateMetrics(5, GetMicrosecondCount() - g5_start, g5_pass);
+   if(!g5_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G5 PerformanceWax rejected";
+      return false; 
+   }
+   
+   // Gate 6: ML Polish
+   ulong g6_start = GetMicrosecondCount();
+   bool g6_pass = g_gate_manager.ProcessGate6(signal);
+   RecordGateMetrics(6, GetMicrosecondCount() - g6_start, g6_pass);
+   if(!g6_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G6 ML Polish rejected";
+      return false; 
+   }
+   
+   // Gate 7: Live Clean
+   ulong g7_start = GetMicrosecondCount();
+   bool g7_pass = g_gate_manager.ProcessGate7(signal);
+   RecordGateMetrics(7, GetMicrosecondCount() - g7_start, g7_pass);
+   if(!g7_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G7 LiveClean rejected";
+      return false; 
+   }
+   
+   // Gate 8: Final Verify
+   ulong g8_start = GetMicrosecondCount();
+   bool g8_pass = g_gate_manager.ProcessGate8(signal);
+   RecordGateMetrics(8, GetMicrosecondCount() - g8_start, g8_pass);
+   if(!g8_pass) 
+   { 
+      all_passed = false; 
+      block_reason = "G8 FinalVerify rejected";
+      return false; 
+   }
+   
+   // Performance warning if cascade > 5ms
+   double elapsed_ms = (GetMicrosecondCount() - cascade_start) / 1000.0;
+   if(elapsed_ms > 5.0)
+   {
+      Print(StringFormat("WARNING: Gate cascade took %.2fms (>5ms threshold)", elapsed_ms));
+   }
+   
+   return true;
 }

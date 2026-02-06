@@ -9,9 +9,6 @@
 class CKeltnerMomentumStrategy : public IStrategy
   {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-
    CKeltner         m_kc;
    int              m_emaPeriod;
    int              m_atrPeriod;
@@ -28,9 +25,8 @@ private:
    double           m_adx1, m_atr1;
 
 public:
-   CKeltnerMomentumStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CKeltnerMomentumStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("KeltnerMomentumStrategy", symbol, tf)
      {
-      m_symbol=symbol; m_tf=tf;
       m_emaPeriod=20; m_atrPeriod=10; m_atrMult=1.5;
       m_kc.Init(symbol, tf, m_emaPeriod, m_atrPeriod, m_atrMult);
       m_adxPeriod=14; m_hADX=iADX(symbol, tf, m_adxPeriod);
@@ -42,7 +38,7 @@ public:
 
    virtual void Refresh()
      {
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       m_upper1 = m_kc.Upper(1);
       m_lower1 = m_kc.Lower(1);
       m_mid1   = m_kc.Middle(1);

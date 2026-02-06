@@ -13,8 +13,6 @@ class CMeanReversionBBStrategy : public IStrategy
 private:
    int               m_bb_handle;
    int               m_ma_handle;
-   string            m_symbol;
-   ENUM_TIMEFRAMES   m_timeframe;
 
    // --- Data arrays
    double            m_bb_upper[], m_bb_lower[];
@@ -27,10 +25,11 @@ public:
    // --- IStrategy interface methods
    virtual void      Refresh() override;
    virtual TradeOrder  CheckSignal() override;
-   virtual string    Name() override { return "MeanReversionBBStrategy"; }
-   virtual void      ExportFeatures(CFeaturesKB* kb, const datetime ts) override
+   virtual string    Name() const override { return "MeanReversionBBStrategy"; }
+   virtual void      ExportFeatures(CObject* obj, const datetime ts) override
      {
-      if(CheckPointer(kb)==POINTER_INVALID) return;
+      CFeaturesKB *kb = dynamic_cast<CFeaturesKB*>(obj);
+      if(kb==NULL) return;
       // latest price
       MqlRates r[]; if(CopyRates(m_symbol, m_timeframe, 0, 1, r)==1)
          (*kb).WriteKV(ts, m_symbol, Name(), "close", r[0].close);
@@ -51,11 +50,8 @@ public:
 //+------------------------------------------------------------------+
 //| Constructor                                                      |
 //+------------------------------------------------------------------+
-CMeanReversionBBStrategy::CMeanReversionBBStrategy(string symbol, ENUM_TIMEFRAMES timeframe)
+CMeanReversionBBStrategy::CMeanReversionBBStrategy(string symbol, ENUM_TIMEFRAMES timeframe) : IStrategy("MeanReversionBBStrategy", symbol, timeframe)
   {
-   m_symbol = symbol;
-   m_timeframe = timeframe;
-
    // --- Get indicator handles
    m_bb_handle = iBands(m_symbol, m_timeframe, 20, 0, 2.0, PRICE_CLOSE);
    m_ma_handle = iMA(m_symbol, PERIOD_D1, 100, 0, MODE_SMA, PRICE_CLOSE);

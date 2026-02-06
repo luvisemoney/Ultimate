@@ -5,8 +5,6 @@
 class CADXStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
    int              m_adxPeriod;
    int              m_adxThreshold;
    int              m_diPeriod;
@@ -16,9 +14,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CADXStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CADXStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("ADXStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_adxPeriod = 14; m_adxThreshold = 25; m_diPeriod = 14;
       m_adx_current = m_plus_di = m_minus_di = 0;
       m_close0 = m_close1 = 0;
@@ -28,11 +25,11 @@ public:
    
    virtual void Refresh()
    {
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       double adx_buffer[], plus_di_buffer[], minus_di_buffer[];
-      int adx_handle = iADX(m_symbol, m_tf, m_adxPeriod);
+      int adx_handle = iADX(m_symbol, m_timeframe, m_adxPeriod);
       
       if(adx_handle > 0)
       {

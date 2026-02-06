@@ -5,9 +5,6 @@
 class CBearsPowerStrategy : public IStrategy
 {
 private:
-   string           m_symbol;
-   ENUM_TIMEFRAMES  m_tf;
-   
    // Bears Power parameters
    int m_emaPeriod, m_bearsPeriod;
    
@@ -16,9 +13,8 @@ private:
    double m_close0, m_close1;
    
 public:
-   CBearsPowerStrategy(const string symbol, const ENUM_TIMEFRAMES tf)
+   CBearsPowerStrategy(const string symbol, const ENUM_TIMEFRAMES tf) : IStrategy("BearsPowerStrategy", symbol, tf)
    {
-      m_symbol = symbol; m_tf = tf;
       m_emaPeriod = 13; m_bearsPeriod = 13;
       ResetValues();
    }
@@ -34,13 +30,13 @@ public:
    virtual void Refresh()
    {
       ResetValues();
-      m_close0 = iClose(m_symbol, m_tf, 0);
-      m_close1 = iClose(m_symbol, m_tf, 1);
+      m_close0 = iClose(m_symbol, m_timeframe, 0);
+      m_close1 = iClose(m_symbol, m_timeframe, 1);
       
       // Calculate Bears Power
-      double low = iLow(m_symbol, m_tf, 0);
+      double low = iLow(m_symbol, m_timeframe, 0);
       double ema_buffer[];
-      int ema_handle = iMA(m_symbol, m_tf, m_emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+      int ema_handle = iMA(m_symbol, m_timeframe, m_emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
       
       if(ema_handle > 0)
       {
