@@ -11,6 +11,7 @@ void OnStart()
 {
    Print("[Test] CCorrelationManager: BEGIN");
    CCorrelationManager cm(_Symbol, _Period);
+   cm.SetEnabled(true);  // <-- CRITICAL: Must enable to get correlations
    cm.SetMaxCorrelation(0.8);
    cm.SetLookbackDays(30);
 

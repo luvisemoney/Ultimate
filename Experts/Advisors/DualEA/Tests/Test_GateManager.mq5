@@ -28,5 +28,9 @@ void OnStart()
    signal.confidence = 0.75;
 
    Print("PASS: TradingSignal created successfully");
+   
+   // Clean up to prevent memory leak
+   delete learning;
+   
    Print("[Test] CGateManager: END");
 }

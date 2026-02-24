@@ -80,5 +80,11 @@ void OnStart()
    double prob = policy.GetPolicyProb("ADXStrategy", _Symbol, _Period);
    PrintFormat("INFO: PolicyEngine GetPolicyProb = %.4f", prob);
 
+   if(learning != NULL)
+   {
+      delete learning;
+      learning = NULL;
+   }
+
    Print("[Test] System: END");
 }
