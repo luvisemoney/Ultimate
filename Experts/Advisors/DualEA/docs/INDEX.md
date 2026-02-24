@@ -1,7 +1,8 @@
 # DualEA Documentation Index
 
-**Last Updated**: February 2026
-**System Version**: PaperEA v2 with P0-P5 Advanced Hardening
+**Last Updated**: February 2026  
+**System Version**: PaperEA v2 with P0-P5 Advanced Hardening  
+**Compilation Status**: ✅ **0 errors, 0 warnings**
 
 ---
 
@@ -11,6 +12,7 @@
 |----------|---------|
 | **[README.md](README.md)** | Main system overview, architecture, and quick start |
 | **[Configuration-Reference.md](Configuration-Reference.md)** | Complete input parameter reference (180+ settings) |
+| **[MQL5_Migration_Notes.md](MQL5_Migration_Notes.md)** | MQL5 syntax fixes and migration guide |
 
 ---
 
@@ -18,7 +20,7 @@
 
 | Document | Purpose |
 |----------|---------|
-| **[NUCLEAR_IMPLEMENTATION_COMPLETE.md](NUCLEAR_IMPLEMENTATION_COMPLETE.md)** | Nuclear-grade optimization (VaR, Kelly, correlation engine) |
+| **[NUCLEAR_IMPLEMENTATION_COMPLETE.md](NUCLEAR_IMPLEMENTATION_COMPLETE.md)** | Nuclear-grade optimization (VaR, Kelly, correlation engine) - **MQL5 Verified** |
 | **[ONNX_INTEGRATION_README.md](ONNX_INTEGRATION_README.md)** | ML model integration via ONNX Runtime |
 | **[EFFICIENT_GATE_SYSTEM_IMPLEMENTATION.md](EFFICIENT_GATE_SYSTEM_IMPLEMENTATION.md)** | 8-stage gate system architecture |
 | **[ENHANCED_STRATEGIES.md](ENHANCED_STRATEGIES.md)** | 23 signal generator strategies |

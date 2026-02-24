@@ -1,6 +1,10 @@
 #ifndef __MODEL_PREDICTOR_MQH__
 #define __MODEL_PREDICTOR_MQH__
 
+// CRITICAL: DLL imports crash Strategy Tester but are needed for live trading
+// Use conditional compilation - only import DLL when NOT in tester
+#ifndef MQL_TESTER
+
 #ifdef USE_MOCK_ORT
 #import "PaperEA_OnnxBridge_mock.dll"
 int   InitializeModel(string modelPath, string configPath);
@@ -15,6 +19,14 @@ int   PredictSignal(const double &features[], int featureCount, double &probabil
 void   Cleanup();
 string GetLastModelError();
 #import
+#endif
+
+#else
+// Strategy Tester: Use stub implementations
+int    InitializeModel(string modelPath, string configPath) { return 0; }
+int   PredictSignal(const double &features[], int featureCount, double &probability) { probability = 0.5; return 0; }
+void   Cleanup() { }
+string GetLastModelError() { return "ONNX DLL not available in Strategy Tester"; }
 #endif
 
 class CModelPredictor

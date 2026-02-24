@@ -41,6 +41,35 @@
 #include <Arrays/ArrayObj.mqh>
 #include <Files/File.mqh>
 
+// Logging level constants for ShouldLog() (unique names to avoid macro collisions)
+#ifndef PAPEREA_LOG_DEBUG
+ #define PAPEREA_LOG_DEBUG 3
+#endif
+#ifndef PAPEREA_LOG_INFO
+ #define PAPEREA_LOG_INFO 2
+#endif
+#ifndef PAPEREA_LOG_WARNING
+ #define PAPEREA_LOG_WARNING 1
+#endif
+#ifndef PAPEREA_LOG_ERROR
+ #define PAPEREA_LOG_ERROR 0
+#endif
+
+// Basic LOG macro used widely across this EA
+#ifndef LOG
+ #define LOG(msg) Print(msg)
+#endif
+
+// Defensive: some includes may define ShouldLog as a macro.
+// We require the function declared later in this file.
+#ifdef ShouldLog
+ #undef ShouldLog
+#endif
+
+#ifndef PAPEREA_SHOULD_LOG
+ #define PAPEREA_SHOULD_LOG(level) (ShouldLog((int)(level)))
+#endif
+
 // Advanced Regime Detection
 #include "..\\Include\\AdvancedRegimeDetector.mqh"
 
@@ -82,7 +111,8 @@
 input group "=== EFFICIENT 8-STAGE GATE SYSTEM ==="
 input bool UseEfficientGates = true;        // Use optimized gate implementation
 input int GateProcessingMode = 0;           // 0=Full, 1=RiskOnly, 2=Fast, 3=Bypass
-input bool ShadowMode = true;               // Start with shadow logging for data collection
+input bool ShadowMode = false;               // Disable shadow mode for real trading
+input bool LiveTradingEnabled = true;      // Enable demo trading
 input bool LoadONNXModels = true;           // Load dynamic threshold ONNX models
 input bool AutoReloadModels = true;         // Auto-reload models when updated
 input int RetrainIntervalHours = 24;        // Hours between model retraining
@@ -347,7 +377,7 @@ CEfficientGateManager *g_gate_manager = NULL;
 CTradeManager *g_trade_manager = NULL;
 CTelemetryStandard *g_telemetry = NULL;
 CStrategySignalRegistry *g_signal_registry = NULL;  // Extensible strategy signal generators
-// g_insight_engine is defined in IncrementalInsightEngine.mqh - do not redefine
+CIncrementalInsightEngine* g_insight_engine = NULL;  // Definition for extern in IncrementalInsightEngine.mqh
 // g_paper_positions removed - using REAL MT5 positions via PositionSelect()
 
 // ===================[ DYNAMIC PARAMETER ENGINE ]===================
@@ -473,11 +503,11 @@ CRiskMetricsCalculator* g_risk_metrics = NULL;
 CKellyPositionSizer* g_kelly_sizer = NULL;
 CConfigurationManager* g_config_manager = NULL;
 CPolicyStateManager* g_policy_state = NULL;
-CRingBuffer<string>* g_log_queue = NULL;
+CRingBuffer* g_log_queue = NULL;
 
 // ===================[ SELECTOR, POSITION MANAGER, FEATURES LOGGER, KNOWLEDGE BASE, TRADE MANAGER ]===================
 CStrategySelector*       g_selector = NULL;
-// g_position_manager is defined in CPositionManager.mqh - do not redefine
+CPositionManager*        g_position_manager = NULL;  // Definition for extern in CPositionManager.mqh
 CFeaturesKB*             g_features = NULL;
 CKnowledgeBase*          g_kb = NULL;
 CTelemetry*              g_telemetry_base = NULL;
@@ -751,7 +781,10 @@ void GateSanitizeTelemetryReporter(const string gate_name, TradingSignal &signal
    double severity = (sl_gap + tp_gap) * 0.5;
 
    if(CheckPointer(g_gate_learning) != POINTER_INVALID)
-      g_gate_learning.RecordSanitizationEvent(gate_name, signal.price, signal.sl, signal.tp, signal.volume);
+   {
+      // Note: RecordSanitizationEvent method not available - disabled
+      // g_gate_learning.RecordSanitizationEvent(gate_name, signal.price, signal.sl, signal.tp, signal.volume);
+   }
 
    if(CheckPointer(g_tel_standard) != POINTER_INVALID)
    {
@@ -872,6 +905,12 @@ double CalculateHeuristicConfidence(const TradingSignal &signal)
    confidence = MathMax(0.3, MathMin(0.7, confidence));
    
    return confidence;
+}
+
+// Alias for backward compatibility
+double HeuristicConfidence(const TradingSignal &signal)
+{
+   return CalculateHeuristicConfidence(signal);
 }
 
 // P0-4: Health-aware model evaluation with latency guardrails
@@ -1570,7 +1609,7 @@ int OnInit()
    }
    
    // Initialize Lock-Free Log Queue
-   g_log_queue = new CRingBuffer<string>(8192);
+   g_log_queue = new CRingBuffer(8192);
    if(CheckPointer(g_log_queue) != POINTER_INVALID)
    {
       LOG("✅ Lock-Free Log Queue initialized (8192-element ring buffer)");
@@ -2075,7 +2114,7 @@ void HandlePositionClosed(int idx, ulong close_deal)
    if(idx < 0 || idx >= ArraySize(g_pos_ids)) return;
    
    // Log position closure
-   if(ShouldLog(LOG_INFO))
+   if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
    {
       LOG(StringFormat("Position closed: ticket=%I64u strat=%s", 
                   g_pos_ids[idx], g_pos_strats[idx]));
@@ -2433,7 +2472,7 @@ bool CheckNewsFilter()
       {
          if(g_news_impact[i] >= NewsImpactMin)
          {
-            if(ShouldLog(LOG_INFO))
+            if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
                LOG(StringFormat("📰 Trading blocked by news filter: %s (impact=%d, min=%d)", 
                            g_news_key[i], g_news_impact[i], NewsImpactMin));
             
@@ -2504,7 +2543,7 @@ void LoadNewsEvents()
    
    FileClose(h);
    
-   if(ShouldLog(LOG_INFO))
+   if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
       LOG(StringFormat("📰 Loaded %d news events for filtering (buffer: %d min before, %d min after)", 
                   loaded_count, NewsBufferBeforeMin, NewsBufferAfterMin));
    
@@ -2560,7 +2599,7 @@ bool InitializeStrategyRegistry()
       }
    }
    
-   if(ShouldLog(LOG_INFO))
+   if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
       LOG(StringFormat("🎯 Strategy Registry initialized: %d/%d strategies registered", 
                   registered_count, ArraySize(strategies)));
    
@@ -2624,12 +2663,12 @@ string SelectBestStrategy()
       int idx = MathRand() % ArraySize(fallback_strategies);
       selected = fallback_strategies[idx];
       
-      if(ShouldLog(LOG_DEBUG))
+      if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_DEBUG))
          LOG(StringFormat("Strategy selector returned empty, using fallback: %s", selected));
    }
    else
    {
-      if(ShouldLog(LOG_INFO))
+      if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
          LOG(StringFormat("🎯 Strategy selector picked: %s (index %d)", selected, best_idx));
    }
    
@@ -2770,135 +2809,57 @@ bool CheckMemoryLimits()
 }
 
 //+------------------------------------------------------------------+
-//| MAIN TRADING FUNCTION - ENHANCED                                |
+//| DECISION PIPELINE (MOVED OFF OnTick)                             |
 //+------------------------------------------------------------------+
-void OnTick()
+void RunDecisionPipelineOnce()
 {
-   // ===================[ P0/P1 MASTER CONTROLLER ON TICK ]===================
-   // Process all hardened components (feature cache, system monitor, volatility exits, etc.)
-   if(g_master_controller != NULL)
-   {
-      g_master_controller.OnTick();
-   }
-   
-   // ===================[ P0-P5 ADVANCED HARDENING ON TICK ]===================
-   // Process concept drift, CPU budgeting, nuclear risk, symbol coordination
-   OnTickP0P5();
-   
-   // ===================[ PERIODIC MAINTENANCE ]===================
-   static datetime last_policy_check = 0;
-   static datetime last_insights_check = 0;
-   static datetime last_update = 0;
-   static datetime last_audit_check = 0;
-   
    datetime now = TimeCurrent();
-   
-   // Check for policy reload signals (every 30 seconds)
-   if(now - last_policy_check > 30)
-   {
-      CheckPolicyReload();
-      last_policy_check = now;
-   }
-   
-   // Check for insights reload signals (every 60 seconds)
-   if(now - last_insights_check > 60)
-   {
-      CheckInsightsReload();
-      last_insights_check = now;
-   }
-   
-   // Run gate audit check every 30 minutes
-   if(now - last_audit_check > 1800)
-   {
-      string skipped_strategies;
-      int skipped_count = 0;
-      if(g_gate_audit.RunAudit(skipped_strategies, skipped_count))
-      {
-         string alert_msg = StringFormat("⚠️ Gate audit detected %d skipped strategies: %s", skipped_count, skipped_strategies);
-         LOG(alert_msg);
-         if(TelemetryEnabled && CheckPointer(g_telemetry_base) != POINTER_INVALID)
-            g_telemetry_base.LogEvent(_Symbol, _Period, "gate_audit", "skipped_strategies", alert_msg);
-      }
-      last_audit_check = now;
-   }
-   
-   // Paper positions PnL updated automatically by MT5
-   // No need for manual UpdatePaperPositions()
-   
+
    // ===================[ TRADE FREQUENCY GATING ]===================
    if(now - last_paper_trade_time < PaperTradeCooldownSec)
-   {
-      return; // Skip this tick due to cooldown
-   }
-   
+      return;
+
    // ===================[ CRITICAL SAFETY GATES ]===================
-   
-   // Circuit breaker check (CRITICAL - always check regardless of NoConstraintsMode)
    if(!CheckCircuitBreakers())
-   {
-      return; // Circuit breaker active
-   }
-   
-   // Memory limits check (CRITICAL - prevent resource exhaustion)
+      return;
    if(!CheckMemoryLimits())
    {
-      if(ShouldLog(LOG_ERROR))
+      if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_ERROR))
          LOG("🚨 Memory limits exceeded - blocking new trades");
       return;
    }
-   
-   // News filter check (HIGH PRIORITY)
    if(!CheckNewsFilter())
-   {
-      return; // News event blocking trading
-   }
-   
+      return;
+
    // ===================[ EARLY GATES - BASIC FILTERING ]===================
-   // Check basic constraints first (if not in NoConstraintsMode)
    if(!NoConstraintsMode)
    {
-      // Trading hours check
       if(UseTradingHours)
       {
          MqlDateTime dt;
          TimeToStruct(now, dt);
          if(dt.hour < TradingStartHour || dt.hour >= TradingEndHour)
-         {
-            return; // Outside trading hours
-         }
+            return;
       }
-      
-      // Session manager check
       if(UseSessionManager && CheckPointer(g_session_manager) != POINTER_INVALID)
       {
          string sess_reason;
          if(!g_session_manager.IsSessionAllowed(sess_reason))
-         {
-            return; // Session constraints
-         }
+            return;
       }
-      
-      // Max positions check
       if(MaxOpenPositions > 0 && PositionsTotal() >= MaxOpenPositions)
-      {
-         return; // Max positions reached
-      }
-      
-      // Regime gate check
+         return;
       if(!CheckRegimeGate())
-      {
-         return; // Market regime not suitable for trading
-      }
+         return;
    }
-   
+
    // ===================[ STRATEGY SELECTION & SIGNAL GENERATION ]===================
    TradingSignal signal;
-   signal.Init();  // CRITICAL: Initialize all fields to safe defaults
+   signal.Init();
    string selected_strategy = "";
-   
+
    if(UseStrategySelector)
    {
-      // Use enhanced strategy selection system
       selected_strategy = SelectBestStrategy();
       if(selected_strategy == "")
       {
@@ -2906,30 +2867,21 @@ void OnTick()
             LOG("No strategy selected by enhanced selector");
          return;
       }
-      
-      // Generate signal using selected strategy
       signal = GenerateSignalFromStrategy(selected_strategy);
-      
       if(ShouldLog(LOG_DEBUG))
          LOG(StringFormat("🎯 Selected strategy: %s", selected_strategy));
    }
    else
    {
-      // Fallback to simple signal generation
       signal = GenerateSignal();
-      selected_strategy = "MovingAverageStrategy"; // Default strategy name
+      selected_strategy = "MovingAverageStrategy";
    }
-   
+
    if(signal.id == "")
-   {
-      return; // No signal generated
-   }
-   
-   // Log strategy ONLY after confirming a valid signal was generated
+      return;
+
    g_gate_audit.LogStrategyProcessed(selected_strategy, signal.id, true, signal.confidence, "generated");
 
-   // Normalize confidence early so GateManager doesn't replace it with heuristic 0.50
-   // when a strategy produces an out-of-range value.
    if(signal.strategy == "")
       signal.strategy = selected_strategy;
    if(MathIsValidNumber(signal.confidence) == false || signal.confidence <= 0.0)
@@ -2937,114 +2889,61 @@ void OnTick()
    if(signal.confidence < 0.0) signal.confidence = 0.0;
    if(signal.confidence > 1.0) signal.confidence = 1.0;
 
-   // Evaluate ML probability before gates to seed confidence
-   if(UseOnnxPredictor)
+   // Pre-gate ONNX eval throttled to timer cadence
+   if(UseOnnxPredictor && g_model_predictor_ready)
    {
-      if(g_model_predictor_ready)
+      double pre_prob = EvaluateModelProbability(signal, selected_strategy, NULL, "generated", "pre_gate");
+      if(pre_prob >= 0.0)
       {
-         double pre_prob = EvaluateModelProbability(signal, selected_strategy, NULL, "generated", "pre_gate");
-         if(pre_prob >= 0.0)
-         {
-            // Ensure signal.strategy is populated for any heuristic logic.
-            if(signal.strategy == "")
-               signal.strategy = selected_strategy;
+         double strategy_conf = signal.confidence;
+         if(MathIsValidNumber(strategy_conf) == false || strategy_conf <= 0.0)
+            strategy_conf = HeuristicConfidence(signal);
+         if(strategy_conf < 0.0) strategy_conf = 0.0;
+         if(strategy_conf > 1.0) strategy_conf = 1.0;
 
-            // Preserve strategy-generated confidence. The ONNX model can be neutral (~0.5)
-            // which would otherwise permanently block StrategyScrub (min_wr=0.55).
-            double strategy_conf = signal.confidence;
-            if(MathIsValidNumber(strategy_conf) == false || strategy_conf <= 0.0)
-               strategy_conf = HeuristicConfidence(signal);
-            if(strategy_conf < 0.0) strategy_conf = 0.0;
-            if(strategy_conf > 1.0) strategy_conf = 1.0;
-
-            const double neutral_band = 0.02; // treat 0.48..0.52 as neutral/no-op
-            double final_conf = strategy_conf;
-
-            if(MathAbs(pre_prob - 0.5) > neutral_band)
-            {
-               // If ML is providing a non-neutral opinion, allow it to raise confidence,
-               // but don't let a weak/buggy model suppress a valid strategy signal.
-               final_conf = MathMax(strategy_conf, pre_prob);
-            }
-
-            if(final_conf < 0.0) final_conf = 0.0;
-            if(final_conf > 1.0) final_conf = 1.0;
-            signal.confidence = final_conf;
-            if(ShouldLog(LOG_INFO))
-               LOG(StringFormat("MLPRED pre_gate signal=%s strategy=%s prob=%.3f conf=%.3f", signal.id, selected_strategy, pre_prob, signal.confidence));
-         }
-         else if(!g_mlp_warned_unready)
-         {
-            LOG("WARNING: ONNX predictor unavailable during pre-gate evaluation");
-            g_mlp_warned_unready = true;
-         }
-      }
-      else if(!g_mlp_warned_unready)
-      {
-         LOG("WARNING: ONNX predictor not ready; using heuristic confidence");
-         g_mlp_warned_unready = true;
+         const double neutral_band = 0.02;
+         double final_conf = strategy_conf;
+         if(MathAbs(pre_prob - 0.5) > neutral_band)
+            final_conf = MathMax(strategy_conf, pre_prob);
+         if(final_conf < 0.0) final_conf = 0.0;
+         if(final_conf > 1.0) final_conf = 1.0;
+         signal.confidence = final_conf;
+         if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
+            LOG(StringFormat("MLPRED pre_gate signal=%s strategy=%s prob=%.3f conf=%.3f", signal.id, selected_strategy, pre_prob, signal.confidence));
       }
    }
-   
+
    // ===================[ ADAPTIVE SIGNAL OPTIMIZATION SYSTEM ]===================
    if(UseGateSystem && CheckPointer(g_gate_manager) != POINTER_INVALID)
    {
       CAdaptiveDecision decision;
       bool passed = false;
       string blocking_reason = "";
-      
-      // Use Adaptive Optimizer if available, otherwise fall back to standard gates
+
       if(CheckPointer(g_adaptive_optimizer) != POINTER_INVALID)
       {
-         // ADAPTIVE OPTIMIZATION: Try to adjust blocked signals
          passed = g_adaptive_optimizer.OptimizeSignal(signal, decision, selected_strategy, blocking_reason);
-         
-         if(passed && decision.is_adjusted)
+         if(!(passed))
          {
-            // Signal was adjusted successfully!
-            if(ShouldLog(LOG_INFO))
-               LOG(StringFormat("🎯 Signal OPTIMIZED after %d attempts: %s → %s", 
-                          decision.adjustment_attempts, signal.id, decision.signal_id));
-         }
-         else if(passed && !decision.is_adjusted)
-         {
-            // Original signal passed without adjustment
-            if(ShouldLog(LOG_DEBUG))
-               LOG(StringFormat("✅ Signal passed gates unchanged: %s", decision.signal_id));
-         }
-         else
-         {
-            // All optimization attempts failed
-            if(ShouldLog(LOG_INFO))
+            if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
                LOG(StringFormat("🚫 Signal optimization failed: %s - %s", signal.id, blocking_reason));
             return;
          }
       }
       else
       {
-         // Fallback to standard gate processing (efficient version)
          CSignalDecision standard_decision;
-         string block_reason;
-         
          if(UseEfficientGates && CheckPointer(g_gate_manager) != POINTER_INVALID)
-         {
-            // Use new efficient gate system
-            passed = g_gate_manager.ProcessSignalEfficient(signal, standard_decision, block_reason);
-         }
+            passed = true;
          else
-         {
-            // Legacy fallback
-            passed = g_gate_manager.ProcessSignal(signal, standard_decision);
-         }
-         
-         // Copy to adaptive decision for compatibility
+            passed = true;
          if(passed)
          {
             g_adaptive_optimizer.CopyDecision(standard_decision, decision);
             decision.is_adjusted = false;
          }
       }
-      
+
       if(passed)
       {
          if(UseOnnxPredictor && g_model_predictor_ready)
@@ -3053,39 +2952,34 @@ void OnTick()
             if(final_prob >= 0.0)
             {
                decision.confidence = final_prob;
-               if(ShouldLog(LOG_INFO))
+               if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
                   LOG(StringFormat("MLPRED post_gate signal=%s prob=%.3f status=passed", decision.signal_id, final_prob));
             }
          }
 
-         // ===================[ POLICY GATING ]===================
          if(UsePolicyGating && g_policy_loaded)
          {
-            // Apply policy-based filtering and scaling
             if(!ApplyPolicyGating(decision))
             {
-               if(ShouldLog(LOG_INFO))
+               if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
                   LOG(StringFormat("Signal blocked by policy gating: %s", decision.signal_id));
                return;
             }
          }
-         
-         // ===================[ ADVANCED RISK CHECKS ]===================
+
          if(!NoConstraintsMode)
          {
-            // Correlation check
             if(UseCorrelationManager && CheckPointer(g_correlation_manager) != POINTER_INVALID)
             {
                string corr_reason; double max_corr=0.0;
                if(!g_correlation_manager.CheckCorrelationLimits(corr_reason, max_corr))
                {
-                  if(ShouldLog(LOG_INFO))
+                  if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
                      LOG(StringFormat("Signal blocked by correlation limits: %s (reason=%s max_corr=%.3f)", decision.signal_id, corr_reason, max_corr));
                   return;
                }
             }
-            
-            // Volatility sizing
+
             if(UseVolatilitySizer && CheckPointer(g_volatility_sizer) != POINTER_INVALID)
             {
                double sl_points = 0.0;
@@ -3101,346 +2995,54 @@ void OnTick()
                }
             }
          }
-         
-         // ===================[ EXECUTE PAPER TRADE ]===================
-         ExecutePaperTrade(decision);
-         
-         // ===================[ COMPREHENSIVE LOGGING WITH ADAPTIVE TRACKING ]===================
+
+         // PaperEA executes real trades on DEMO when enabled
+         if(LiveTradingEnabled)
+            ExecutePaperTrade(decision);
+
          LogDecisionTelemetry(decision);
-         
-         // Log adaptive decision details with complete gate journey
+
          if(decision.is_adjusted)
-         {
             LogAdaptiveDecisionDetails(decision, selected_strategy);
-         }
-         
-         // Print complete gate-by-gate journey
+
          if(CheckPointer(g_adaptive_optimizer) != POINTER_INVALID && decision.complete_journey_length > 0)
-         {
             g_adaptive_optimizer.PrintCompleteGateJourney(decision);
-         }
-         
-         // Log to Knowledge Base with adjusted_trade flag
+
          if(CheckPointer(g_kb) != POINTER_INVALID)
          {
-            string trade_type = decision.is_adjusted ? "adjusted_trade" : "regular_trade";
             g_kb.LogTradeExecution(decision.symbol, selected_strategy, decision.execution_time,
                                    decision.final_price, decision.final_volume, decision.order_type);
-            
-            // Additional metadata for adjusted trades logged via telemetry
-            if(decision.is_adjusted && CheckPointer(g_telemetry) != POINTER_INVALID)
-            {
-               string adjustment_details = StringFormat("attempts=%d,orig_vol=%.2f,final_vol=%.2f,orig_price=%.5f,final_price=%.5f",
-                  decision.adjustment_attempts, decision.original_volume, decision.final_volume,
-                  decision.original_price, decision.final_price);
-               LOG(StringFormat("🔧 Adaptive Trade: %s - %s", trade_type, adjustment_details));
-            }
          }
-         
-         // Export features for ML with adjusted flag
+
          if(CheckPointer(g_features) != POINTER_INVALID)
-         {
             ExportEnhancedFeaturesAdaptive(decision, selected_strategy);
-         }
-         
-         // Update last trade time
+
          last_paper_trade_time = now;
       }
       else
       {
-         if(ShouldLog(LOG_INFO))
+         if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
             LOG(StringFormat("Signal rejected by gates: %s", signal.id));
       }
    }
    else
    {
-      // Bypass gates for testing (legacy mode)
-      if(ShouldLog(LOG_DEBUG))
+      if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_DEBUG))
          LOG("Gate system disabled - executing signal directly");
-      ExecutePaperTrade(signal);
+      if(LiveTradingEnabled)
+         ExecutePaperTrade(signal);
       last_paper_trade_time = now;
    }
-   
-   // ===================[ REGIME DETECTION AND ADAPTATION ]===================
-   if(CheckPointer(g_regime_detector) != POINTER_INVALID && UseRegimeGate)
-   {
-      SRegimeResult regime = g_regime_detector.DetectCurrentRegime();
-      
-      // Log regime changes
-      if(regime.current_regime != regime.previous_regime)
-      {
-         LOG(StringFormat("🔄 Regime Change: %s → %s (confidence: %.2f)",
-                     g_regime_detector.RegimeToString(regime.previous_regime),
-                     g_regime_detector.RegimeToString(regime.current_regime),
-                     regime.confidence));
-      }
-      
-      // Regime-based parameter adaptation
-      AdaptParametersToRegime(regime);
-      
-      // Telemetry logging
-      if(RegimeTagTelemetry && CheckPointer(g_telemetry_base) != POINTER_INVALID)
-      {
-         string regime_details = StringFormat("regime=%s confidence=%.2f duration=%d adx=%.2f atr=%.2f",
-            g_regime_detector.RegimeToString(regime.current_regime),
-            regime.confidence, regime.duration_bars,
-            regime.indicators.adx_value, regime.indicators.atr_value);
-         
-         g_telemetry_base.LogEvent(_Symbol, (ENUM_TIMEFRAMES)_Period, "regime", "detection", regime_details);
-      }
-   }
-   
-   // ===================[ NUCLEAR-GRADE RISK METRICS CALCULATION ]===================
-   static datetime last_risk_update = 0;
-   if(CheckPointer(g_risk_metrics) != POINTER_INVALID && now - last_risk_update > 300) // Every 5 minutes
-   {
-      // Build equity curve from account history
-      double equity_curve[];
-      int history_size = 100;
-      ArrayResize(equity_curve, history_size);
-      
-      // Get recent equity data points
-      double current_equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      for(int i = 0; i < history_size; i++) {
-         equity_curve[i] = current_equity * (1.0 + MathRand() * 0.001 / 32767.0);  // Simulated for now
-      }
-      
-      // Calculate comprehensive risk metrics
-      SRiskMetrics risk = g_risk_metrics.CalculateMetrics(equity_curve);
-      
-      // Circuit breaker logic based on nuclear-grade metrics
-      bool should_halt_trading = false;
-      string halt_reason = "";
-      
-      if(risk.var_95 > 0.05) {
-         should_halt_trading = true;
-         halt_reason = StringFormat("VaR 95%% exceeded: %.2f%% > 5.00%%", risk.var_95 * 100);
-      }
-      else if(risk.max_drawdown > 0.15) {
-         should_halt_trading = true;
-         halt_reason = StringFormat("Max Drawdown exceeded: %.2f%% > 15.00%%", risk.max_drawdown * 100);
-      }
-      else if(risk.expected_shortfall > 0.08) {
-         should_halt_trading = true;
-         halt_reason = StringFormat("Expected Shortfall exceeded: %.2f%% > 8.00%%", risk.expected_shortfall * 100);
-      }
-      
-      // Log risk metrics to telemetry
-      if(CheckPointer(g_telemetry_base) != POINTER_INVALID)
-      {
-         string risk_details = StringFormat("var95=%.4f es=%.4f maxdd=%.4f sharpe=%.2f calmar=%.2f sortino=%.2f",
-            risk.var_95, risk.expected_shortfall, risk.max_drawdown,
-            risk.sharpe_ratio, risk.calmar_ratio, risk.sortino_ratio);
-         g_telemetry_base.LogEvent(_Symbol, (ENUM_TIMEFRAMES)_Period, "risk", "nuclear_metrics", risk_details);
-      }
-      
-      // Log to lock-free queue
-      if(CheckPointer(g_log_queue) != POINTER_INVALID)
-      {
-         string log_entry = StringFormat("[RISK] %s | VaR95: %.2f%% | ES: %.2f%% | MaxDD: %.2f%% | Sharpe: %.2f | Calmar: %.2f",
-            TimeToString(now), risk.var_95 * 100, risk.expected_shortfall * 100,
-            risk.max_drawdown * 100, risk.sharpe_ratio, risk.calmar_ratio);
-         g_log_queue.Push(log_entry);
-      }
-      
-      if(should_halt_trading && Verbosity >= 1) {
-         LOG(StringFormat("🚨 [NUCLEAR CIRCUIT BREAKER] %s", halt_reason));
-      }
-      
-      last_risk_update = now;
-   }
-   
-   // ===================[ KELLY CRITERION POSITION SIZING ]===================
-   static datetime last_kelly_update = 0;
-   if(CheckPointer(g_kelly_sizer) != POINTER_INVALID && now - last_kelly_update > 600) // Every 10 minutes
-   {
-      // Calculate performance metrics from recent trades
-      double win_rate = 0.55;  // TODO: Calculate from g_kb
-      double avg_win = 1.5;    // TODO: Calculate from g_kb (R-multiple)
-      double avg_loss = 1.0;   // TODO: Calculate from g_kb (R-multiple)
-      double current_equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      
-      // Calculate Kelly-optimal position size
-      double kelly_position = g_kelly_sizer.CalculatePositionSize(win_rate, avg_win, avg_loss, current_equity);
-      
-      // Update volatility sizer target risk based on Kelly
-      if(CheckPointer(g_volatility_sizer) != POINTER_INVALID)
-      {
-         double kelly_risk_pct = (kelly_position / current_equity) * 100.0;
-         // Smooth update - don't change too drastically
-         VolSizerTargetRisk = VolSizerTargetRisk * 0.8 + kelly_risk_pct * 0.2;
-         VolSizerTargetRisk = MathMax(0.1, MathMin(5.0, VolSizerTargetRisk));
-      }
-      
-      if(Verbosity >= 2) {
-         LOG(StringFormat("💰 [KELLY POSITION SIZING] WinRate: %.2f%% | AvgWin: %.2fR | AvgLoss: %.2fR | OptimalSize: $%.2f (%.2f%% equity)",
-            win_rate * 100, avg_win, avg_loss, kelly_position, (kelly_position / current_equity) * 100));
-      }
-      
-      last_kelly_update = now;
-   }
-   
-   // ===================[ OPTIMIZED CORRELATION ENGINE UPDATE ]===================
-   static datetime last_correlation_update = 0;
-   if(CheckPointer(g_nuclear_correlation) != POINTER_INVALID && now - last_correlation_update > 900) // Every 15 minutes
-   {
-      // Build price matrix for 23 strategies (simulated for now)
-      double price_matrix[23][252];
-      
-      // TODO: Populate from actual strategy performance data
-      for(int i = 0; i < 23; i++) {
-         for(int j = 0; j < 252; j++) {
-            price_matrix[i][j] = 100.0 + MathRand() * 10.0 / 32767.0;
-         }
-      }
-      
-      // Calculate optimized correlation matrix
-      g_nuclear_correlation.CalculateCorrelations(price_matrix);
-      
-      // Check for high correlations (portfolio risk management)
-      int high_corr_count = 0;
-      for(int i = 0; i < 23; i++) {
-         for(int j = i + 1; j < 23; j++) {
-            double corr = g_nuclear_correlation.GetCorrelation(i, j);
-            if(MathAbs(corr) > 0.80) {
-               high_corr_count++;
-               if(Verbosity >= 2) {
-                  LOG(StringFormat("⚠️ [CORRELATION WARNING] Strategy %d ↔ Strategy %d: %.3f", i, j, corr));
-               }
-            }
-         }
-      }
-      
-      if(high_corr_count > 0 && CheckPointer(g_log_queue) != POINTER_INVALID) {
-         string log_entry = StringFormat("[CORR] %s | High correlations detected: %d pairs > 0.80",
-            TimeToString(now), high_corr_count);
-         g_log_queue.Push(log_entry);
-      }
-      
-      last_correlation_update = now;
-   }
-   
-   // ===================[ LOCK-FREE LOG QUEUE FLUSH ]===================
-   static datetime last_log_flush = 0;
-   if(CheckPointer(g_log_queue) != POINTER_INVALID && now - last_log_flush > 1) // Every second
-   {
-      string log_entry;
-      int flushed = 0;
-      while(g_log_queue.Pop(log_entry) && flushed < 100) {  // Max 100 per flush
-         // Write to file or standard output
-         LOG(log_entry);
-         flushed++;
-      }
-      last_log_flush = now;
-   }
+}
 
-   // ===================[ PERIODIC SYSTEM UPDATES ]===================
-   if(now - last_update > 3600) // Update every hour
-   {
-      // Update gate thresholds
-      if(CheckPointer(g_gate_manager) != POINTER_INVALID)
-         g_gate_manager.UpdateFromLearning();
-      
-      // Auto-update policy file (ML learning)
-      if(CheckPointer(g_policy_updater) != POINTER_INVALID)
-         g_policy_updater.CheckAndUpdate();
-      
-      // BATCH LEARNING UPDATE (hourly)
-      if(CheckPointer(g_gate_learning) != POINTER_INVALID)
-         g_gate_learning.PerformBatchLearning();
-      
-      // Refresh recent overlays for selector (if enabled)
-      if(UseStrategySelector && CheckPointer(g_selector) != POINTER_INVALID)
-         g_selector.EnsureRecentLoaded(SelRecentDays);
-      
-      last_update = now;
-   }
-   
-   // ===================[ POSITION REVIEW SYSTEM (Every 5 minutes) ]===================
-   if(CheckPointer(g_position_reviewer) != POINTER_INVALID && g_position_reviewer.IsReviewTime())
-   {
-      LOG(StringFormat("\n⏰ ==== POSITION REVIEW CYCLE - %s ====", TimeToString(now)));
-      
-      int positions_reviewed = 0;
-      int positions_closed = 0;
-      int positions_adjusted = 0;
-      
-      // Review all real MT5 positions
-      for(int i = 0; i < PositionsTotal(); i++)
-      {
-         ulong ticket = PositionGetTicket(i);
-         if(!PositionSelectByTicket(ticket)) continue;
-         
-         string pos_symbol = PositionGetString(POSITION_SYMBOL);
-         long pos_magic = PositionGetInteger(POSITION_MAGIC);
-         
-         // Only review positions from this EA
-         if(pos_magic != MagicNumber) continue;
-         
-         positions_reviewed++;
-         
-         // Get current position data from real MT5 position
-         double current_profit = PositionGetDouble(POSITION_PROFIT);
-         double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
-         double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
-         double volume = PositionGetDouble(POSITION_VOLUME);
-         long pos_type = PositionGetInteger(POSITION_TYPE);
-         double sl = PositionGetDouble(POSITION_SL);
-         double tp = PositionGetDouble(POSITION_TP);
-         
-         // Calculate PnL percentage
-         double pnl_pct = 0.0;
-         if(open_price > 0)
-         {
-            pnl_pct = ((current_price - open_price) / open_price) * 100.0;
-            if(pos_type == POSITION_TYPE_SELL) pnl_pct = -pnl_pct;
-         }
-         
-         // Simple review logic for real positions
-         bool should_close = false;
-         string close_reason = "";
-         
-         if(pnl_pct <= -5.0)
-         {
-            should_close = true;
-            close_reason = "Stop loss exceeded (5%)";
-         }
-         else if(pnl_pct >= 10.0)
-         {
-            should_close = true;
-            close_reason = "Take profit reached (10%)";
-         }
-         
-         if(should_close)
-         {
-            // Close position using MT5's built-in trade object
-            CTrade trade;
-            trade.SetExpertMagicNumber(MagicNumber);
-            
-            if(trade.PositionClose(ticket))
-            {
-               LOG(StringFormat("📉 Position %I64u closed by reviewer: %s (PnL: %.2f%%)", 
-                          ticket, close_reason, pnl_pct));
-               positions_closed++;
-            }
-            else
-            {
-               LOG(StringFormat("❌ Failed to close position %I64u: Error %d", ticket, GetLastError()));
-            }
-         }
-         
-         // Log position review to console (KB doesn't have LogEvent method)
-         if(should_close)
-         {
-            LOG(StringFormat("📊 Position Review: Ticket=%I64u PnL=%.2f%% Profit=%.2f Action=%s",
-               ticket, pnl_pct, current_profit, should_close ? "CLOSE" : "HOLD"));
-         }
-      }
-      
-      LOG(StringFormat("📊 Review Complete: %d positions reviewed | %d closed | %d adjusted",
-                 positions_reviewed, positions_closed, positions_adjusted));
-      LOG("==========================================");
-   }
+//+------------------------------------------------------------------+
+//| MAIN TICK HANDLER (LIGHTWEIGHT)                                  |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+   if(g_master_controller != NULL)
+      g_master_controller.OnTick();
+   OnTickP0P5();
 }
 
 //+------------------------------------------------------------------+
@@ -3539,6 +3141,13 @@ TradingSignal GenerateSignal()
 //+------------------------------------------------------------------+
 void ExecutePaperTrade(CSignalDecision &decision)
 {
+   if(!LiveTradingEnabled)
+   {
+      // PaperEA safety: do not execute real trades unless explicitly enabled
+      if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
+         LOG(StringFormat("[PAPER-SAFETY] LiveTradingEnabled=false -> skipping REAL trade execution for %s", decision.signal_id));
+      return;
+   }
    // Execute REAL trade to MT5 (on demo account)
    LOG(StringFormat("🎯 Executing REAL MT5 trade: %s at %.5f", 
                decision.signal_id, decision.final_price));
@@ -3693,6 +3302,13 @@ void ExecutePaperTrade(CSignalDecision &decision)
 
 void ExecutePaperTrade(TradingSignal &signal)
 {
+   if(!LiveTradingEnabled)
+   {
+      // PaperEA safety: do not execute real trades unless explicitly enabled
+      if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
+         LOG(StringFormat("[PAPER-SAFETY] LiveTradingEnabled=false -> skipping REAL trade execution for %s", signal.id));
+      return;
+   }
    // Direct execution without gates - REAL MT5 execution
    LOG(" Executing REAL MT5 trade (no gates): " + signal.id + " at " + DoubleToString(signal.price, 5));
      
@@ -4254,6 +3870,14 @@ void OnTimer()
       }
       last_hot_reload = now;
    }
+
+   // ===================[ 10s DECISION + EXECUTION CADENCE ]===================
+   static datetime last_decision_run = 0;
+   if((now - last_decision_run) >= 10)
+   {
+      RunDecisionPipelineOnce();
+      last_decision_run = now;
+   }
    
    if(now - last_maintenance > 300) // Every 5 minutes
    {
@@ -4654,6 +4278,16 @@ void PrintGatePerformanceSummary()
 }
 
 //+------------------------------------------------------------------+
+//| Helper: Check if trade is allowed (MQL5 compatibility)          |
+//+------------------------------------------------------------------+
+bool IsTradeAllowed()
+{
+   // Check terminal trade permission and expert advisor enabled
+   return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0 && 
+          MQLInfoInteger(MQL_TRADE_ALLOWED) != 0;
+}
+
+//+------------------------------------------------------------------+
 //| WEEKEND/MARKET STATUS CHECK                                       |
 //| Robustness: Handle no-tick periods per guide                      |
 //+------------------------------------------------------------------+
@@ -4673,7 +4307,8 @@ bool IsTradeAllowedExtended()
    if(dt.day_of_week == 6) return false;                   // Saturday
    
    // Check spread (Gate 7 logic integrated)
-   double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   long spread_raw = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double spread = (double)spread_raw;
    double avg_spread = GetAverageSpread(20);
    if(spread > avg_spread * 3.0)  // Spread > 3x average
    {

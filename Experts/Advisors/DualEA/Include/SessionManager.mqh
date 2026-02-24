@@ -58,13 +58,38 @@ public:
       m_session_start_hour = start_hour; 
       m_session_end_hour = end_hour; 
    }
+   void SetTradingHours(const int start_hour, const int end_hour)
+   {
+      SetSessionHours(start_hour, end_hour);
+   }
    void SetMaxTradesPerSession(const int max_trades) { m_max_trades_per_session = max_trades; }
    void SetMaxDailyLossPct(const double max_loss_pct) { m_max_daily_loss_pct = max_loss_pct; }
    void SetTimezoneOffsetMinutes(const int tz_offset_min) { m_tz_offset_min = tz_offset_min; }
+   void SetTimezoneOffset(const int tz_offset_min) { m_tz_offset_min = tz_offset_min; }
    void SetWeeklyWindowsString(const string spec)
    {
       m_windows_spec = spec;
       m_windows_parsed = ParseWeeklyWindows(spec);
+   }
+   
+   // Convenience wrapper for IsSessionAllowed
+   bool CanTrade()
+   {
+      string reason;
+      return IsSessionAllowed(reason);
+   }
+   
+   // Convenience wrapper for IsSessionAllowed with reason
+   bool CanTrade(string &reason)
+   {
+      return IsSessionAllowed(reason);
+   }
+   
+   // Check if currently in trading time window
+   bool IsTradingTime()
+   {
+      string reason;
+      return IsSessionAllowed(reason);
    }
    
    // Session boundary detection (resets baseline/trade counters on local day change)
@@ -100,6 +125,14 @@ public:
    {
       reason = "ok";
       
+      // Check trade count limit first - this works even if time-window checking is disabled
+      if(m_max_trades_per_session > 0 && m_session_trade_count >= m_max_trades_per_session)
+      {
+         reason = "session_trade_limit_reached";
+         return false;
+      }
+      
+      // If not enabled, skip time-window and loss checks
       if(!m_enabled)
          return true;
       
@@ -135,13 +168,6 @@ public:
          return false;
       }
       
-      // Check trade count limit
-      if(m_max_trades_per_session > 0 && m_session_trade_count >= m_max_trades_per_session)
-      {
-         reason = "session_trade_limit_reached";
-         return false;
-      }
-      
       // Check daily loss limit
       if(m_max_daily_loss_pct > 0.0 && m_session_baseline_equity > 0.0)
       {
@@ -169,11 +195,12 @@ public:
    // Record a new trade
    void RecordTrade()
    {
-      if(m_enabled)
-      {
-         m_session_trade_count++;
-      }
+      // Always count trades - max trades limit should work even if time-window checking is disabled
+      m_session_trade_count++;
    }
+   
+   // Get current trade count
+   int GetTradeCount() const { return m_session_trade_count; }
    
    // Get session statistics
    void GetSessionStats(int &trade_count, double &pnl_pct, bool &is_blocked)

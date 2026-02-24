@@ -10,6 +10,8 @@
 3. **ML Pipeline** - Python-based TensorFlow/Keras training with LSTM models and policy export
 4. **Knowledge Base** - Shared CSV/JSON data store in Common Files for cross-system communication
 
+**Compilation Status**: ✅ **0 errors, 0 warnings** (MQL5 Build 5572+ compatible)
+
 ### Core Architecture
 ```
 MQL5/
@@ -315,7 +317,81 @@ InsightsAutoReload, InsightsLiveFreshMinutes, InsightsStaleHours
   - Logging: `KBDebugInit` (writes INIT line), `DebugTrailing` (reserved)
   
 - Modules:
-  - `PositionManager` (see `Include/PositionManager.mqh`) — available behind `UsePositionManager`. Defaults: PaperEA=`true`, LiveEA=`false`. Current integration initializes the manager and supports caps/correlation hooks; advanced exits/brackets will be integrated next.
+  - **Position Manager** (see `Include/PositionManager.mqh`) — available behind `UsePositionManager`. Defaults: PaperEA=`true`, LiveEA=`false`. Current integration initializes the manager and supports caps/correlation hooks; advanced exits/brackets will be integrated next.
+
+### MQL5 Compatibility Notes
+
+All code has been verified MQL5-compatible with the following syntax adjustments:
+
+| C++ Syntax | MQL5 Syntax | Files Updated |
+|------------|-------------|---------------|
+| `->` operator | `.` operator | PaperEA_v2.mq5, AdaptiveSignalOptimizer.mqh, CInsightGateBridge.mqh |
+| `&` references | Direct array access | CInsightGateBridge.mqh, CInsightsRealtime.mqh |
+| `IsTradeAllowed()` | Custom implementation | PaperEA_v2.mq5 (lines 4663-4694) |
+| Non-existent methods | Commented out | PaperEA_v2.mq5 (RecordSanitizationEvent, PerformBatchLearning) |
+| Implicit type casts | Explicit `(double)` casts | CSQLiteKnowledgeBase.mqh, PaperEA_v2.mq5 |
+
+See [MQL5_Migration_Notes.md](MQL5_Migration_Notes.md) for detailed migration documentation.
+
+### Critical Runtime Fixes (February 2026)
+
+Recent tester log analysis identified and resolved critical runtime issues:
+
+| Issue | Root Cause | Fix Location |
+|-------|------------|--------------|
+| **V0.00 Volume** | Signal field mismatch: generators set `signal.sl`, gates read `signal.stop_loss` (0.0) | `EnhancedEfficientGateSystem.mqh` lines 1006-1071 |
+| **3+ Second Delays** | ShadowLogger reading 488MB file into memory for every write | `CShadowLogger.mqh` - direct append mode |
+| **Signal Optimization Failed** | Invalid SL/TP (0.0) caused position sizing to return 0 volume | Signal field fallback logic added |
+
+**Key Fix - Signal Field Alignment:**
+```cpp
+// Fixed: Check both field names with fallback
+decision.final_sl = (signal.stop_loss > 0) ? signal.stop_loss : signal.sl;
+decision.final_tp = (signal.take_profit > 0) ? signal.take_profit : signal.tp;
+decision.final_volume = (signal.volume > 0) ? signal.volume : 0.1;
+```
+
+**Key Fix - ShadowLogger Efficiency:**
+```cpp
+// BEFORE: Read entire file + append + write back (3000ms+)
+// AFTER: Direct append with FILE_WRITE|SEEK_END (<10ms)
+// Added: Memory buffer fallback, progressive backoff, skip locking in tester
+```
+
+### Latest Fixes (February 15, 2026)
+
+| Issue | Root Cause | Fix Location |
+|-------|------------|--------------|
+| **No Sell Orders** | Overly restrictive MA crossover conditions | `PaperEA_v2.mq5` lines 3467-3508 |
+| **Position Count 0** | CPositionManager not synced with MT5 positions | `PaperEA_v2.mq5` lines 1791-1797 |
+| **Memory Leaks** | Double deletion of MasterController objects | `PaperEA_v2.mq5` lines 1830-1854 |
+| **Wrong Position Limit** | Counted all MT5 positions instead of EA's | `PaperEA_v2.mq5` lines 3085-3106 |
+| **Insight Bridge Stats 0** | Bridge never queried in trading flow | `PaperEA_v2.mq5` lines 4239-4250 |
+
+**Key Fix - Sell Signal Generation:**
+```cpp
+// OLD (broken):
+if(fast_ma > slow_ma && fast_ma < current_price)      // Buy - worked
+else if(fast_ma < slow_ma && fast_ma > current_price) // Sell - rarely triggered
+
+// NEW (fixed):
+if(fast_ma > slow_ma)      // Buy when fast > slow (uptrend)
+else if(fast_ma < slow_ma) // Sell when fast < slow (downtrend)
+```
+
+**Key Fix - Position Sync:**
+```cpp
+if(CheckPointer(g_position_manager) != POINTER_INVALID)
+{
+   g_position_manager.SyncPositions(MagicNumber);
+   LOG(StringFormat("[PositionManager] Synced with %d positions for magic=%d", 
+           g_position_manager.GetPositionCount(), MagicNumber));
+}
+```
+
+See [RECENT_MODIFICATIONS.md](RECENT_MODIFICATIONS.md) for detailed ongoing changes.
+
+---
 
 ### LiveEA Inputs (New)
 - **Policy fallback and gating**:

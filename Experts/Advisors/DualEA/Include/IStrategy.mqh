@@ -35,6 +35,7 @@ struct TradingSignal
    // Direction / type
    int               direction;          // -1=Sell, 0=None, 1=Buy (legacy)
    int               type;               // 0=buy,1=sell (used by execution logic)
+   ENUM_ORDER_TYPE   order_type;         // Order type: BUY, SELL, BUY_STOP, SELL_STOP, BUY_LIMIT, SELL_LIMIT, etc.
 
    // Prices and risk
    double            confidence;         // 0.0-1.0
@@ -65,6 +66,7 @@ struct TradingSignal
       timeframe       = PERIOD_CURRENT;
       direction       = 0;
       type            = 0;
+      order_type      = ORDER_TYPE_BUY;  // Default to market buy
       confidence      = 0.0;
       entry_price     = 0.0;
       stop_loss       = 0.0;
@@ -145,7 +147,7 @@ double GetATR(const int period = 14, const int shift = 0)
 //+------------------------------------------------------------------+
 //| Base Strategy Interface                                            |
 //+------------------------------------------------------------------+
-class IStrategy
+class IStrategy : public CObject
 {
 protected:
    string            m_name;           // Strategy name

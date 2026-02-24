@@ -20,6 +20,7 @@ private:
    string            m_logFile;
    bool              m_enabled;
    bool              m_useDebugPrint;
+   bool              m_is_tester;
 
 public:
    // Constructor
@@ -28,6 +29,14 @@ public:
       m_logFile = logFile;
       m_enabled = enabled;
       m_useDebugPrint = true;
+      m_is_tester = (MQLInfoInteger(MQL_TESTER) != 0);
+      
+      // In tester mode, disable file logging to prevent crashes
+      if(m_is_tester)
+      {
+         m_logFile = "";  // Disable file logging in tester
+         Print("[LogMiddleware] TESTER MODE: File logging disabled");
+      }
    }
 
    // Destructor
@@ -44,9 +53,18 @@ public:
       // Print to Experts log
       Print(logLine);
 
-      // Write to file if specified
-      if (StringLen(m_logFile) > 0)
+      // Write to file if specified (disabled in tester mode)
+      if (!m_is_tester && StringLen(m_logFile) > 0)
       {
+         // Ensure directory exists before writing
+         string folder = "";
+         int sepPos = StringFind(m_logFile, "\\");
+         if(sepPos > 0)
+         {
+            folder = StringSubstr(m_logFile, 0, sepPos);
+            FolderCreate(folder, FILE_COMMON);
+         }
+         
          int handle = FileOpen(m_logFile, FILE_WRITE | FILE_TXT | FILE_COMMON);
          if (handle != INVALID_HANDLE)
          {

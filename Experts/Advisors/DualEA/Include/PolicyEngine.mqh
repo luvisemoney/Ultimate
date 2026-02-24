@@ -198,36 +198,232 @@ public:
            }
         }
       
-      int slice_count = 0;
-      string line;
-      
+      // Read entire file content
+      string content = "";
       while(!FileIsEnding(h))
         {
-         line = FileReadString(h);
-         if(StringLen(line) == 0) continue;
-         
-         PolicySlice slice;
-         if(ParseJsonLine(line, slice))
+         content += FileReadString(h);
+        }
+      FileClose(h);
+      
+      // Find policies array
+      int policiesStart = StringFind(content, "\"policies\":");
+      if(policiesStart < 0)
+        {
+         LOG("PolicyEngine: No policies array found in JSON");
+         return false;
+        }
+      
+      // Find array start
+      int arrayStart = StringFind(content, "[", policiesStart);
+      if(arrayStart < 0)
+        {
+         LOG("PolicyEngine: Invalid policies array format");
+         return false;
+        }
+      
+      // Find array end (matching bracket)
+      int arrayEnd = -1;
+      int bracketCount = 0;
+      for(int i = arrayStart; i < StringLen(content); i++)
+        {
+         if(StringSubstr(content, i, 1) == "[") bracketCount++;
+         else if(StringSubstr(content, i, 1) == "]") bracketCount--;
+         if(bracketCount == 0)
            {
-            // Add to array
+            arrayEnd = i;
+            break;
+           }
+        }
+      
+      if(arrayEnd < 0)
+        {
+         LOG("PolicyEngine: Could not find end of policies array");
+         return false;
+        }
+      
+      // Extract array content
+      string arrayContent = StringSubstr(content, arrayStart + 1, arrayEnd - arrayStart - 1);
+      
+      // Parse individual policy objects
+      int slice_count = 0;
+      int pos = 0;
+      while(pos < StringLen(arrayContent))
+        {
+         // Find next object start
+         int objStart = StringFind(arrayContent, "{", pos);
+         if(objStart < 0) break;
+         
+         // Find matching end
+         int objEnd = -1;
+         int braceCount = 0;
+         for(int i = objStart; i < StringLen(arrayContent); i++)
+           {
+            if(StringSubstr(arrayContent, i, 1) == "{") braceCount++;
+            else if(StringSubstr(arrayContent, i, 1) == "}") braceCount--;
+            if(braceCount == 0)
+              {
+               objEnd = i;
+               break;
+              }
+           }
+         
+         if(objEnd < 0) break;
+         
+         // Extract and parse object
+         string objStr = StringSubstr(arrayContent, objStart, objEnd - objStart + 1);
+         PolicySlice slice;
+         if(ParseJsonObject(objStr, slice))
+           {
             ArrayResize(m_slices, slice_count + 1);
             m_slices[slice_count] = slice;
             
-            // Add to index
             string key = GetSliceKey(slice.strategy, slice.symbol, (ENUM_TIMEFRAMES)slice.timeframe);
             AddIndex(key, slice_count);
             
             slice_count++;
            }
+         
+         pos = objEnd + 1;
         }
-      
-      FileClose(h);
       
       m_loaded = (slice_count > 0);
       LOG(StringFormat("PolicyEngine: Loaded %d policy slices from %s", slice_count, path));
       
       return m_loaded;
      }
+
+private:
+   // Parse JSON object (single policy entry)
+   bool ParseJsonObject(const string objStr, PolicySlice &slice)
+     {
+      // Set defaults
+      slice.strategy = "";
+      slice.symbol = "";
+      slice.timeframe = 0;
+      slice.probability = 0.0;
+      slice.sl_scale = 1.0;
+      slice.tp_scale = 1.0;
+      slice.trail_atr_mult = 2.0;
+      slice.min_confidence = 0.5;
+      
+      // Extract strategy
+      int start = StringFind(objStr, "\"strategy\":");
+      if(start >= 0)
+        {
+         start = StringFind(objStr, "\"", start + 11);
+         if(start >= 0)
+           {
+            start++;
+            int end = StringFind(objStr, "\"", start);
+            if(end > start)
+               slice.strategy = StringSubstr(objStr, start, end - start);
+           }
+        }
+      
+      // Extract symbol
+      start = StringFind(objStr, "\"symbol\":");
+      if(start >= 0)
+        {
+         start = StringFind(objStr, "\"", start + 9);
+         if(start >= 0)
+           {
+            start++;
+            int end = StringFind(objStr, "\"", start);
+            if(end > start)
+               slice.symbol = StringSubstr(objStr, start, end - start);
+           }
+        }
+      
+      // Extract timeframe
+      start = StringFind(objStr, "\"timeframe\":");
+      if(start >= 0)
+        {
+         start += 12;
+         int end = StringFind(objStr, ",", start);
+         if(end < 0) end = StringFind(objStr, "}", start);
+         if(end > start)
+           {
+            string tf_str = StringSubstr(objStr, start, end - start);
+            StringReplace(tf_str, " ", "");
+            slice.timeframe = (int)StringToInteger(tf_str);
+           }
+        }
+      
+      // Extract probability
+      start = StringFind(objStr, "\"probability\":");
+      if(start >= 0)
+        {
+         start += 14;
+         int end = StringFind(objStr, ",", start);
+         if(end < 0) end = StringFind(objStr, "}", start);
+         if(end > start)
+           {
+            string p_str = StringSubstr(objStr, start, end - start);
+            slice.probability = StringToDouble(p_str);
+           }
+        }
+      
+      // Extract sl_scale
+      start = StringFind(objStr, "\"sl_scale\":");
+      if(start >= 0)
+        {
+         start += 11;
+         int end = StringFind(objStr, ",", start);
+         if(end < 0) end = StringFind(objStr, "}", start);
+         if(end > start)
+           {
+            string s = StringSubstr(objStr, start, end - start);
+            slice.sl_scale = StringToDouble(s);
+           }
+        }
+      
+      // Extract tp_scale
+      start = StringFind(objStr, "\"tp_scale\":");
+      if(start >= 0)
+        {
+         start += 11;
+         int end = StringFind(objStr, ",", start);
+         if(end < 0) end = StringFind(objStr, "}", start);
+         if(end > start)
+           {
+            string s = StringSubstr(objStr, start, end - start);
+            slice.tp_scale = StringToDouble(s);
+           }
+        }
+      
+      // Extract trail_atr_mult
+      start = StringFind(objStr, "\"trail_atr_mult\":");
+      if(start >= 0)
+        {
+         start += 17;
+         int end = StringFind(objStr, ",", start);
+         if(end < 0) end = StringFind(objStr, "}", start);
+         if(end > start)
+           {
+            string s = StringSubstr(objStr, start, end - start);
+            slice.trail_atr_mult = StringToDouble(s);
+           }
+        }
+      
+      // Extract min_confidence
+      start = StringFind(objStr, "\"min_confidence\":");
+      if(start >= 0)
+        {
+         start += 18;
+         int end = StringFind(objStr, ",", start);
+         if(end < 0) end = StringFind(objStr, "}", start);
+         if(end > start)
+           {
+            string s = StringSubstr(objStr, start, end - start);
+            slice.min_confidence = StringToDouble(s);
+           }
+        }
+      
+      return (slice.strategy != "" && slice.symbol != "");
+     }
+
+public:
 
    double GetPolicyProb(const string strategy, const string symbol, const ENUM_TIMEFRAMES timeframe)
      {

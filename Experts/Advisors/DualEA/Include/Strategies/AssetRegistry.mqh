@@ -19,6 +19,7 @@
 #include "EMAPullbackStrategy.mqh"
 #include "KeltnerMomentumStrategy.mqh"
 #include "ADXStrategy.mqh"
+#include "CTestStrategy.mqh"
 #include "AcceleratorOscillatorStrategy.mqh"
 #include "AlligatorStrategy.mqh"
 #include "AroonStrategy.mqh"
@@ -152,7 +153,6 @@ void RegisterStrategiesForSymbol(CArrayObj* out, const string symbol, const ENUM
 
    for (int i = 0; i < count; i++)
    {
-      (*strategies[i].strategy).SetName(strategies[i].name);
       out.Add(strategies[i].strategy);
    }
 }

@@ -8,9 +8,8 @@
 #define __ADAPTIVESIGNALOPTIMIZER_MQH__
 
 #include "LearningBridge.mqh"
+#include "EnhancedEfficientGateSystem.mqh"
 #include "GateSystemAutoLearning.mqh"
-
-// Forward declaration - CEfficientGateManagerEnhanced is defined in GateSystemAutoLearning
 
 // Strategy-specific adjustment profile
 struct StrategyProfile
@@ -79,7 +78,7 @@ struct AdjustmentAttempt
 class CAdaptiveDecision : public CSignalDecision
 {
 public:
-   bool is_adjusted;
+   // Note: is_adjusted is inherited from CSignalDecision, don't redeclare
    int adjustment_attempts;
    AdjustmentAttempt attempts[3];  // Max 3 attempts
    string original_signal_id;
@@ -345,7 +344,8 @@ public:
       
       // First attempt: Try original signal
       CSignalDecision temp_decision;
-      bool passed = m_gate_manager->ProcessSignal(signal, temp_decision);
+      string block_reason;
+      bool passed = m_gate_manager.ProcessSignalEnhanced(signal, temp_decision, block_reason);
       
       if(passed)
       {
@@ -489,7 +489,8 @@ public:
             continue;
          }
 
-         bool adj_passed = m_gate_manager->ProcessSignal(adjusted_signal, adj_decision);
+         string adj_block_reason;
+         bool adj_passed = m_gate_manager.ProcessSignalEnhanced(adjusted_signal, adj_decision, adj_block_reason);
          
          att.passed = adj_passed;
          att.gate_blocked = adj_passed ? "NONE" : "Multiple";
@@ -509,7 +510,8 @@ public:
             for(int revalidation = 1; revalidation <= 2; revalidation++)
             {
                CSignalDecision revalidation_decision;
-               bool revalidation_result = m_gate_manager->ProcessSignal(adjusted_signal, revalidation_decision);
+               string rev_block_reason;
+               bool revalidation_result = m_gate_manager.ProcessSignalEnhanced(adjusted_signal, revalidation_decision, rev_block_reason);
                
                if(!revalidation_result)
                {
@@ -580,6 +582,7 @@ public:
    void CopyDecision(const CSignalDecision &source, CSignalDecision &dest)
    {
       dest.signal_id = source.signal_id;
+      dest.strategy = source.strategy;  // CRITICAL: Copy strategy name
       dest.timestamp = source.timestamp;
       dest.symbol = source.symbol;
       dest.timeframe = source.timeframe;

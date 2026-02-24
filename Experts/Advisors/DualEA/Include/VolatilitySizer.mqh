@@ -95,20 +95,29 @@ public:
    double CalculatePositionSize(const double base_lot_size, const double stop_loss_points,
                                double &final_multiplier, string &reason)
    {
+      // CRITICAL FIX: Validate SL distance first - prevent invalid position sizing
+      double sl_points = stop_loss_points;
+      if(sl_points <= 10.0)  // Less than 10 points (1 pip for most brokers)
+      {
+         // LogWarning equivalent - use Print for now
+         Print(StringFormat("[VolatilitySizer] Invalid SL distance (%.1f points) - using fallback 100 points", sl_points));
+         sl_points = 100.0;  // Fallback to 100 points (10 pips)
+      }
+      
       double atr_pct;
       final_multiplier = CalculateSizeMultiplier(atr_pct, reason);
       
       if(!m_enabled)
          return base_lot_size;
       
-      // Risk-based sizing if stop loss is provided
-      if(stop_loss_points > 0.0 && m_target_risk_pct > 0.0)
+      // Risk-based sizing if stop loss is provided (using validated SL points)
+      if(sl_points > 0.0 && m_target_risk_pct > 0.0)
       {
          double account_equity = AccountInfoDouble(ACCOUNT_EQUITY);
          double risk_amount = account_equity * m_target_risk_pct / 100.0;
          
          double point_value = SymbolInfoDouble(m_symbol, SYMBOL_TRADE_TICK_VALUE);
-         double risk_per_lot = stop_loss_points * point_value;
+         double risk_per_lot = sl_points * point_value;
          
          if(risk_per_lot > 0.0)
          {

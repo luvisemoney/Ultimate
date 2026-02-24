@@ -1,0 +1,325 @@
+- [Forum](https://www.mql5.com/fr/forum)
+- [Market](https://www.mql5.com/fr/market)
+- [Signaux](https://www.mql5.com/fr/signals)
+- [Freelance](https://www.mql5.com/fr/job)
+- [VPS](https://www.mql5.com/fr/vps)
+- [Cotations](https://www.mql5.com/fr/quotes/overview)
+[Forum](https://www.mql5.com/fr/forum)
+[Market](https://www.mql5.com/fr/market)
+[Signaux](https://www.mql5.com/fr/signals)
+[Freelance](https://www.mql5.com/fr/job)
+[VPS](https://www.mql5.com/fr/vps)
+[Cotations](https://www.mql5.com/fr/quotes/overview)
+- [Articles](https://www.mql5.com/fr/articles)
+- [CodeBase](https://www.mql5.com/fr/code)
+- [Algo Forge](https://forge.mql5.io/?lang=fr-FR)
+- [Documentation](https://www.mql5.com/fr/docs)
+- [AlgoBook](https://www.mql5.com/fr/book)
+- [NeuroBook](https://www.mql5.com/fr/neurobook)
+- [Calendrier](https://www.mql5.com/fr/economic-calendar)
+- [WebTerminal](https://web.metatrader.app/terminal?mode=demo&lang=fr)
+- [A Propos](https://www.mql5.com/fr/about)
+- [Chaîne Trading Algorithmique](https://t.me/mql5fr)
+[Articles](https://www.mql5.com/fr/articles)
+[CodeBase](https://www.mql5.com/fr/code)
+[Algo Forge](https://forge.mql5.io/?lang=fr-FR)
+[Documentation](https://www.mql5.com/fr/docs)
+[AlgoBook](https://www.mql5.com/fr/book)
+[NeuroBook](https://www.mql5.com/fr/neurobook)
+[Calendrier](https://www.mql5.com/fr/economic-calendar)
+[WebTerminal](https://web.metatrader.app/terminal?mode=demo&lang=fr)
+[A Propos](https://www.mql5.com/fr/about)
+[Chaîne Trading Algorithmique](https://t.me/mql5fr)
+NeuroBookSections
+- [Se connecter](https://www.mql5.com/fr/auth_login)
+- [Créer un compte](https://www.mql5.com/fr/auth_register)
+[Se connecter](https://www.mql5.com/fr/auth_login)
+[Créer un compte](https://www.mql5.com/fr/auth_register)
+- [English](https://www.mql5.com/en/neurobook)
+- [Русский](https://www.mql5.com/ru/neurobook)
+- [中文](https://www.mql5.com/zh/neurobook)
+- [Español](https://www.mql5.com/es/neurobook)
+- [Português](https://www.mql5.com/pt/neurobook)
+- [日本語](https://www.mql5.com/ja/neurobook)
+- [Deutsch](https://www.mql5.com/de/neurobook)
+- [한국어](https://www.mql5.com/ko/neurobook)
+- [Français](https://www.mql5.com/fr/neurobook)
+- [Italiano](https://www.mql5.com/it/neurobook)
+- [Türkçe](https://www.mql5.com/tr/neurobook)
+[English](https://www.mql5.com/en/neurobook)
+[Русский](https://www.mql5.com/ru/neurobook)
+[中文](https://www.mql5.com/zh/neurobook)
+[Español](https://www.mql5.com/es/neurobook)
+[Português](https://www.mql5.com/pt/neurobook)
+[日本語](https://www.mql5.com/ja/neurobook)
+[Deutsch](https://www.mql5.com/de/neurobook)
+[한국어](https://www.mql5.com/ko/neurobook)
+[Français](https://www.mql5.com/fr/neurobook)
+[Italiano](https://www.mql5.com/it/neurobook)
+[Türkçe](https://www.mql5.com/tr/neurobook)
+- [Introduction](https://www.mql5.com/fr/neurobook/index/intro)
+- [Basic principles of artificial intelligence construction](https://www.mql5.com/fr/neurobook/index/about_ai)
+- [MetaTrader 5 features for algorithmic trading](https://www.mql5.com/fr/neurobook/index/algotrading)
+- [Building the first neural network model in MQL5](https://www.mql5.com/fr/neurobook/index/realization)
+- [Basic types of neural layers](https://www.mql5.com/fr/neurobook/index/main_layer_types)
+- [Attention mechanisms](https://www.mql5.com/fr/neurobook/index/transformer)
+- [Architectural solutions for improving model convergence](https://www.mql5.com/fr/neurobook/index/improvement_realization)
+- [Testing trading capabilities of the model](https://www.mql5.com/fr/neurobook/index/trade_check)
+- [Conclusion](https://www.mql5.com/fr/neurobook/index/conclusion)
+[Introduction](https://www.mql5.com/fr/neurobook/index/intro)
+[Basic principles of artificial intelligence construction](https://www.mql5.com/fr/neurobook/index/about_ai)
+[MetaTrader 5 features for algorithmic trading](https://www.mql5.com/fr/neurobook/index/algotrading)
+[Building the first neural network model in MQL5](https://www.mql5.com/fr/neurobook/index/realization)
+[Basic types of neural layers](https://www.mql5.com/fr/neurobook/index/main_layer_types)
+[Attention mechanisms](https://www.mql5.com/fr/neurobook/index/transformer)
+[Architectural solutions for improving model convergence](https://www.mql5.com/fr/neurobook/index/improvement_realization)
+[Testing trading capabilities of the model](https://www.mql5.com/fr/neurobook/index/trade_check)
+[Conclusion](https://www.mql5.com/fr/neurobook/index/conclusion)
+
+[Réseaux Neuronaux en PDF](https://www.mql5.com/files/book/neuronetworksbook.pdf)
+[Réseaux Neuronaux en CHM](https://www.mql5.com/files/book/neuronetworksbook.chm?v=2)
+[Dmitriy Gizlyk](https://www.mql5.com/fr/users/dng)
+
+# Neural Networks for Algorithmic Trading with MQL5
+
+In the era of digital technology and artificial intelligence, algorithmic trading is transforming financial markets, offering innovative strategies. The book "Neural Networks for Algorithmic Trading with MQL5" serves as a unique guide that combines advanced technological knowledge with practical guidance on creating trading algorithms. This book is tailored for traders, developers, and financial analysts who wish to understand the principles of neural networks and their application in algorithmic trading on the MetaTrader 5 platform.
+The book has 7 chapters that cover everything you need to know to get started with neural networks and integrate them into your trading robots in MQL5. Beginning with basic principles of neural networks and advancing to more complex architectural solutions and attention mechanisms, this book provides all the necessary information for the successful implementation of machine learning in your algorithmic trading solutions.
+You will discover how to use different types of neural networks, including convolutional and recurrent models, and how to integrate them into the MQL5 environment. Additionally, the book explores architectural solutions to improve model convergence, such as Batch Normalization and Dropout.
+Furthermore, the author provides practical guidance on how to train neural networks and embed them into your trading strategies. You will learn how to create trading Expert Advisors to test the performance of trained models on new data, enabling you to evaluate their potential in real-world financial markets.
+- [Chapter 1](https://www.mql5.com/fr/neurobook/index/about_ai) introduces you to the world of artificial intelligence, laying the foundation with essential neural network building blocks, such as activation functions and weight initialization methods.
+- [Chapter 2](https://www.mql5.com/fr/neurobook/index/algotrading) explores MetaTrader 5 capabilities in detail, describing how to utilize the platform tools to create powerful algorithmic trading strategies.
+- [Chapter 3](https://www.mql5.com/fr/neurobook/index/realization) guides you through the step-by-step development of your first neural network model in MQL5, covering everything from data preparation to model implementation and testing.
+- [Chapter 4](https://www.mql5.com/fr/neurobook/index/main_layer_types) delves deep into understanding fundamental neural layer types, including convolutional and recurrent neural networks, their practical implementation, and comprehensive testing.
+- [Chapter 5](https://www.mql5.com/fr/neurobook/index/transformer) introduces attention mechanisms like Self-Attention and Multi-Head Self-Attention, presenting advanced data analysis methodologies.
+- [Chapter 6](https://www.mql5.com/fr/neurobook/index/improvement_realization) explains architectural solutions to improve model convergence, such as Batch Normalization and Dropout.
+- [Chapter 7](https://www.mql5.com/fr/neurobook/index/trade_check) concludes the book and offers methods for testing trading strategies using the developed neural network models under real trading conditions through MetaTrader 5.
+[Chapter 1](https://www.mql5.com/fr/neurobook/index/about_ai)
+[Chapter 2](https://www.mql5.com/fr/neurobook/index/algotrading)
+[Chapter 3](https://www.mql5.com/fr/neurobook/index/realization)
+[Chapter 4](https://www.mql5.com/fr/neurobook/index/main_layer_types)
+[Chapter 5](https://www.mql5.com/fr/neurobook/index/transformer)
+[Chapter 6](https://www.mql5.com/fr/neurobook/index/improvement_realization)
+[Chapter 7](https://www.mql5.com/fr/neurobook/index/trade_check)
+With "Neural Networks for Algorithmic Trading with MQL5", you will gain comprehensive knowledge and practical skills for creating your own trading robots capable of analyzing markets and making decisions using advanced machine learning technologies. This book will be an invaluable resource for anyone who wants to use artificial intelligence in algorithmic trading and explore new horizons in financial analytics and trading.
+[Examples from the book "Neural networks for algorithmic trading with MQL5"](https://www.mql5.com/fr/code/48097)
+Examples from the book are also available in the [public project](https://www.metatrader5.com/fr/metaeditor/help/mql5storage/projects) \MQL5\Shared Projects\NeuroBook
+[Introduction](https://www.mql5.com/fr/neurobook/index/intro)
+- 
+
+
+            Trading en ligne/WebTerminal
+            Indicateurs techniques et robots gratuits
+
+# Neural Networks for Algorithmic Trading with MQL5
+
+Articles sur la programmation et le trading
+            Commandez des robots de trading sur le Freelance
+            Marché des Expert Advisors et des applications	
+            Suivez les signaux forex
+            VPS forex à faible latence
+            Forum des traders
+            Blogs de trading
+            Graphiques
+            [Widgets gratuits](https://www.mql5.com/fr/widgets)
+
+
+
+- [Trading en ligne/WebTerminal](https://web.metatrader.app/terminal?mode=demo&lang=fr)
+- [Indicateurs techniques et robots gratuits](https://www.mql5.com/fr/code)
+- [Articles sur la programmation et le trading](https://www.mql5.com/fr/articles)
+- [Commandez des robots de trading sur le Freelance](https://www.mql5.com/fr/job)
+- [Marché des Expert Advisors et des applications](https://www.mql5.com/fr/market)
+- [Suivez les signaux forex](https://www.mql5.com/fr/signals)
+- [VPS forex à faible latence](https://www.mql5.com/fr/vps)
+- [Forum des traders](https://www.mql5.com/fr/forum)
+- [Blogs de trading](https://www.mql5.com/fr/blogs)
+- [Graphiques](https://www.mql5.com/fr/charts)
+- [Widgets gratuits](https://www.mql5.com/fr/widgets)
+- 
+
+
+            Plateforme de trading MetaTrader 5
+            MetaTrader 5 dernières mises à jour
+            Actualités, implémentations et technologie
+            Manuel d'utilisation de MetaTrader 5
+            Langage MQL5 des stratégies de trading
+            MQL5 Cloud Network
+            MQL5 Algo Forge
+              Télécharger MetaTrader 5
+              Installer la plate-forme
+              [Désinstaller la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/deinstallation)
+
+
+
+
+- [Plateforme de trading MetaTrader 5](https://www.metatrader5.com)
+- [MetaTrader 5 dernières mises à jour](https://www.metatrader5.com/en/releasenotes)
+- [Actualités, implémentations et technologie](https://www.metatrader5.com/en/news)
+- [Manuel d'utilisation de MetaTrader 5](https://www.metatrader5.com/en/terminal/help)
+- [Langage MQL5 des stratégies de trading](https://www.mql5.com/fr/docs)
+- [MQL5 Cloud Network](https://cloud.mql5.com)
+- [MQL5 Algo Forge](https://forge.mql5.io/?lang=fr-FR)
+- [Télécharger MetaTrader 5](https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/mt5setup.exe?utm_source=www.mql5.com&utm_campaign=download)
+- [Installer la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/installation)
+- [Désinstaller la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/deinstallation)
+- 
+
+
+            A Propos
+              Chronologie
+            Termes et conditions
+            Accord de paiement récurrent
+            Contrat d'agence – Offre
+            Politique de confidentialité et de protection des données
+            Politique de cookies
+
+                [Contacts et demandes](https://www.mql5.com/fr/contact)
+
+
+
+
+- [A Propos](https://www.mql5.com/fr/about)
+- [Chronologie](https://www.mql5.com/fr/wall)
+- [Termes et conditions](https://www.mql5.com/fr/about/terms)
+- [Accord de paiement récurrent](https://www.mql5.com/fr/about/autopayments)
+- [Contrat d'agence – Offre](https://www.mql5.com/fr/about/agencyagreement)
+- [Politique de confidentialité et de protection des données](https://www.mql5.com/fr/about/privacy)
+- [Politique de cookies](https://www.mql5.com/fr/about/cookies)
+- 
+                [Contacts et demandes](https://www.mql5.com/fr/contact)
+
+- https://x.com/mql5com
+
+
+              MetaTrader 5
+
+              Télécharger MetaTrader 5 pour Windows
+              Télécharger MetaTrader 5 pour MacOS
+              Télécharger MetaTrader 5 pour Linux
+              Ouvrir le Web Terminal MetaTrader 5
+              Scanner pour l'installer depuis l'App Store
+              Scanner pour l'installer depuis Google Play
+              Scanner pour l'installer depuis l'AppGallery Huawei
+              Scanner pour récupérer le fichier APK Android
+
+
+
+
+                MQL5 Channels
+
+                Scanner pour l'installer depuis l'App Store
+                Scanner pour l'installer depuis Google Play
+                Scanner pour l'installer depuis l'AppGallery Huawei
+                Scanner pour récupérer le fichier APK Android
+
+
+
+                Economic Calendar
+
+                Scanner pour l'installer depuis l'App Store
+                Scanner pour l'installer depuis Google Play
+                Scanner pour l'installer depuis l'AppGallery Huawei
+
+# Neural Networks for Algorithmic Trading with MQL5
+
+Scanner pour récupérer le fichier APK Android
+
+
+
+
+
+
+
+
+
+            Suivez-nous sur les réseaux sociaux pour les meilleurs articles et les mises à jour de la CodeBase
+
+
+
+          Pas un courtier, pas de vrais comptes de trading
+          35 Dodekanisou str, Germasogeia, 4043, Limassol, Cyprus
+          Copyright 2000-2026, MetaQuotes Ltd
+
+
+- [Trading en ligne/WebTerminal](https://web.metatrader.app/terminal?mode=demo&lang=fr)
+- [Indicateurs techniques et robots gratuits](https://www.mql5.com/fr/code)
+- [Articles sur la programmation et le trading](https://www.mql5.com/fr/articles)
+- [Commandez des robots de trading sur le Freelance](https://www.mql5.com/fr/job)
+- [Marché des Expert Advisors et des applications](https://www.mql5.com/fr/market)
+- [Suivez les signaux forex](https://www.mql5.com/fr/signals)
+- [VPS forex à faible latence](https://www.mql5.com/fr/vps)
+- [Forum des traders](https://www.mql5.com/fr/forum)
+- [Blogs de trading](https://www.mql5.com/fr/blogs)
+- [Graphiques](https://www.mql5.com/fr/charts)
+- [Widgets gratuits](https://www.mql5.com/fr/widgets)
+[Trading en ligne/WebTerminal](https://web.metatrader.app/terminal?mode=demo&lang=fr)
+[Indicateurs techniques et robots gratuits](https://www.mql5.com/fr/code)
+[Articles sur la programmation et le trading](https://www.mql5.com/fr/articles)
+[Commandez des robots de trading sur le Freelance](https://www.mql5.com/fr/job)
+[Marché des Expert Advisors et des applications](https://www.mql5.com/fr/market)
+[Suivez les signaux forex](https://www.mql5.com/fr/signals)
+[VPS forex à faible latence](https://www.mql5.com/fr/vps)
+[Forum des traders](https://www.mql5.com/fr/forum)
+[Blogs de trading](https://www.mql5.com/fr/blogs)
+[Graphiques](https://www.mql5.com/fr/charts)
+[Widgets gratuits](https://www.mql5.com/fr/widgets)
+- [Plateforme de trading MetaTrader 5](https://www.metatrader5.com)
+- [MetaTrader 5 dernières mises à jour](https://www.metatrader5.com/en/releasenotes)
+- [Actualités, implémentations et technologie](https://www.metatrader5.com/en/news)
+- [Manuel d'utilisation de MetaTrader 5](https://www.metatrader5.com/en/terminal/help)
+- [Langage MQL5 des stratégies de trading](https://www.mql5.com/fr/docs)
+- [MQL5 Cloud Network](https://cloud.mql5.com)
+- [MQL5 Algo Forge](https://forge.mql5.io/?lang=fr-FR)
+- [Télécharger MetaTrader 5](https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/mt5setup.exe?utm_source=www.mql5.com&utm_campaign=download)
+- [Installer la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/installation)
+- [Désinstaller la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/deinstallation)
+[Plateforme de trading MetaTrader 5](https://www.metatrader5.com)
+[MetaTrader 5 dernières mises à jour](https://www.metatrader5.com/en/releasenotes)
+[Actualités, implémentations et technologie](https://www.metatrader5.com/en/news)
+[Manuel d'utilisation de MetaTrader 5](https://www.metatrader5.com/en/terminal/help)
+[Langage MQL5 des stratégies de trading](https://www.mql5.com/fr/docs)
+[MQL5 Cloud Network](https://cloud.mql5.com)
+[MQL5 Algo Forge](https://forge.mql5.io/?lang=fr-FR)
+[Télécharger MetaTrader 5](https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/mt5setup.exe?utm_source=www.mql5.com&utm_campaign=download)
+[Installer la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/installation)
+[Désinstaller la plate-forme](https://www.metatrader5.com/en/terminal/help/start_advanced/deinstallation)
+- [A Propos](https://www.mql5.com/fr/about)
+- [Chronologie](https://www.mql5.com/fr/wall)
+- [Termes et conditions](https://www.mql5.com/fr/about/terms)
+- [Accord de paiement récurrent](https://www.mql5.com/fr/about/autopayments)
+- [Contrat d'agence – Offre](https://www.mql5.com/fr/about/agencyagreement)
+- [Politique de confidentialité et de protection des données](https://www.mql5.com/fr/about/privacy)
+- [Politique de cookies](https://www.mql5.com/fr/about/cookies)
+- 
+                [Contacts et demandes](https://www.mql5.com/fr/contact)
+
+[A Propos](https://www.mql5.com/fr/about)
+[Chronologie](https://www.mql5.com/fr/wall)
+[Termes et conditions](https://www.mql5.com/fr/about/terms)
+[Accord de paiement récurrent](https://www.mql5.com/fr/about/autopayments)
+[Contrat d'agence – Offre](https://www.mql5.com/fr/about/agencyagreement)
+[Politique de confidentialité et de protection des données](https://www.mql5.com/fr/about/privacy)
+
+# Neural Networks for Algorithmic Trading with MQL5
+
+[Politique de cookies](https://www.mql5.com/fr/about/cookies)
+[Contacts et demandes](https://www.mql5.com/fr/contact)
+[MetaTrader 5](https://www.metatrader5.com)
+[Télécharger MetaTrader 5 pour Windows](https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/mt5setup.exe?utm_source=www.mql5.com&utm_campaign=download)
+[Télécharger MetaTrader 5 pour MacOS](https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/MetaTrader5.pkg.zip?utm_source=www.mql5.com&utm_campaign=download)
+[Télécharger MetaTrader 5 pour Linux](https://www.mql5.com/fr/articles/625?utm_source=www.mql5.com&utm_campaign=download)
+[Ouvrir le Web Terminal MetaTrader 5](https://web.metatrader.app/terminal?mode=demo&lang=fr)
+[Scanner pour l'installer depuis l'App Store](https://download.terminal.free/cdn/mobile/mt5/ios?utm_source=www.mql5.com&utm_campaign=install.metaquotes&hl=fr)
+[Scanner pour l'installer depuis Google Play](https://download.terminal.free/cdn/mobile/mt5/android?utm_source=www.mql5.com&utm_campaign=install.metaquotes&hl=fr)
+[Scanner pour l'installer depuis l'AppGallery Huawei](https://download.terminal.free/cdn/mobile/mt5/android/app-gallery?utm_source=www.mql5.com&utm_campaign=install.metaquotes)
+[Scanner pour récupérer le fichier APK Android](https://download.terminal.free/cdn/web/metaquotes.software.corp/mt5/metatrader5.apk?utm_source=www.mql5.com&utm_campaign=install.metaquotes)
+[MQL5 Channels](https://www.metatrader5.com/en/news/2270)
+[Scanner pour l'installer depuis l'App Store](https://download.terminal.free/cdn/mobile/mql5.channels/ios?utm_source=www.mql5.com&utm_campaign=download&hl=fr)
+[Scanner pour l'installer depuis Google Play](https://download.terminal.free/cdn/mobile/mql5.channels/android?utm_source=www.mql5.com&utm_campaign=download&hl=fr)
+[Scanner pour l'installer depuis l'AppGallery Huawei](https://download.terminal.free/cdn/mobile/mql5.channels/android/app-gallery?utm_source=www.mql5.com&utm_campaign=download)
+[Scanner pour récupérer le fichier APK Android](https://download.terminal.free/cdn/web/metaquotes.software.corp/mql5channels/mql5channels.apk?utm_source=www.mql5.com&utm_campaign=download)
+[Economic Calendar](https://www.tradays.com/en/download?utm_source=www.mql5.com&utm_campaign=download)
+[Scanner pour l'installer depuis l'App Store](https://download.terminal.free/cdn/mobile/tradays/ios?utm_source=www.mql5.com&utm_campaign=download&hl=fr)
+[Scanner pour l'installer depuis Google Play](https://download.terminal.free/cdn/mobile/tradays/android?utm_source=www.mql5.com&utm_campaign=download&hl=fr)
+[Scanner pour l'installer depuis l'AppGallery Huawei](https://download.terminal.free/cdn/mobile/tradays/android/app-gallery?utm_source=www.mql5.com&utm_campaign=download)
+[Scanner pour récupérer le fichier APK Android](https://download.terminal.free/cdn/web/metaquotes.software.corp/tradays/tradays.apk?utm_source=www.mql5.com&utm_campaign=download)

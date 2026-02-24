@@ -159,22 +159,39 @@ public:
    // Update trade at close (final record)
    void LogTradeClose(const UnifiedTradeRecord &record)
    {
-      // Implementation: Update the existing record in the file
-      // For now, append as new entry (full implementation would update in place)
-      
+      // Implementation: Update the existing record in the file by rewriting entire file
       CheckDayChange();
       
-      int handle = FileOpen(m_daily_log_file, FILE_READ|FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
-      if(handle != INVALID_HANDLE)
+      // Read all existing records
+      string temp_content = "";
+      int read_handle = FileOpen(m_daily_log_file, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
+      if(read_handle != INVALID_HANDLE)
       {
-         FileSeek(handle, 0, SEEK_END);
-         FileWriteString(handle, ",\n");
+         while(!FileIsEnding(read_handle))
+         {
+            string line = FileReadString(read_handle);
+            if(line == "") continue;
+            
+            // Check if this is the record to update (match by trade_id)
+            if(StringFind(line, StringFormat("\"trade_id\":\"%s\"", record.trade_id)) >= 0)
+            {
+               // Replace with updated record
+               temp_content += FormatTradeAsJSON(record, true) + "\n";
+            }
+            else
+            {
+               temp_content += line + "\n";
+            }
+         }
+         FileClose(read_handle);
          
-         string trade_json = FormatTradeAsJSON(record, true);
-         FileWriteString(handle, trade_json);
-         
-         FileClose(handle);
-         
+         // Rewrite file with updated content
+         int write_handle = FileOpen(m_daily_log_file, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
+         if(write_handle != INVALID_HANDLE)
+         {
+            FileWriteString(write_handle, temp_content);
+            FileClose(write_handle);
+         }
          m_trades_closed++;
          
          PrintFormat("📝 Trade close logged: %s | PnL: %+.2f%% | Duration: %.1f min",

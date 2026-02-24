@@ -29,11 +29,25 @@ int Insights_Load_Default(
    ArrayResize(out_dd, 0);
    
    string path = "DualEA\\insights.json";
+   FolderCreate("DualEA", FILE_COMMON);
+   if(!FileIsExist(path, FILE_COMMON))
+   {
+      return 0;  // Cold start: insights not generated yet
+   }
    int h = FileOpen(path, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
    if(h == INVALID_HANDLE)
    {
-      PrintFormat("[InsightsLoader] Cannot open %s (Common). Err=%d", path, GetLastError());
-      return 0;  // No insights file is ok - cold start
+      int err = GetLastError();
+      static datetime s_last_warn = 0;
+      static int s_last_err = -1;
+      datetime now = TimeCurrent();
+      if((now - s_last_warn) >= 300 || err != s_last_err)
+      {
+         PrintFormat("[InsightsLoader] Cannot open %s (Common). Err=%d", path, err);
+         s_last_warn = now;
+         s_last_err = err;
+      }
+      return 0;  // Treat as no insights available
    }
    
    string cur_s = "", cur_y = "";

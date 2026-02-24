@@ -48,6 +48,7 @@ void SetSignalDefaults(TradingSignal &signal, string symbol, ENUM_TIMEFRAMES tf,
    signal.timestamp = TimeCurrent();
    signal.price = price;
    signal.type = type;
+   signal.order_type = (type == 0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;  // Set order_type based on type
    signal.strategy = strategy;
    signal.volume = 0.1;
    signal.confidence = 0.6;
@@ -55,22 +56,41 @@ void SetSignalDefaults(TradingSignal &signal, string symbol, ENUM_TIMEFRAMES tf,
    double atr = GetATR(symbol, tf, 14);
    if(atr <= 0) atr = 100 * SymbolInfoDouble(symbol, SYMBOL_POINT);
    
-   // Set SL/TP based on signal type
+   // TIMEFRAME-BASED MULTIPLIER: Longer timeframes = wider SL/TP
+   double tf_multiplier = 1.0;
+   switch(tf)
+   {
+      case PERIOD_M1:  tf_multiplier = 0.5;  break;  // Tightest stops
+      case PERIOD_M5:  tf_multiplier = 0.7;  break;
+      case PERIOD_M15: tf_multiplier = 0.85; break;
+      case PERIOD_M30: tf_multiplier = 1.0;  break;  // Baseline
+      case PERIOD_H1:  tf_multiplier = 1.3;  break;
+      case PERIOD_H4:  tf_multiplier = 1.6;  break;
+      case PERIOD_D1:  tf_multiplier = 2.0;  break;  // Wider stops
+      case PERIOD_W1:  tf_multiplier = 2.5;  break;
+      case PERIOD_MN1: tf_multiplier = 3.0;  break;  // Widest stops
+      default:         tf_multiplier = 1.0;  break;
+   }
+   
+   // Set SL/TP based on signal type with timeframe adjustment
+   double sl_mult = 1.5 * tf_multiplier;
+   double tp_mult = 2.5 * tf_multiplier;
+   
    if(type == 0) // Buy
    {
-      signal.sl = price - atr * 1.5;
-      signal.tp = price + atr * 2.5;
+      signal.sl = price - atr * sl_mult;
+      signal.tp = price + atr * tp_mult;
    }
    else // Sell
    {
-      signal.sl = price + atr * 1.5;
-      signal.tp = price - atr * 2.5;
+      signal.sl = price + atr * sl_mult;
+      signal.tp = price - atr * tp_mult;
    }
    
    // Final safety check - ensure TP is never garbage
    if(signal.tp <= 0.0 || signal.tp > 1e10 || MathIsValidNumber(signal.tp) == false)
    {
-      signal.tp = (type == 0) ? price + atr * 2.5 : price - atr * 2.5;
+      signal.tp = (type == 0) ? price + atr * tp_mult : price - atr * tp_mult;
    }
 }
 

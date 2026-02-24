@@ -27,6 +27,25 @@ struct PolicyEntry
    int winning_trades;
    double total_profit;
    datetime last_update;
+   
+   // NEW: Advanced metrics (P0 improvement)
+   double gross_profit;       // Total winning trades amount
+   double gross_loss;         // Total losing trades amount (absolute)
+   double expectancy;           // (win_rate * avg_win) - (loss_rate * avg_loss)
+   double profit_factor;      // gross_profit / gross_loss
+   double r_multiple_avg;     // Average R-multiple per trade
+   double max_drawdown_pct;   // Peak-to-trough drawdown
+   double sharpe_20;          // 20-trade Sharpe ratio
+   double peak_equity;        // For drawdown calculation
+   double current_equity;     // Running equity curve
+   
+   // NEW: Trade history buffer for advanced stats (last 20 trades)
+   double recent_pnls[20];
+   int recent_count;
+   
+   // NEW: Regime-aware tracking
+   string market_regime;      // "trending", "ranging", "volatile"
+   double regime_performance[3]; // Performance per regime index
 };
 
 //+------------------------------------------------------------------+
@@ -49,6 +68,10 @@ private:
    // Statistics
    int m_total_updates;
    int m_successful_updates;
+   
+   // NEW: Real-time update trigger
+   int m_trades_since_update;
+   int m_trades_update_threshold;  // Write policy after N trades
    
    // Helper methods for policy storage
    int FindPolicyIndex(const string key)
@@ -93,7 +116,7 @@ private:
    {
       return StringFormat("%s_%s_%d", strategy, symbol, timeframe);
    }
-   // Learn optimal parameters from trade history
+   // Learn optimal parameters from trade history with advanced metrics
    void LearnFromTrades(PolicyEntry &policy)
    {
       if(m_learning == NULL) return;
@@ -107,52 +130,92 @@ private:
          // Update probability (exponential moving average)
          policy.probability = policy.probability * 0.7 + actual_win_rate * 0.3;
          
-         // Adjust SL/TP based on profitability
-         if(avg_profit > 0)
+         // NEW: Calculate profit factor
+         if(policy.gross_loss > 0)
+            policy.profit_factor = policy.gross_profit / policy.gross_loss;
+         else if(policy.gross_profit > 0)
+            policy.profit_factor = 999.0; // No losses yet
+         
+         // NEW: Calculate expectancy
+         double loss_rate = 1.0 - actual_win_rate;
+         double avg_win = policy.winning_trades > 0 ? policy.gross_profit / policy.winning_trades : 0;
+         double avg_loss = (policy.total_trades - policy.winning_trades) > 0 ? 
+                          policy.gross_loss / (policy.total_trades - policy.winning_trades) : 0;
+         policy.expectancy = (actual_win_rate * avg_win) - (loss_rate * avg_loss);
+         
+         // NEW: Calculate 20-trade Sharpe ratio if we have enough data
+         if(policy.recent_count >= 5)
          {
-            // Profitable - can afford to be slightly more aggressive
-            policy.sl_scale = MathMin(1.5, policy.sl_scale * 1.05);
-            policy.tp_scale = MathMax(1.0, policy.tp_scale * 1.05);
-         }
-         else
-         {
-            // Not profitable - tighten up
-            policy.sl_scale = MathMax(0.7, policy.sl_scale * 0.95);
-            policy.tp_scale = MathMin(2.0, policy.tp_scale * 0.95);
+            double mean_pnl = 0, variance = 0;
+            for(int i = 0; i < policy.recent_count; i++)
+               mean_pnl += policy.recent_pnls[i];
+            mean_pnl /= policy.recent_count;
+            
+            for(int i = 0; i < policy.recent_count; i++)
+               variance += MathPow(policy.recent_pnls[i] - mean_pnl, 2);
+            variance /= policy.recent_count;
+            
+            double std_dev = MathSqrt(variance);
+            if(std_dev > 0)
+               policy.sharpe_20 = mean_pnl / std_dev;
          }
          
-         // Adjust confidence threshold
-         if(actual_win_rate > 0.6)
+         // Adjust SL/TP based on profit factor (more robust than raw profit)
+         if(policy.profit_factor > 1.5 && policy.expectancy > 0)
          {
-            // Good performance - can lower threshold slightly
-            policy.min_confidence = MathMax(0.3, policy.min_confidence * 0.98);
+            // Profitable with good profit factor - can be slightly more aggressive
+            policy.sl_scale = MathMin(1.5, policy.sl_scale * 1.02);
+            policy.tp_scale = MathMax(1.0, policy.tp_scale * 1.02);
          }
-         else if(actual_win_rate < 0.4)
+         else if(policy.profit_factor < 1.0 || policy.expectancy < 0)
          {
-            // Poor performance - raise threshold
-            policy.min_confidence = MathMin(0.8, policy.min_confidence * 1.02);
+            // Poor profit factor or negative expectancy - tighten up
+            policy.sl_scale = MathMax(0.7, policy.sl_scale * 0.98);
+            policy.tp_scale = MathMin(2.0, policy.tp_scale * 0.98);
+         }
+         
+         // Adjust confidence threshold based on Sharpe and expectancy
+         if(policy.sharpe_20 > 0.5 && policy.expectancy > 0)
+         {
+            // Good risk-adjusted returns - can lower threshold
+            policy.min_confidence = MathMax(0.3, policy.min_confidence * 0.99);
+         }
+         else if(policy.sharpe_20 < 0.0 || policy.max_drawdown_pct > 10.0)
+         {
+            // Negative Sharpe or high drawdown - raise threshold
+            policy.min_confidence = MathMin(0.8, policy.min_confidence * 1.01);
          }
          
          policy.last_update = TimeCurrent();
       }
    }
    
-   // Write policy to JSON file
+   // Write policy to JSON file with atomic writes and versioning
    bool WritePolicyFile()
    {
-      int handle = FileOpen(m_policy_file_path, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
+      // ATOMIC WRITE: Write to temp file first, then rename
+      string temp_path = m_policy_file_path + ".tmp";
+      string backup_path = m_policy_file_path + ".backup";
+      
+      int handle = FileOpen(temp_path, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
       if(handle == INVALID_HANDLE)
       {
-         PrintFormat("❌ PolicyUpdater: Failed to open policy file for writing: %s (Error: %d)", 
-                    m_policy_file_path, GetLastError());
+         PrintFormat("❌ PolicyUpdater: Failed to open temp file for writing: %s (Error: %d)", 
+                    temp_path, GetLastError());
          return false;
       }
       
-      // Write JSON header
+      // VERSIONING: Increment version on each write
+      static int policy_version = 1;
+      policy_version++;
+      
+      // Write JSON header with version
       FileWriteString(handle, "{\n");
-      FileWriteString(handle, "  \"version\": \"1.0\",\n");
+      FileWriteString(handle, StringFormat("  \"version\": \"1.0.%d\",\n", policy_version));
+      FileWriteString(handle, "  \"schema_version\": \"2.0\",\n");
       FileWriteString(handle, StringFormat("  \"last_updated\": \"%s\",\n", TimeToString(TimeCurrent())));
       FileWriteString(handle, StringFormat("  \"total_policies\": %d,\n", ArraySize(m_policy_keys)));
+      FileWriteString(handle, "  \"write_mode\": \"atomic\",\n");
       FileWriteString(handle, "  \"policies\": [\n");
       
       // Write each policy entry
@@ -177,13 +240,21 @@ private:
                "      \"min_confidence\": %.2f,\n"
                "      \"total_trades\": %d,\n"
                "      \"winning_trades\": %d,\n"
-               "      \"win_rate\": %.2f\n"
+               "      \"win_rate\": %.2f,\n"
+               "      \"profit_factor\": %.2f,\n"
+               "      \"expectancy\": %.2f,\n"
+               "      \"sharpe_20\": %.2f,\n"
+               "      \"max_drawdown_pct\": %.2f\n"
                "    }",
                policy.strategy, policy.symbol, policy.timeframe,
                policy.probability, policy.sl_scale, policy.tp_scale,
                policy.trail_atr_mult, policy.min_confidence,
                policy.total_trades, policy.winning_trades,
-               policy.total_trades > 0 ? (double)policy.winning_trades/policy.total_trades : 0.0
+               policy.total_trades > 0 ? (double)policy.winning_trades/policy.total_trades : 0.0,
+               policy.profit_factor,
+               policy.expectancy,
+               policy.sharpe_20,
+               policy.max_drawdown_pct
             );
             
             FileWriteString(handle, entry);
@@ -196,7 +267,34 @@ private:
       
       FileClose(handle);
       
-      PrintFormat("✅ PolicyUpdater: Updated policy file with %d entries", count);
+      // ATOMIC: Backup existing file if it exists
+      int existing_handle = FileOpen(m_policy_file_path, FILE_READ|FILE_TXT|FILE_COMMON);
+      if(existing_handle != INVALID_HANDLE)
+      {
+         FileClose(existing_handle);
+         // Copy existing to backup
+         int backup_handle = FileOpen(backup_path, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
+         if(backup_handle != INVALID_HANDLE)
+         {
+            int old_handle = FileOpen(m_policy_file_path, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
+            if(old_handle != INVALID_HANDLE)
+            {
+               while(!FileIsEnding(old_handle))
+               {
+                  string line = FileReadString(old_handle);
+                  FileWriteString(backup_handle, line + "\n");
+               }
+               FileClose(old_handle);
+            }
+            FileClose(backup_handle);
+         }
+      }
+      
+      // ATOMIC: Rename temp to final
+      FileDelete(m_policy_file_path, FILE_COMMON);
+      FileMove(temp_path, FILE_COMMON, m_policy_file_path, FILE_COMMON|FILE_REWRITE);
+      
+      PrintFormat("✅ PolicyUpdater: Atomically updated policy file with %d entries (version %d)", count, policy_version);
       return true;
    }
 
@@ -211,6 +309,10 @@ public:
       m_total_updates = 0;
       m_successful_updates = 0;
       
+      // NEW: Real-time update configuration
+      m_trades_since_update = 0;
+      m_trades_update_threshold = 5;  // Update policy file after every 5 trades
+      
       // Initialize default policies for common combinations
       InitializeDefaultPolicies();
       
@@ -218,8 +320,8 @@ public:
       if(WritePolicyFile())
          m_successful_updates++;
       
-      PrintFormat("🎯 PolicyUpdater initialized: auto-update every %d minutes", 
-                  m_update_interval_minutes);
+      PrintFormat("🎯 PolicyUpdater initialized: auto-update every %d minutes, real-time updates every %d trades", 
+                  m_update_interval_minutes, m_trades_update_threshold);
    }
    
    void InitializeDefaultPolicies()
@@ -286,6 +388,54 @@ public:
          policy.winning_trades = 0;
          policy.total_profit = 0.0;
          policy.last_update = TimeCurrent();
+         
+         // NEW: Initialize advanced metrics
+         policy.gross_profit = 0.0;
+         policy.gross_loss = 0.0;
+         policy.expectancy = 0.0;
+         policy.profit_factor = 1.0;
+         policy.r_multiple_avg = 0.0;
+         policy.max_drawdown_pct = 0.0;
+         policy.sharpe_20 = 0.0;
+         policy.peak_equity = 0.0;
+         policy.current_equity = 0.0;
+         policy.recent_count = 0;
+         policy.market_regime = "";
+         ArrayInitialize(policy.recent_pnls, 0.0);
+         ArrayInitialize(policy.regime_performance, 0.0);
+      }
+      
+      // NEW: Update gross profit/loss for profit factor calculation
+      if(profit > 0)
+         policy.gross_profit += profit;
+      else
+         policy.gross_loss += MathAbs(profit);
+      
+      // NEW: Update equity curve for drawdown calculation
+      policy.current_equity += profit;
+      if(policy.current_equity > policy.peak_equity)
+         policy.peak_equity = policy.current_equity;
+      
+      // NEW: Calculate running drawdown
+      if(policy.peak_equity > 0)
+      {
+         double current_dd = (policy.peak_equity - policy.current_equity) / policy.peak_equity * 100.0;
+         if(current_dd > policy.max_drawdown_pct)
+            policy.max_drawdown_pct = current_dd;
+      }
+      
+      // NEW: Update recent trades buffer for Sharpe calculation
+      if(policy.recent_count < 20)
+      {
+         policy.recent_pnls[policy.recent_count] = profit;
+         policy.recent_count++;
+      }
+      else
+      {
+         // Shift array (FIFO)
+         for(int i = 0; i < 19; i++)
+            policy.recent_pnls[i] = policy.recent_pnls[i+1];
+         policy.recent_pnls[19] = profit;
       }
       
       // Update trade statistics
@@ -299,6 +449,26 @@ public:
       
       // Save updated policy
       SetPolicy(key, policy);
+      
+      // NEW: Real-time policy update trigger
+      m_trades_since_update++;
+      if(m_trades_since_update >= m_trades_update_threshold)
+      {
+         if(WritePolicyFile())
+         {
+            m_successful_updates++;
+            m_last_update = TimeCurrent();
+            PrintFormat("🔄 PolicyUpdater: Real-time update after %d trades", m_trades_since_update);
+         }
+         m_trades_since_update = 0;
+      }
+   }
+   
+   // Alias wrapper to avoid method signature confusion with other classes
+   void UpdatePolicyFromTrade(const string strategy, const string symbol, const int timeframe,
+                              bool won, double profit)
+   {
+      RecordTradeOutcome(strategy, symbol, timeframe, won, profit);
    }
    
    // Auto-update policy file if interval elapsed

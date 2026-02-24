@@ -81,6 +81,15 @@ public:
         double spread = SymbolInfoInteger(symbol, SYMBOL_SPREAD) * SymbolInfoDouble(symbol, SYMBOL_POINT);
         m_profile.avg_spread_pct = (price > 0) ? ((spread / price) * 100.0) : 0.001;
         
+        // DEBUG: Log raw spread values
+        PrintFormat("[DEBUG-SPREAD] %s | SpreadPoints=%d | Point=%.8f | RawSpread=%.8f | Price=%.4f | SpreadPct=%.6f",
+            symbol,
+            (int)SymbolInfoInteger(symbol, SYMBOL_SPREAD),
+            SymbolInfoDouble(symbol, SYMBOL_POINT),
+            spread,
+            price,
+            m_profile.avg_spread_pct);
+        
         // Volatility percentile (20-period lookback)
         m_profile.volatility_percentile = CalculateVolatilityPercentile(symbol, tf, 20);
         

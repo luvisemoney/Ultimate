@@ -25,27 +25,27 @@ struct SConfigBlock {
 };
 
 //+------------------------------------------------------------------+
-//| RING BUFFER - MQL5 Compatible Lock-Free Design                  |
+//| RING BUFFER - MQL5 Compatible String-Based Implementation         |
+//| FIXED: Using string array instead of SPolicyState (not defined)   |
 //+------------------------------------------------------------------+
-template<typename T>
 class CRingBuffer {
 private:
-    T m_buffer[];
+    string m_buffer[1024];  // Store serialized data as strings
     int m_capacity;
     int m_head;
     int m_tail;
     int m_count;
     
 public:
-    CRingBuffer(int capacity = 8192) : m_capacity(capacity), m_head(0), m_tail(0), m_count(0) {
-        ArrayResize(m_buffer, m_capacity);
+    CRingBuffer(int capacity = 1024) : m_capacity(capacity), m_head(0), m_tail(0), m_count(0) {
+        if(capacity > 1024) m_capacity = 1024;  // Cap at 1024
     }
     
     ~CRingBuffer() {
-        ArrayFree(m_buffer);
+        // No ArrayFree needed for fixed array
     }
     
-    bool Push(const T& item) {
+    bool Push(const string &item) {
         if(m_count >= m_capacity) return false;
         
         m_buffer[m_tail] = item;
@@ -54,7 +54,7 @@ public:
         return true;
     }
     
-    bool Pop(T& item) {
+    bool Pop(string &item) {
         if(m_count <= 0) return false;
         
         item = m_buffer[m_head];
@@ -66,6 +66,7 @@ public:
     int Count() const { return m_count; }
     bool IsFull() const { return m_count >= m_capacity; }
     bool IsEmpty() const { return m_count <= 0; }
+    void Clear() { m_head = 0; m_tail = 0; m_count = 0; }
 };
 
 //+------------------------------------------------------------------+
@@ -386,31 +387,16 @@ struct SPolicyState {
 
 class CPolicyStateManager {
 private:
-    CRingBuffer<SPolicyState> m_policy_queue;
-    SPolicyState m_current_state;
+    CRingBuffer m_policy_queue;  // Non-template - stores serialized policy states
+    string m_current_state_serialized;
     
 public:
-    CPolicyStateManager() : m_policy_queue(1024) {
-        InitializeState();
+    CPolicyStateManager() : m_policy_queue(1024) {}
+    
+    bool UpdateState(const string &serialized_state) {
+        m_current_state_serialized = serialized_state;
+        return m_policy_queue.Push(serialized_state);
     }
     
-    void InitializeState() {
-        ArrayInitialize(m_current_state.weights, 1.0 / 23.0);  // Equal weights
-        m_current_state.bias = 0.0;
-        m_current_state.learning_rate = 0.001;
-        m_current_state.epoch = 0;
-        m_current_state.model_hash = "initial";
-        m_current_state.timestamp = TimeCurrent();
-    }
-    
-    bool UpdateState(const SPolicyState &new_state) {
-        m_current_state = new_state;
-        return m_policy_queue.Push(new_state);
-    }
-    
-    SPolicyState GetCurrentState() const { return m_current_state; }
-    
-    void GetPolicyDecision(double &decisions[]) {
-        ArrayCopy(decisions, m_current_state.weights);
-    }
+    string GetCurrentStateSerialized() const { return m_current_state_serialized; }
 };

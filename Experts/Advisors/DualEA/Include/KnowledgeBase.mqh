@@ -54,12 +54,17 @@ public:
                         // Append a single trade execution row into Common Files under DualEA/trades
                         FolderCreate("DualEA\\trades", FILE_COMMON);
                         string filename = StringFormat("DualEA\\trades\\%s_trades_%s.csv", symbol, TimeToString(exec_time, TIME_DATE));
-                        int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                        int h = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
                         if(h == INVALID_HANDLE)
                         {
                            PrintFormat("KnowledgeBase: failed to open trades file: %s (err=%d)", filename, GetLastError());
                            return false;
                         }
+                        if(FileSize(h) == 0)
+                        {
+                           FileWriteString(h, "timestamp,strategy,price,volume,type\n");
+                        }
+                        FileSeek(h, 0, SEEK_END);
                         FileWrite(h, TimeToString(exec_time), strategy, DoubleToString(price, 5),
                                   DoubleToString(volume, 2), IntegerToString(order_type));
                         FileClose(h);
@@ -84,10 +89,10 @@ class CFeaturesKB
       {
        // Ensure folder exists and header is present
        FolderCreate("DualEA", FILE_COMMON);
-       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
+       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_COMMON);
        if(h==INVALID_HANDLE)
          {
-          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
+          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
           if(h!=INVALID_HANDLE)
             {
              FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
@@ -99,7 +104,7 @@ class CFeaturesKB
           if(FileSize(h)==0)
             {
              FileClose(h);
-             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
+             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
              if(h!=INVALID_HANDLE)
                 FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
             }
@@ -146,7 +151,7 @@ class CFeaturesKB
                      // Retry open to mitigate transient locks from readers/writers
                      for(int attempt=0; attempt<10 && h==INVALID_HANDLE; ++attempt)
                        {
-                        h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON);
+                        h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_UNICODE, ',');
                         if(h==INVALID_HANDLE) Sleep(25);
                        }
                      if(h==INVALID_HANDLE)
@@ -155,10 +160,13 @@ class CFeaturesKB
                         return false;
                        }
               if(FileSize(h)==0)
-                FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
+              {
+                // Write header using FileWrite for proper CSV formatting
+                FileWrite(h, "timestamp", "symbol", "strategy", "feature", "value");
+              }
               FileSeek(h, 0, SEEK_END);
-              string line = (string)TimeToString(ts, TIME_DATE|TIME_MINUTES|TIME_SECONDS) + m_csv_delim + symbol + m_csv_delim + strategy + m_csv_delim + feature + m_csv_delim + DoubleToString(value, 8) + "\n";
-              FileWriteString(h, line);
+              // Write data fields using FileWrite (proper CSV encoding)
+              FileWrite(h, TimeToString(ts, TIME_DATE|TIME_MINUTES|TIME_SECONDS), symbol, strategy, feature, DoubleToString(value, 8));
               FileClose(h);
               return true;
                     }
@@ -189,20 +197,35 @@ class CFeaturesKB
                      return true;
                     }
 
-    // Append a single trade execution record to a per-symbol CSV in Common Files
+    // Append a single trade execution record to a consolidated per-symbol CSV in Common Files
     bool          LogTradeExecution(const string symbol, const string strategy, const datetime exec_time,
                                     const double price, const double volume, const int order_type)
                     {
                      FolderCreate("DualEA\\trades", FILE_COMMON);
-                     string filename = StringFormat("DualEA\\trades\\%s_trades_%s.csv", symbol, TimeToString(exec_time, TIME_DATE));
-                     int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                     // Use consolidated file per symbol (not per day)
+                     string filename = StringFormat("DualEA\\trades\\%s_trades.csv", symbol);
+                     // Open as CSV with FILE_UNICODE for proper UTF-8 encoding
+                     int h = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_UNICODE, ',');
                      if(h == INVALID_HANDLE)
                        {
                         PrintFormat("KnowledgeBase: failed to open trades file: %s (err=%d)", filename, GetLastError());
                         return false;
                        }
-                     FileWrite(h, TimeToString(exec_time), strategy, DoubleToString(price, 5),
-                               DoubleToString(volume, 2), IntegerToString(order_type));
+                     // Check if file is new (size 0) - write header if so using FileWrite
+                     if(FileSize(h) == 0)
+                     {
+                        // Write header row using FileWrite for proper CSV format
+                        FileWrite(h, "timestamp", "strategy", "price", "volume", "type");
+                     }
+                     // Seek to end to append
+                     FileSeek(h, 0, SEEK_END);
+                     // Write trade data using FileWrite (handles CSV encoding properly)
+                     FileWrite(h, 
+                               TimeToString(exec_time, TIME_DATE|TIME_MINUTES|TIME_SECONDS),
+                               strategy,
+                               DoubleToString(price, 5),
+                               DoubleToString(volume, 2),
+                               IntegerToString(order_type));
                      FileClose(h);
                      return true;
                     }
@@ -350,7 +373,7 @@ class CInsightsBuilder
                     // Establish deadline (if any)
                     ulong t0 = GetTickCount();
                     // Open features.csv with explicit comma delimiter
-                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON, (ushort)',');
+                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_COMMON, (ushort)',');
                     if(hf==INVALID_HANDLE)
                       {
                        PrintFormat("InsightsBuilder: cannot open features '%s'. Err=%d", m_features_path, GetLastError());
@@ -467,7 +490,7 @@ class CInsightsBuilder
                     if(total==0)
                       {
                        // Secondary fallback: parse features.csv as raw text lines and split by comma
-                       int ht = FileOpen(m_features_path, FILE_READ|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
+                       int ht = FileOpen(m_features_path, FILE_READ|FILE_COMMON|FILE_ANSI);
                        if(ht!=INVALID_HANDLE)
                          {
                           int added=0; bool header_seen=false; int scanned=0;
@@ -537,8 +560,15 @@ class CInsightsBuilder
                          }
                        
                        Print("InsightsBuilder: no r_multiple rows found in features.csv; falling back to knowledge_base.csv using profit as surrogate");
-                       // Open knowledge_base.csv with explicit comma delimiter
-                       int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON, (ushort)',' );
+                       // Check if knowledge_base.csv exists first
+                       if(!FileIsExist(m_kb_path, FILE_COMMON))
+                       {
+                          Print("InsightsBuilder: knowledge_base.csv does not exist, skipping fallback");
+                       }
+                       else
+                       {
+                          // Open knowledge_base.csv with explicit comma delimiter
+                          int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|FILE_COMMON, (ushort)',' );
                        if(hk!=INVALID_HANDLE)
                          {
                           // No header expected in knowledge_base.csv
@@ -624,6 +654,7 @@ class CInsightsBuilder
                             }
                           }
                          }
+                    }
                     // Final synthesis: if still no rows and no timeframe entries, synthesize from symbol/strategy pairs using default chart timeframe
                      if(total==0 && ArraySize(all_keys)>0)
                       {
@@ -918,12 +949,21 @@ CKnowledgeBase::~CKnowledgeBase()
 //+------------------------------------------------------------------+
 bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
   {
+   PrintFormat("[KnowledgeBase] WriteRecord called: %s %s | entry=%.5f close=%.5f profit=%.2f | strategy=%s",
+               record.symbol, TimeToString(record.timestamp),
+               record.entry_price, record.close_price, record.profit,
+               record.strategy_id);
+
    if(!AcquireLock(3000))
+     {
+      Print("[KnowledgeBase] WriteRecord failed: lock acquire timeout");
       return(false);
+     }
 
    // IMPORTANT: use FILE_READ|FILE_WRITE to avoid truncation (FILE_WRITE alone clears the file)
    if(!OpenFile(FILE_READ|FILE_WRITE|FILE_CSV))
      {
+      PrintFormat("[KnowledgeBase] WriteRecord failed: OpenFile failed, err=%d", GetLastError());
       ReleaseLock();
       return(false);
      }
@@ -940,11 +980,18 @@ bool CKnowledgeBase::WriteRecord(const TradeRecord &record)
                           DoubleToString(record.profit, 2) + m_csv_delimiter +
                           record.strategy_id;
 
-   FileWriteString(m_file_handle, record_string + "\n");
+   uint written = FileWriteString(m_file_handle, record_string + "\n");
+   bool ok = (written > 0);
 
    CloseFile();
    ReleaseLock();
-   return(true);
+
+   if(ok)
+      PrintFormat("[KnowledgeBase] WriteRecord SUCCESS: wrote %d bytes to %s", written, m_file_path);
+   else
+      PrintFormat("[KnowledgeBase] WriteRecord FAILED: FileWriteString returned %d, err=%d", written, GetLastError());
+
+   return(ok);
   }
 
 //+------------------------------------------------------------------+

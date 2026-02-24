@@ -16,6 +16,14 @@
 
 // Use TrailingType from IStrategy.mqh instead of defining a duplicate enum
 
+// Execution mode for trade manager
+enum ENUM_EXEC_MODE
+  {
+   EXEC_DISABLED = 0,   // No trades allowed (log only)
+   EXEC_ENABLED  = 1,   // Normal execution
+   EXEC_SHADOW   = 2    // Log intent but don't send orders
+  };
+
 class CTradeManager
   {
 private:
@@ -43,6 +51,7 @@ private:
    double            m_lot_size;
    int               m_magic_number;
    CArrayObj         m_trails;           // Array of CTrailConfig objects
+   ENUM_EXEC_MODE    m_exec_mode;        // Execution mode (disabled/enabled/shadow)
 
    // Find trail configuration by symbol - implementation moved to public section
    
@@ -168,7 +177,12 @@ private:
    // Normalize SL/TP relative to current market and stops level. Return via refs.
    void              NormalizeStops(const ENUM_ORDER_TYPE otype, double &entry_price, double &sl, double &tp)
      {
-      double bid=0.0, ask=0.0; SymbolInfoDouble(m_symbol, SYMBOL_BID, bid); SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
+      // Always use a fresh tick snapshot; SymbolInfoDouble can be stale on some brokers/symbols
+      double bid=0.0, ask=0.0;
+      MqlTick tick;
+      if(SymbolInfoTick(m_symbol, tick)) { bid = tick.bid; ask = tick.ask; }
+      if(bid<=0.0) SymbolInfoDouble(m_symbol, SYMBOL_BID, bid);
+      if(ask<=0.0) SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
       double minDist = MinStopDistance(); double frz = FreezeDistance(); double needDist = MathMax(minDist, frz);
       int dg = PriceDigits(); double ts = TickSize();
       // Ensure entry price lies on correct side for pending orders and obeys min distance
@@ -183,38 +197,45 @@ private:
       // Market orders: use current market for distance checks
       if(otype==ORDER_TYPE_BUY || otype==ORDER_TYPE_BUY_LIMIT || otype==ORDER_TYPE_BUY_STOP)
         {
+         // For market BUY, prefer an entry reference if provided to avoid edge cases when bid/ask shift mid-call
+         double refBid = (entry_price>0.0 ? entry_price : bid);
+         double refAsk = (entry_price>0.0 ? entry_price : ask);
          if(sl>0.0)
            {
-            double minSL = bid - needDist; // SL must be below market for BUY
-            if(sl>=bid || (bid - sl) < needDist) sl = RoundToTickBelow(minSL, m_symbol);
+            double minSL = refBid - needDist; // SL must be below market for BUY
+            if(sl>=refBid || (refBid - sl) < needDist) sl = RoundToTickBelow(minSL, m_symbol);
            }
          if(tp>0.0)
            {
-            double minTP = ask + needDist; // TP must be above for BUY
-            if(tp<=ask || (tp - ask) < needDist) tp = RoundToTickAbove(minTP, m_symbol);
+            double minTP = refAsk + needDist; // TP must be above for BUY
+            if(tp<=refAsk || (tp - refAsk) < needDist) tp = RoundToTickAbove(minTP, m_symbol);
            }
         }
       else if(otype==ORDER_TYPE_SELL || otype==ORDER_TYPE_SELL_LIMIT || otype==ORDER_TYPE_SELL_STOP)
         {
+         double refBid = (entry_price>0.0 ? entry_price : bid);
+         double refAsk = (entry_price>0.0 ? entry_price : ask);
          if(sl>0.0)
            {
-            double minSL = ask + needDist; // SL must be above market for SELL
-            if(sl<=ask || (sl - ask) < needDist) sl = RoundToTickAbove(minSL, m_symbol);
+            double minSL = refAsk + needDist; // SL must be above market for SELL
+            if(sl<=refAsk || (sl - refAsk) < needDist) sl = RoundToTickAbove(minSL, m_symbol);
            }
          if(tp>0.0)
            {
-            double minTP = bid - needDist; // TP must be below for SELL
-            if(tp>=bid || (bid - tp) < needDist) tp = RoundToTickBelow(minTP, m_symbol);
+            double minTP = refBid - needDist; // TP must be below for SELL
+            if(tp>=refBid || (refBid - tp) < needDist) tp = RoundToTickBelow(minTP, m_symbol);
            }
         }
-      // Final side sanity: if still invalid (crossed), drop to zero to avoid rejection
+      // Final side sanity: if still invalid (crossed), re-adjust to a valid minimal level instead of dropping to zero
       if(otype==ORDER_TYPE_BUY || otype==ORDER_TYPE_BUY_LIMIT || otype==ORDER_TYPE_BUY_STOP)
         {
-         if(sl>=bid) sl=0.0; if(tp<=ask) tp=0.0;
+         if(sl>0.0 && bid>0.0 && sl>=bid) sl = RoundToTickBelow(bid - needDist, m_symbol);
+         if(tp>0.0 && ask>0.0 && tp<=ask) tp = RoundToTickAbove(ask + needDist, m_symbol);
         }
       else
         {
-         if(sl<=ask) sl=0.0; if(tp>=bid) tp=0.0;
+         if(sl>0.0 && ask>0.0 && sl<=ask) sl = RoundToTickAbove(ask + needDist, m_symbol);
+         if(tp>0.0 && bid>0.0 && tp>=bid) tp = RoundToTickBelow(bid - needDist, m_symbol);
         }
       // Normalize to digits
       if(sl>0.0) sl = NormalizeDouble(RoundToTick(sl), dg);
@@ -314,6 +335,12 @@ public:
                      CTradeManager(string symbol, double lot_size, int magic_number);
                     ~CTradeManager();
 
+   // Execution mode control
+   void              SetExecutionMode(ENUM_EXEC_MODE mode) { m_exec_mode = mode; }
+   ENUM_EXEC_MODE    GetExecutionMode() const { return m_exec_mode; }
+   bool              IsExecutionEnabled() const { return m_exec_mode == EXEC_ENABLED; }
+   bool              IsShadowMode() const { return m_exec_mode == EXEC_SHADOW; }
+
    bool              ExecuteOrder(const TradeOrder &order);
    // Accessors for last trade results
    uint              ResultRetcode();
@@ -337,6 +364,7 @@ CTradeManager::CTradeManager(string symbol, double lot_size, int magic_number)
    m_symbol = symbol;
    m_lot_size = lot_size;
    m_magic_number = magic_number;
+   m_exec_mode = EXEC_ENABLED;  // Default to enabled
    m_trade.SetExpertMagicNumber(m_magic_number);
    m_trade.SetMarginMode();
    m_trails.Clear();
@@ -359,6 +387,23 @@ CTradeManager::~CTradeManager()
 bool CTradeManager::ExecuteOrder(const TradeOrder &order)
   {
    if(order.action == ACTION_NONE) return false;
+   
+   // EXECUTION MODE CHECK
+   if(m_exec_mode == EXEC_DISABLED)
+     {
+      LOG(StringFormat("[EXEC-DISABLED] Order blocked: %s on %s (execution disabled)", EnumToString(order.order_type), m_symbol));
+      return false;
+     }
+   
+   if(m_exec_mode == EXEC_SHADOW)
+     {
+      // Log intent but don't execute
+      LOG(StringFormat("[SHADOW] Would execute: %s %s vol=%.2f price=%.5f sl=%.5f tp=%.5f strategy=%s",
+          EnumToString(order.order_type), m_symbol, order.lots>0.0?order.lots:m_lot_size, 
+          order.price, order.stop_loss, order.take_profit, order.strategy_name));
+      return true; // Shadow mode reports success but doesn't trade
+     }
+   
    bool ok = false;
    if(!EnsureSymbolReady())
      {
@@ -384,6 +429,32 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
       EnsureFallbackStops(order.order_type, entry_px, sl, tp);
       NormalizeStops(order.order_type, entry_px, sl, tp);
      }
+   // If NormalizeStops zeroed one side (e.g., TP ended up on wrong side), recompute deterministically
+   if(sl<=0.0 || tp<=0.0)
+     {
+      double bid=0.0, ask=0.0; SymbolInfoDouble(m_symbol, SYMBOL_BID, bid); SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
+      double needDist = MathMax(MinStopDistance(), FreezeDistance());
+      int dg = PriceDigits();
+      if(order.order_type==ORDER_TYPE_BUY || order.order_type==ORDER_TYPE_BUY_LIMIT || order.order_type==ORDER_TYPE_BUY_STOP)
+        {
+         // BUY: SL must be < bid, TP must be > ask
+         if(sl<=0.0)
+           sl = RoundToTickBelow((bid>0.0 ? bid : entry_px) - MathMax(needDist*2.0, needDist), m_symbol);
+         if(tp<=0.0)
+           tp = RoundToTickAbove((ask>0.0 ? ask : entry_px) + MathMax(needDist*2.0, needDist), m_symbol);
+        }
+      else
+        {
+         // SELL: SL must be > ask, TP must be < bid
+         if(sl<=0.0)
+           sl = RoundToTickAbove((ask>0.0 ? ask : entry_px) + MathMax(needDist*2.0, needDist), m_symbol);
+         if(tp<=0.0)
+           tp = RoundToTickBelow((bid>0.0 ? bid : entry_px) - MathMax(needDist*2.0, needDist), m_symbol);
+        }
+      NormalizeStops(order.order_type, entry_px, sl, tp);
+      if(sl>0.0) sl = NormalizeDouble(sl, dg);
+      if(tp>0.0) tp = NormalizeDouble(tp, dg);
+     }
    // Log final stops state
    if(sl==0.0 || tp==0.0)
      {
@@ -404,7 +475,67 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
       return false; // BLOCK EXECUTION
      }
 
-   int max_attempts = 3;
+   // Margin-aware downscaling: if requested lots cannot be opened, reduce down to min lot/step
+   double vmin=0.0, vmax=0.0, vstep=0.0;
+   SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_MIN, vmin);
+   SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_MAX, vmax);
+   SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_STEP, vstep);
+   if(vstep<=0.0) vstep = (vmin>0.0 ? vmin : 0.01);
+   double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(free_margin > 0.0)
+   {
+      double margin_req = 0.0;
+      // OrderCalcMargin uses the current market for market orders; entry_px is used for pending
+      double margin_price = entry_px;
+      if(margin_price <= 0.0)
+      {
+         double bid=0.0, ask=0.0; SymbolInfoDouble(m_symbol, SYMBOL_BID, bid); SymbolInfoDouble(m_symbol, SYMBOL_ASK, ask);
+         margin_price = (order.order_type==ORDER_TYPE_SELL || order.order_type==ORDER_TYPE_SELL_LIMIT || order.order_type==ORDER_TYPE_SELL_STOP) ? bid : ask;
+      }
+
+      if(OrderCalcMargin(order.order_type, m_symbol, vol, margin_price, margin_req))
+      {
+         if(margin_req > free_margin)
+         {
+            double vol_try = vol;
+            // Step down volume until it fits or we hit min lot
+            while(vol_try > vmin + 1e-12)
+            {
+               double next = MathMax(vmin, vol_try - vstep);
+               next = NormalizeVolume(next);
+               double mr = 0.0;
+               if(!OrderCalcMargin(order.order_type, m_symbol, next, margin_price, mr))
+                  break;
+               vol_try = next;
+               if(mr <= free_margin)
+                  break;
+               if(vol_try <= vmin + 1e-12)
+                  break;
+            }
+
+            double mr_final = 0.0;
+            if(!OrderCalcMargin(order.order_type, m_symbol, vol_try, margin_price, mr_final) || mr_final > free_margin)
+            {
+               LOG(StringFormat("[MARGIN] Cannot open even min lot for %s on %s. free=%.2f required=%.2f lots=%.4f", EnumToString(order.order_type), m_symbol, free_margin, mr_final, vol_try));
+               return false;
+            }
+
+            if(vol_try < vol)
+            {
+               LOG(StringFormat("[MARGIN] Downscaling lots due to free margin: %.4f -> %.4f (free=%.2f req=%.2f)", vol, vol_try, free_margin, mr_final));
+               vol = vol_try;
+            }
+         }
+      }
+      else
+      {
+         LOG(StringFormat("[MARGIN] OrderCalcMargin failed for %s on %s (lots=%.4f price=%.5f err=%d)", EnumToString(order.order_type), m_symbol, vol, margin_price, GetLastError()));
+      }
+   }
+
+   // NON-BLOCKING RETRY: Single attempt only to avoid Sleep on tick path
+   // Retry responsibility moved to caller (OnTimer) or async handling
+   int max_attempts = 1;  // Reduced from 3 to avoid blocking
    int attempt = 0;
    ulong t_start = GetTickCount();
    for(attempt=1; attempt<=max_attempts; ++attempt)
@@ -413,22 +544,22 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
      switch(order.order_type)
      {
       case ORDER_TYPE_BUY:
-         ok = m_trade.Buy(vol, m_symbol, 0, sl, tp);
+         ok = m_trade.Buy(vol, m_symbol, 0, sl, tp, order.strategy_name);
          break;
       case ORDER_TYPE_SELL:
-         ok = m_trade.Sell(vol, m_symbol, 0, sl, tp);
+         ok = m_trade.Sell(vol, m_symbol, 0, sl, tp, order.strategy_name);
          break;
       case ORDER_TYPE_BUY_STOP:
-         ok = m_trade.BuyStop(vol, entry_px, m_symbol, sl, tp);
+         ok = m_trade.BuyStop(vol, entry_px, m_symbol, sl, tp, ORDER_TIME_GTC, 0, order.strategy_name);
          break;
       case ORDER_TYPE_SELL_STOP:
-         ok = m_trade.SellStop(vol, entry_px, m_symbol, sl, tp);
+         ok = m_trade.SellStop(vol, entry_px, m_symbol, sl, tp, ORDER_TIME_GTC, 0, order.strategy_name);
          break;
       case ORDER_TYPE_BUY_LIMIT:
-         ok = m_trade.BuyLimit(vol, entry_px, m_symbol, sl, tp);
+         ok = m_trade.BuyLimit(vol, entry_px, m_symbol, sl, tp, ORDER_TIME_GTC, 0, order.strategy_name);
          break;
       case ORDER_TYPE_SELL_LIMIT:
-         ok = m_trade.SellLimit(vol, entry_px, m_symbol, sl, tp);
+         ok = m_trade.SellLimit(vol, entry_px, m_symbol, sl, tp, ORDER_TIME_GTC, 0, order.strategy_name);
          break;
       default:
         LOG(StringFormat("Unsupported order type in TradeManager: %s", EnumToString(order.order_type)));
@@ -443,15 +574,15 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
      LOG(StringFormat("OrderSend: type=%s symbol=%s lots_req=%.4f lots_used=%.4f override=%s retcode=%u deal=%I64u order=%I64u price=%.5f ok=%s attempt=%d time=%s",
                  EnumToString(order.order_type), m_symbol, vol_in, vol, (lots_overridden?"true":"false"), rc, deal, ord, px, (ok?"true":"false"), attempt, TimeToString(now, TIME_DATE|TIME_SECONDS)));
      if(ok) break;
-     // Only retry on transient errors (requote, busy, timeout, etc.)
+     // Log transient errors but DO NOT Sleep on tick path
      if(rc==10004 || rc==10006 || rc==10007 || rc==10009 || rc==10010 || rc==10013 || rc==10014)
      {
-       LOG(StringFormat("[RETRY] Trade failed with retcode=%u (attempt %d/%d) at %s. Sleeping before retry...", rc, attempt, max_attempts, TimeToString(now, TIME_DATE|TIME_SECONDS)));
-       Sleep(200);
+       LOG(StringFormat("[RETRY-SKIPPED] Trade failed with transient retcode=%u (attempt %d/%d) at %s. Retry deferred to next timer cycle.", rc, attempt, max_attempts, TimeToString(now, TIME_DATE|TIME_SECONDS)));
+       // Sleep(200); // REMOVED: Do not block tick thread
      }
      else
      {
-       LOG(StringFormat("[FAIL] Trade failed with non-retryable retcode=%u at %s. Aborting retries.", rc, TimeToString(now, TIME_DATE|TIME_SECONDS)));
+       LOG(StringFormat("[FAIL] Trade failed with non-retryable retcode=%u at %s.", rc, TimeToString(now, TIME_DATE|TIME_SECONDS)));
        break;
      }
     }
