@@ -11,6 +11,9 @@ onnxmltools>=1.12.0
 onnxconverter-common>=1.12.0
 onnx>=1.12.0
 
+# Production WSGI server (Windows-compatible, pure Python)
+waitress>=2.1.2
+
 # Neurobook optimizations (PyTorch for Python 3.14+ compatibility)
 torch>=2.0.0
 torchvision>=0.15.0
