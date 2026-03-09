@@ -607,6 +607,7 @@ public:
          int atr_handle = iATR(_Symbol, _Period, 14);
          double atr_buf[1];
          double atr = (CopyBuffer(atr_handle, 0, 0, 1, atr_buf) == 1) ? atr_buf[0] : 0;
+         IndicatorRelease(atr_handle);  // FIX: Release ATR handle to prevent leak
          double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
          double vol_pct = (price > 0) ? atr / price : 0;
          
@@ -637,6 +638,7 @@ public:
          int atr_handle2 = iATR(_Symbol, _Period, 14);
          double atr2_buf[1];
          double atr = (CopyBuffer(atr_handle2, 0, 0, 1, atr2_buf) == 1) ? atr2_buf[0] : 0;
+         IndicatorRelease(atr_handle2);  // FIX: Release ATR handle to prevent leak
          double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
          double vol_pct = (price > 0) ? atr / price : 0;
          
@@ -1111,9 +1113,25 @@ public:
          if(m_mode == GATE_MODE_ALL_BYPASS)
             continue;
          
-         // Skip disabled gates (but risk gates G1,G4,G7,G8 always run in normal modes)
-         if(!gate.IsEnabled() && i != 0 && i != 3 && i != 6 && i != 7)
-            continue;
+         // FIX: Explicit mode-based gate skipping
+         if(m_mode == GATE_MODE_RISK_ONLY)
+         {
+            // RISK_ONLY: Only run G1, G4, G7, G8 (indices 0, 3, 6, 7)
+            if(i != 0 && i != 3 && i != 6 && i != 7)
+               continue;  // Skip G2, G3, G5, G6
+         }
+         else if(m_mode == GATE_MODE_FAST)
+         {
+            // FAST: Skip G5, G6 (indices 4, 5)
+            if(i == 4 || i == 5)
+               continue;
+         }
+         else
+         {
+            // Normal mode: Skip disabled gates (but G1,G4,G7,G8 always run)
+            if(!gate.IsEnabled() && i != 0 && i != 3 && i != 6 && i != 7)
+               continue;
+         }
          
          // Check remaining budget before evaluating gate
          ulong elapsed_total_us = GetMicrosecondCount() - start_time;

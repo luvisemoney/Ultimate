@@ -542,7 +542,10 @@ int CModelPredictor::EncodeCategorical(const string field, const string value) c
 double CModelPredictor::Predict(double &features[], int feature_count)
 {
    if(!m_ready)
+   {
+      Log("ERROR: Predict() called but model not ready (m_ready=false)");
       return 0.5;
+   }
 
    int expected = ArraySize(m_feature_names);
    if(feature_count != expected)
@@ -551,36 +554,48 @@ double CModelPredictor::Predict(double &features[], int feature_count)
       return 0.5;
    }
 
-   double output_value = 0.5;
-
-   if(!m_debug_logged && MQLInfoInteger(MQL_TESTER) == 1)
+   // DEBUG: Always log first 8 features to diagnose zero-input issue
+   string feat_str = "ONNX Input features: ";
+   bool has_nonzero = false;
+   for(int i = 0; i < MathMin(8, expected); i++)
    {
-      string sample = "";
-      int lim = (expected < 6 ? expected : 6);
-      for(int i = 0; i < lim; i++)
-      {
-         if(i > 0) sample += ",";
-         sample += DoubleToString(features[i], 6);
-      }
-      Log(StringFormat("DEBUG Predict() raw_feature_sample[%d]=%s", lim, sample));
-      m_debug_logged = true;
+      feat_str += StringFormat("[%d]=%.6f ", i, features[i]);
+      if(MathAbs(features[i]) > 0.0001) has_nonzero = true;
+   }
+   Log(feat_str);
+   
+   if(!has_nonzero)
+   {
+      Log("WARNING: All features are zero or near-zero - model will return neutral");
    }
 
-   // Pass raw features to the DLL; it applies scaling based on the INI config.
-   if(PredictSignal(features, expected, output_value) != 1)
+   double output_value = 0.5;
+
+   // Call DLL prediction
+   int result = PredictSignal(features, expected, output_value);
+   
+   if(result != 1)
    {
       CaptureDllError("PredictSignal");
+      LogError(StringFormat("PredictSignal FAILED with code %d, output=%.6f", result, output_value));
       return 0.5;
    }
 
-   if(!m_debug_probs_logged)
+   // Check for neutral output
+   if(MathAbs(output_value - 0.5) < 0.001)
    {
-      string dbg = GetLastModelError();
-      if(StringFind(dbg, "ONNX DEBUG:") == 0)
-      {
-         Log(dbg);
-         m_debug_probs_logged = true;
-      }
+      Log(StringFormat("WARNING: Model returned neutral (%.6f) - possible model file corruption or zero input", output_value));
+   }
+   else
+   {
+      Log(StringFormat("PredictSignal SUCCESS: output=%.6f", output_value));
+   }
+   
+   // Check GetLastModelError for any debug info from DLL
+   string dbg = GetLastModelError();
+   if(StringLen(dbg) > 0 && dbg != "ONNX DLL not available in Strategy Tester")
+   {
+      Log(StringFormat("DLL status: %s", dbg));
    }
 
    output_value = MathMax(0.0, MathMin(1.0, output_value));
