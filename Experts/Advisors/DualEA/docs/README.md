@@ -5,8 +5,8 @@
 
 **DualEA** is a production-ready, multi-strategy Expert Advisor ecosystem for MetaTrader 5 that combines:
 
-1. **PaperEA_v2** (2793 lines) - Executes real MT5 orders on demo accounts with 8-stage gate filtering, 23 signal generators, ML integration
-2. **LiveEA** (1702 lines) - Real trading implementation with insights/policy gating from PaperEA
+1. **PaperEA_v2** (~4500 lines) - Executes real MT5 orders on demo accounts with 8-stage gate filtering, 23 signal generators, ML integration
+2. **LiveEA** (~1800 lines) - Real trading implementation with insights/policy gating from PaperEA
 3. **ML Pipeline** - Python-based TensorFlow/Keras training with LSTM models and policy export
 4. **Knowledge Base** - Shared CSV/JSON data store in Common Files for cross-system communication
 
@@ -74,10 +74,9 @@ MQL5/
 │           │   ├── CORE_IMPLEMENTATION_PLAN.md
 │           │   ├── DualEA_Handbook.md
 │           │   └── ... (11 more docs)
-│           ├── config/                 # Configuration
-│           │   └── learning_config.json
-│           ├── logs/                   # Log files
-│           ├── results/                # Test results
+│           ├── config/                 # Configuration (runtime-created files)
+│           ├── Examples/               # Example implementations
+│           ├── Tests/                  # Unit and integration tests (12 files)
 │           └── build_*.bat             # Build scripts
 ```
 
@@ -421,10 +420,12 @@ Files produced:
  - `policy.json` (exported by trainer) and `policy.reload` (touch file to trigger hot-reload)
 
 ## Documentation
-- [Phase 3 Plan](docs/Phase3.md)
-- [Policy JSON Schema](docs/PolicySchema.md)
-- [Knowledge Base CSV Schemas](docs/KB-Schemas.md)
-- [Operations Guide](docs/Operations.md)
+- [Phase 3 Plan](Phase3.md) - LiveEA implementation roadmap
+- [Unified System Guide](UnifiedSystemGuide.md) - ConfigManager/EventBus/SystemMonitor
+- [Action Framework](DualEA_Action_Framework.md) - 3×3 red-team process
+- [Policy JSON Schema](PolicySchema.md)
+- [Knowledge Base CSV Schemas](KB-Schemas.md)
+- [Operations Guide](Operations.md)
 
 ## Knowledge Base Schemas
 - `knowledge_base.csv`
