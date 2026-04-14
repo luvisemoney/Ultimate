@@ -48,6 +48,25 @@ private:
    // Performance tracking
    double   m_avg_query_time_ms;
    int      m_slow_query_count;
+
+   string StripBOMText(string s)
+   {
+      if(StringLen(s) <= 0)
+         return s;
+      int c0 = StringGetCharacter(s, 0);
+      if(c0 == 65279) // U+FEFF
+         return StringSubstr(s, 1);
+      if(StringLen(s) >= 3)
+      {
+         int b0 = c0;
+         int b1 = StringGetCharacter(s, 1);
+         int b2 = StringGetCharacter(s, 2);
+         if(b0 == 239 && b1 == 187 && b2 == 191) // EF BB BF
+            return StringSubstr(s, 3);
+      }
+      return s;
+   }
+
    
 public:
    // Constructor
@@ -486,25 +505,6 @@ public:
    {
       if(!m_initialized) return 0;
       
-      // Helper: strip UTF BOMs (UTF-8 BOM bytes or U+FEFF) that can break header/field parsing
-      auto StripBOM = [](string s)
-      {
-         if(StringLen(s) <= 0)
-            return s;
-         int c0 = StringGetCharacter(s, 0);
-         if(c0 == 65279) // U+FEFF
-            return StringSubstr(s, 1);
-         if(StringLen(s) >= 3)
-         {
-            int b0 = c0;
-            int b1 = StringGetCharacter(s, 1);
-            int b2 = StringGetCharacter(s, 2);
-            if(b0 == 239 && b1 == 187 && b2 == 191) // EF BB BF
-               return StringSubstr(s, 3);
-         }
-         return s;
-      };
-      
       string rel_dir = "DualEA\\trades\\";
       string full_dir = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + rel_dir;
       PrintFormat("[SQLiteKB] Checking for consolidated trades CSV files in: %s", full_dir);
@@ -603,7 +603,7 @@ public:
             if(line == "") continue;
             
             // Strip BOM if present (common with UTF-16/UTF-8 exports)
-            line = StripBOM(line);
+            line = StripBOMText(line);
 
             // Skip header line (starts with "timestamp")
             if(line_num == 1 && (StringFind(line, "timestamp") == 0 || StringFind(line, "Timestamp") == 0))
@@ -637,7 +637,7 @@ public:
             
             // Trim fields + strip BOM on first field
             for(int f=0; f<5; f++) { StringTrimLeft(fields[f]); StringTrimRight(fields[f]); }
-            fields[0] = StripBOM(fields[0]);
+            fields[0] = StripBOMText(fields[0]);
 
             string ts = fields[0];
             string strat = fields[1];
@@ -715,25 +715,6 @@ public:
       
       PrintFormat("[SQLiteKB] Importing historical data from CSV: %s", csv_path);
 
-      // Helper: strip UTF BOMs (UTF-8 BOM bytes or U+FEFF) that can break header/field parsing
-      auto StripBOM = [](string s)
-      {
-         if(StringLen(s) <= 0)
-            return s;
-         int c0 = StringGetCharacter(s, 0);
-         if(c0 == 65279) // U+FEFF
-            return StringSubstr(s, 1);
-         if(StringLen(s) >= 3)
-         {
-            int b0 = c0;
-            int b1 = StringGetCharacter(s, 1);
-            int b2 = StringGetCharacter(s, 2);
-            if(b0 == 239 && b1 == 187 && b2 == 191) // EF BB BF
-               return StringSubstr(s, 3);
-         }
-         return s;
-      };
-
       // knowledge_base.csv is stored in Common Files under DualEA\knowledge_base.csv.
       // If an absolute path is passed in, convert to the FILE_COMMON relative form.
       string open_path = csv_path;
@@ -758,7 +739,7 @@ public:
          if(col == "" && FileIsEnding(file_handle)) break;
          int n = ArraySize(headers);
          ArrayResize(headers, n + 1);
-         headers[n] = StripBOM(col);
+         headers[n] = StripBOMText(col);
          header_count++;
          if(FileIsLineEnding(file_handle)) break;
       }
@@ -829,8 +810,8 @@ public:
          STradeRecord trade;
          trade.symbol = (col_symbol >= 0 && col_symbol < field_count) ? fields[col_symbol] : "";
          trade.strategy = (col_strategy >= 0 && col_strategy < field_count) ? fields[col_strategy] : "";
-         trade.symbol = StripBOM(trade.symbol);
-         trade.strategy = StripBOM(trade.strategy);
+         trade.symbol = StripBOMText(trade.symbol);
+         trade.strategy = StripBOMText(trade.strategy);
          if(trade.symbol == "" || trade.strategy == "") continue;
 
          if(col_order_type >= 0 && col_order_type < field_count) trade.order_type = (int)StringToInteger(fields[col_order_type]);
