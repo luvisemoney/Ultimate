@@ -5,6 +5,7 @@
 #ifndef __STRATEGY_SIGNAL_GENERATORS_MQH__
 #define __STRATEGY_SIGNAL_GENERATORS_MQH__
 
+#include "IStrategy.mqh"
 #include "GateManager.mqh"
 
 //+------------------------------------------------------------------+
