@@ -3,7 +3,7 @@
 //| Unit test for CSessionManager                                    |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
-#include "..\\Include\\SessionManager.mqh"
+#include "../Include/SessionManager.mqh"
 
 input int Verbosity = 2;
 

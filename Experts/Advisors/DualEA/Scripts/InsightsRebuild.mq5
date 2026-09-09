@@ -6,7 +6,7 @@
 #property strict
 // #property script_show_inputs // disabled for headless runs (kb_check)
 
-#include "..\\Include\\KnowledgeBase.mqh"
+#include "../Include/KnowledgeBase.mqh"
 
 input string InKBPath       = "DualEA\\knowledge_base.csv";  // FILE_COMMON path
 input string InFeaturesPath = "DualEA\\features.csv";        // FILE_COMMON path

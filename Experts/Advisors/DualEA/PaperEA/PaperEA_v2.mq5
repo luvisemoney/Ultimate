@@ -9,12 +9,12 @@
 //| INCLUDES - COMPREHENSIVE MODULE INTEGRATION                     |
 //+------------------------------------------------------------------+
 // NEW: Auto-learning gate system (replaces old GateManager/GateRegistry)
-#include "..\Include\GateSystemAutoLearning.mqh"
+#include "../Include/GateSystemAutoLearning.mqh"
 
 // Core Services
-#include "..\Include\KnowledgeBase.mqh"
-#include "..\Include\TradeManager.mqh"
-#include "..\Include\PolicyEngine.mqh"
+#include "../Include/KnowledgeBase.mqh"
+#include "../Include/TradeManager.mqh"
+#include "../Include/PolicyEngine.mqh"
 
 // Telemetry System
 #include "../Include/Telemetry.mqh"
@@ -24,18 +24,18 @@
 #include "../Include/VolatilitySizer.mqh"
 
 // Centralized gate orchestration macros
-#include "..\\Include\\GatingPipeline.mqh"
+#include "../Include/GatingPipeline.mqh"
 
 // Adaptive Signal Optimization System
-#include "..\Include\AdaptiveSignalOptimizer.mqh"
-#include "..\Include\PolicyUpdater.mqh"
-#include "..\Include\PositionReviewer.mqh"
-#include "..\Include\GateLearningSystem.mqh"
-#include "..\Include\UnifiedTradeLogger.mqh"
+#include "../Include/AdaptiveSignalOptimizer.mqh"
+#include "../Include/PolicyUpdater.mqh"
+#include "../Include/PositionReviewer.mqh"
+#include "../Include/GateLearningSystem.mqh"
+#include "../Include/UnifiedTradeLogger.mqh"
 
 // Unified System Components
-#include "..\Include\ConfigManager.mqh"
-#include "..\Include\EventBus.mqh"
+#include "../Include/ConfigManager.mqh"
+#include "../Include/EventBus.mqh"
 
 // Standard Libraries
 #include <Arrays/ArrayObj.mqh>
@@ -71,7 +71,7 @@
 #endif
 
 // Advanced Regime Detection
-#include "..\\Include\\AdvancedRegimeDetector.mqh"
+#include "../Include/AdvancedRegimeDetector.mqh"
 
 // Nuclear-Grade 100-Level Optimization
 #include "NuclearOptimization.mqh"
@@ -80,32 +80,32 @@
 #include "regime_adaptation.mqh"
 
 // Position management
-#include "..\\Include\\ModelPredictor.mqh"
+#include "../Include/ModelPredictor.mqh"
 
 // Policy hot-reload bridge
-#include "..\\Include\\PolicyHttpBridge.mqh"
+#include "../Include/PolicyHttpBridge.mqh"
 
 // Strategy Implementations - Per-asset registry (internally includes concrete strategy headers)
-#include "..\\Include\\Strategies\\AssetRegistry.mqh"
+#include "../Include/Strategies\\AssetRegistry.mqh"
 
 // Strategy selector
-#include "..\Include\StrategySelector.mqh"
+#include "../Include/StrategySelector.mqh"
 
 // P0/P1 COMPREHENSIVE HARDENING & INTELLIGENCE UPGRADE
-#include "..\Include\DualEA_MasterIntegration.mqh"
+#include "../Include/DualEA_MasterIntegration.mqh"
 
 // P0-P5 ADVANCED HARDENING & INTELLIGENCE INTEGRATION
-#include "..\Include\PaperEA_v2_P0P5_Integration.mqh"
+#include "../Include/PaperEA_v2_P0P5_Integration.mqh"
 
 // Additional components referenced by PaperEA_v2
-#include "..\Include\CGateAudit.mqh"
-#include "..\Include\CInsightsRealtime.mqh"
+#include "../Include/CGateAudit.mqh"
+#include "../Include/CInsightsRealtime.mqh"
 
 // Learning and Export Systems - Using file-based export for strategy tester compatibility
-#include "..\Include\LearningBridge.mqh"
-#include "..\Include\FileBasedFeatureExport.mqh"  // Replaces DLL-based export
-#include "..\Include\StrategySignalGenerators.mqh"  // Extensible strategy signal generators
-#include "..\Include\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
+#include "../Include/LearningBridge.mqh"
+#include "../Include/FileBasedFeatureExport.mqh"  // Replaces DLL-based export
+#include "../Include/StrategySignalGenerators.mqh"  // Extensible strategy signal generators
+#include "../Include/IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 
 // ===================[ EFFICIENT GATE SYSTEM CONFIGURATION ]===================
 input group "=== EFFICIENT 8-STAGE GATE SYSTEM ==="

@@ -1,8 +1,8 @@
 //+------------------------------------------------------------------+
 //| regime_adaptation.mqh                                            |
 //| Regime-based parameter adaptation functions for PaperEA_v2       |
-#include "..\\Include\\AdvancedRegimeDetector.mqh"
-#include "..\\Include\\CorrelationManager.mqh"
+#include "../Include/AdvancedRegimeDetector.mqh"
+#include "../Include/CorrelationManager.mqh"
 
 
 //+------------------------------------------------------------------+

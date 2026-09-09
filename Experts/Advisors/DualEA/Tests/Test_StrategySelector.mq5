@@ -3,7 +3,7 @@
 //| Unit test for CStrategySelector                                  |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
-#include "..\\Include\\StrategySelector.mqh"
+#include "../Include/StrategySelector.mqh"
 
 input int Verbosity = 2;
 

@@ -3,15 +3,15 @@
 //| System-level E2E test: full pipeline, logging, export, errors    |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
-#include "..\\Include\\IStrategy.mqh"
-#include "..\\Include\\GateManager.mqh"
-#include "..\\Include\\SessionManager.mqh"
-#include "..\\Include\\CorrelationManager.mqh"
-#include "..\\Include\\VolatilitySizer.mqh"
-#include "..\\Include\\LearningBridge.mqh"
-#include "..\\Include\\KnowledgeBase.mqh"
-#include "..\\Include\\PolicyEngine.mqh"
-#include "..\\Include\\StrategySelector.mqh"
+#include "../Include/IStrategy.mqh"
+#include "../Include/GateManager.mqh"
+#include "../Include/SessionManager.mqh"
+#include "../Include/CorrelationManager.mqh"
+#include "../Include/VolatilitySizer.mqh"
+#include "../Include/LearningBridge.mqh"
+#include "../Include/KnowledgeBase.mqh"
+#include "../Include/PolicyEngine.mqh"
+#include "../Include/StrategySelector.mqh"
 
 input int Verbosity = 2;
 

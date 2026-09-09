@@ -3,7 +3,7 @@
 //| Unit test for CCorrelationManager                                |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
-#include "..\\Include\\CorrelationManager.mqh"
+#include "../Include/CorrelationManager.mqh"
 
 input int Verbosity = 2;
 
