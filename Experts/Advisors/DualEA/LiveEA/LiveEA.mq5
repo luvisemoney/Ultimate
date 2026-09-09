@@ -10,18 +10,18 @@
 //| INCLUDES                                                         |
 //+------------------------------------------------------------------+
 // New Architecture: Auto-learning gate system (unified with PaperEA)
-#include "..\Include\GateSystemAutoLearning.mqh"
+#include "../Include/GateSystemAutoLearning.mqh"
 
-#include "..\Include\IStrategy.mqh"
-#include "..\Include\CPositionManager.mqh"
-#include "..\Include\TradeManager.mqh"
-#include "..\Include\Telemetry.mqh"
-#include "..\Include\TelemetryStandard.mqh"
-#include "..\Include\SessionManager.mqh"
-#include "..\Include\CorrelationManager.mqh"
-#include "..\Include\VolatilitySizer.mqh"
-#include "..\Include\InsightsLoader.mqh"
-#include "..\Include\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
+#include "../Include/IStrategy.mqh"
+#include "../Include/CPositionManager.mqh"
+#include "../Include/TradeManager.mqh"
+#include "../Include/Telemetry.mqh"
+#include "../Include/TelemetryStandard.mqh"
+#include "../Include/SessionManager.mqh"
+#include "../Include/CorrelationManager.mqh"
+#include "../Include/VolatilitySizer.mqh"
+#include "../Include/InsightsLoader.mqh"
+#include "../Include/IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 #include "LiveEA_StrategyBridge.mqh"
 
 // Undefine logging macros from included headers to avoid clashes with LogLevel enum
@@ -156,8 +156,7 @@ CTelemetryStandard* g_tel_standard = NULL;
 CSessionManager* g_session_manager = NULL;
 CCorrelationManager* g_correlation_manager = NULL;
 CVolatilitySizer* g_volatility_sizer = NULL;
-// g_position_manager and g_insight_engine are defined in their respective modules
-// CPositionManager* g_position_manager;
+CPositionManager* g_position_manager = NULL;  // Defined in CPositionManager.mqh as extern
 // CIncrementalInsightEngine* g_insight_engine;
 bool              g_eval_busy        = false;
 datetime          g_last_trade_placed= 0;

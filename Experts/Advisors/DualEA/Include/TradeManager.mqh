@@ -11,7 +11,7 @@
 #include <Arrays\ArrayObj.mqh>
 #include <Object.mqh>
 #include "IStrategy.mqh"
-#include "..\Include\Indicators\ATR.mqh"
+#include "../Include/Indicators\ATR.mqh"
 #include "LogMiddleware.mqh"
 
 // Use TrailingType from IStrategy.mqh instead of defining a duplicate enum

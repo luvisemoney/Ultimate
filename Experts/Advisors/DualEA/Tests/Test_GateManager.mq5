@@ -3,9 +3,9 @@
 //| Unit test for CGateManager                                      |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
-#include "..\\Include\\IStrategy.mqh"
-#include "..\\Include\\GateManager.mqh"
-#include "..\\Include\\LearningBridge.mqh"
+#include "../Include/IStrategy.mqh"
+#include "../Include/GateManager.mqh"
+#include "../Include/LearningBridge.mqh"
 
 input int Verbosity = 2;
 

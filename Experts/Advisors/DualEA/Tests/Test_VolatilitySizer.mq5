@@ -3,7 +3,7 @@
 //| Unit test for CVolatilitySizer                                   |
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
-#include "..\\Include\\VolatilitySizer.mqh"
+#include "../Include/VolatilitySizer.mqh"
 
 input int Verbosity = 2;
 
