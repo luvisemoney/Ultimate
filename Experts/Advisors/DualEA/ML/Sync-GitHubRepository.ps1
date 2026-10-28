@@ -31,6 +31,10 @@ function Publish-File([string]$Source,[string]$Relative){
  if($item.Extension -notin @('.onnx','.png')){
   $content=[IO.File]::ReadAllText($Source)
   if($content -match 'gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'){throw ('Credential signature in '+$Relative)}
+  foreach($match in [regex]::Matches($content,'(?im)(?:password|passwd|api_key|access_token|private_key)\s*[:=]\s*["'']([^"''\r\n]{8,})["'']')){
+   if($match.Groups[1].Value -notmatch '^(?:YOUR_|REPLACE_|EXAMPLE|CHANGEME|\$|<|os\.|process\.|env:|test|placeholder)'){throw ('Review possible embedded credential in '+$Relative)}
+  }
+  if($item.Extension -eq '.set' -and $content -match '(?im)^\w*(?:password|passwd|api_key|access_token)\s*=\s*\S+'){throw ('Credential input in '+$Relative)}
  }
  $destination=Join-Path $Checkout $Relative
  New-Item -ItemType Directory -Force -Path (Split-Path $destination)|Out-Null

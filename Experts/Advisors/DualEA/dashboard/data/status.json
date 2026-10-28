@@ -1,6 +1,6 @@
 {
     "schema_version":  1,
-    "exported_utc":  "2026-10-28T18:34:23.1682213Z",
+    "exported_utc":  "2026-10-28T18:53:41.0093679Z",
     "mode":  "STATIC_SNAPSHOT",
     "model":  {
                   "verification":  {
@@ -236,7 +236,7 @@
                                    "equity_drawdown_pct":  0.1494,
                                    "wins":  2,
                                    "generated_signals":  57,
-                                   "ea_sha256":  "2d3a30f0be6fcf9cbe46c4b7e180e88aa46eb40c85767626252cbc44c9c6871e"
+                                   "ea_sha256":  "13a66406e81b370002487ce56a5859b4e2acaadb92db2a46555f87531a4e7f92"
                                },
                                {
                                    "symbol":  "EURUSD",
@@ -246,7 +246,7 @@
                                    "equity_drawdown_pct":  0.1756,
                                    "wins":  5,
                                    "generated_signals":  51,
-                                   "ea_sha256":  "2d3a30f0be6fcf9cbe46c4b7e180e88aa46eb40c85767626252cbc44c9c6871e"
+                                   "ea_sha256":  "13a66406e81b370002487ce56a5859b4e2acaadb92db2a46555f87531a4e7f92"
                                },
                                {
                                    "symbol":  "XAUUSD",
@@ -256,7 +256,7 @@
                                    "equity_drawdown_pct":  3.3436,
                                    "wins":  1,
                                    "generated_signals":  56,
-                                   "ea_sha256":  "2d3a30f0be6fcf9cbe46c4b7e180e88aa46eb40c85767626252cbc44c9c6871e"
+                                   "ea_sha256":  "13a66406e81b370002487ce56a5859b4e2acaadb92db2a46555f87531a4e7f92"
                                }
                            ]
               },
@@ -341,7 +341,7 @@
     "news":  [
                  {
                      "id":  "df496099d22cf769e8031404911fff9ebd4dabb92e0dab3e63b7b6b7ab9e4e7e",
-                     "observed_utc":  1793212357,
+                     "observed_utc":  1793213587,
                      "published_utc":  1793180840,
                      "expires_utc":  1793224040,
                      "target":  "CAD",
@@ -353,7 +353,7 @@
                  },
                  {
                      "id":  "a4e689c4183895f02bf3b32efe4d562d47a9d795a6b9389577f71b6e1b7e7379",
-                     "observed_utc":  1793212357,
+                     "observed_utc":  1793213587,
                      "published_utc":  1793180794,
                      "expires_utc":  1793223994,
                      "target":  "CAD",
@@ -365,7 +365,7 @@
                  },
                  {
                      "id":  "0698b5424bb53ec1dd061bda84b99cfb01021637793d753317562d2709b1180d",
-                     "observed_utc":  1793212357,
+                     "observed_utc":  1793213587,
                      "published_utc":  1793180735,
                      "expires_utc":  1793223935,
                      "target":  "CAD",
@@ -377,7 +377,7 @@
                  },
                  {
                      "id":  "a0c3e1be77e8b5a27f797ac2698e8181f11f02e52a904b55b7ef35c0555dc710",
-                     "observed_utc":  1793212357,
+                     "observed_utc":  1793213587,
                      "published_utc":  1793210400,
                      "expires_utc":  1793253600,
                      "target":  "USD",
@@ -388,8 +388,56 @@
                      "method":  "headline_policy_lexicon_v1"
                  },
                  {
+                     "id":  "ff_news_1433795",
+                     "observed_utc":  1793213580,
+                     "published_utc":  1793213538,
+                     "expires_utc":  1793256738,
+                     "target":  "USD",
+                     "rule_score":  0,
+                     "impact":  3,
+                     "source_url":  "https://www.forexfactory.com/news/1433795-feds-warsh-there-is-no-soft-inflation-target",
+                     "headline":  "Fed\u0027s Warsh: There is no soft inflation target",
+                     "method":  "headline_policy_lexicon_v1"
+                 },
+                 {
+                     "id":  "ff_news_1433789",
+                     "observed_utc":  1793213580,
+                     "published_utc":  1793212882,
+                     "expires_utc":  1793256082,
+                     "target":  "USD",
+                     "rule_score":  0,
+                     "impact":  3,
+                     "source_url":  "https://www.forexfactory.com/news/1433789-feds-warsh-the-fed-has-put-in-place",
+                     "headline":  "Fed\u0027s Warsh: The Fed has put in place \u0027new monetary medicine\u0027",
+                     "method":  "headline_policy_lexicon_v1"
+                 },
+                 {
+                     "id":  "ff_news_1433786",
+                     "observed_utc":  1793213580,
+                     "published_utc":  1793213487,
+                     "expires_utc":  1793256687,
+                     "target":  "USD",
+                     "rule_score":  0,
+                     "impact":  3,
+                     "source_url":  "https://www.forexfactory.com/news/1433786-feds-warsh-made-clear-our-readiness-to-act",
+                     "headline":  "Fed\u0027s Warsh: Made Clear Our Readiness To Act",
+                     "method":  "headline_policy_lexicon_v1"
+                 },
+                 {
+                     "id":  "ff_news_1433784",
+                     "observed_utc":  1793213580,
+                     "published_utc":  1793212353,
+                     "expires_utc":  1793255553,
+                     "target":  "USD",
+                     "rule_score":  0,
+                     "impact":  3,
+                     "source_url":  "https://www.forexfactory.com/news/1433784-feds-chair-warsh-inflation-remains-elevated",
+                     "headline":  "Fed\u0027s Chair Warsh: Inflation remains elevated",
+                     "method":  "headline_policy_lexicon_v1"
+                 },
+                 {
                      "id":  "ff_news_1433783",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793211336,
                      "expires_utc":  1793254536,
                      "target":  "USD",
@@ -401,9 +449,9 @@
                  },
                  {
                      "id":  "ff_news_1433779",
-                     "observed_utc":  1793212350,
-                     "published_utc":  1793212088,
-                     "expires_utc":  1793255288,
+                     "observed_utc":  1793213580,
+                     "published_utc":  1793210430,
+                     "expires_utc":  1793253630,
                      "target":  "USD",
                      "rule_score":  0,
                      "impact":  3,
@@ -413,7 +461,7 @@
                  },
                  {
                      "id":  "ff_news_1433774",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793205175,
                      "expires_utc":  1793248375,
                      "target":  "USD",
@@ -425,7 +473,7 @@
                  },
                  {
                      "id":  "ff_news_1433742",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793199955,
                      "expires_utc":  1793243155,
                      "target":  "NZD",
@@ -437,7 +485,7 @@
                  },
                  {
                      "id":  "ff_news_1433748",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793199423,
                      "expires_utc":  1793242623,
                      "target":  "CAD",
@@ -449,7 +497,7 @@
                  },
                  {
                      "id":  "ff_news_1433747",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793198672,
                      "expires_utc":  1793241872,
                      "target":  "CAD",
@@ -461,7 +509,7 @@
                  },
                  {
                      "id":  "ff_news_1433735",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793197526,
                      "expires_utc":  1793240726,
                      "target":  "CAD",
@@ -473,7 +521,7 @@
                  },
                  {
                      "id":  "ff_news_1433737",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793196981,
                      "expires_utc":  1793240181,
                      "target":  "GBP",
@@ -485,7 +533,7 @@
                  },
                  {
                      "id":  "ff_news_1433733",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793195127,
                      "expires_utc":  1793238327,
                      "target":  "CAD",
@@ -497,7 +545,7 @@
                  },
                  {
                      "id":  "ff_news_1433741",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793195113,
                      "expires_utc":  1793238313,
                      "target":  "CAD",
@@ -509,7 +557,7 @@
                  },
                  {
                      "id":  "ff_news_1433726",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793192930,
                      "expires_utc":  1793236130,
                      "target":  "USD",
@@ -521,7 +569,7 @@
                  },
                  {
                      "id":  "ff_news_1433726",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793192930,
                      "expires_utc":  1793236130,
                      "target":  "SYMBOL:XAUUSD",
@@ -533,7 +581,7 @@
                  },
                  {
                      "id":  "ff_news_1433717",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793187047,
                      "expires_utc":  1793230247,
                      "target":  "USD",
@@ -545,7 +593,7 @@
                  },
                  {
                      "id":  "ff_news_1433717",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793187047,
                      "expires_utc":  1793230247,
                      "target":  "CAD",
@@ -557,7 +605,7 @@
                  },
                  {
                      "id":  "ff_news_1433717",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793187047,
                      "expires_utc":  1793230247,
                      "target":  "NZD",
@@ -569,7 +617,7 @@
                  },
                  {
                      "id":  "ff_news_1433704",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793180322,
                      "expires_utc":  1793223522,
                      "target":  "USD",
@@ -581,7 +629,7 @@
                  },
                  {
                      "id":  "ff_news_1433704",
-                     "observed_utc":  1793212350,
+                     "observed_utc":  1793213580,
                      "published_utc":  1793180322,
                      "expires_utc":  1793223522,
                      "target":  "JPY",
@@ -589,18 +637,6 @@
                      "impact":  0,
                      "source_url":  "https://www.forexfactory.com/news/1433704-usdjpy-dollar-bulls-eye-159-ahead-of-fed",
                      "headline":  "USD/JPY: Dollar Bulls Eye 159 Ahead of Fed and BoJ",
-                     "method":  "headline_policy_lexicon_v1"
-                 },
-                 {
-                     "id":  "ff_news_1433684",
-                     "observed_utc":  1793212350,
-                     "published_utc":  1793174650,
-                     "expires_utc":  1793217850,
-                     "target":  "USD",
-                     "rule_score":  0,
-                     "impact":  0,
-                     "source_url":  "https://www.forexfactory.com/news/1433684-fed-rate-decision-in-focus-as-currencies-react",
-                     "headline":  "Fed Rate Decision in Focus as Currencies React to Inflation and Policy Divergence",
                      "method":  "headline_policy_lexicon_v1"
                  }
              ],
@@ -617,7 +653,7 @@
                                                "verified_utc":  "2026-10-28T18:03:15.3254211Z"
                                            },
                           "collector":  {
-                                            "attempted_utc":  "2026-10-28T18:32:24.6233392Z",
+                                            "attempted_utc":  "2026-10-28T18:52:54.5112990Z",
                                             "status":  "OK",
                                             "channels":  [
                                                              {
@@ -630,13 +666,13 @@
                                                                  "source":  "https://www.forexfactory.com/news",
                                                                  "status":  "OK",
                                                                  "channel":  "news",
-                                                                 "rows":  34
+                                                                 "rows":  35
                                                              },
                                                              {
                                                                  "source":  "https://www.forexfactory.com/forums",
                                                                  "status":  "OK",
                                                                  "channel":  "forums",
-                                                                 "rows":  14
+                                                                 "rows":  15
                                                              },
                                                              {
                                                                  "source":  "https://www.forexfactory.com/trades",
@@ -645,7 +681,7 @@
                                                                  "rows":  48
                                                              }
                                                          ],
-                                            "news_context_rows":  18
+                                            "news_context_rows":  21
                                         },
                           "publication_note":  "Forum opinions and public trade returns are collected locally, not published as labels."
                       },
@@ -668,7 +704,7 @@
                     {
                         "source":  "forex_factory_browser",
                         "fetch":  "CACHED",
-                        "rows":  18
+                        "rows":  21
                     }
                 ],
     "limitations":  [
@@ -676,5 +712,6 @@
                         "The separate ONNX benchmark is not the full EA.",
                         "Costs include explicit sensitivity assumptions; they are not broker quotations.",
                         "Static publication does not keep MT5 running when its computer is off."
-                    ]
+                    ],
+    "source_fingerprint":  "e1ec193e4e306a6d3309377a45b1911993252f83a5aecdb7957b0d1c54f0bb18"
 }

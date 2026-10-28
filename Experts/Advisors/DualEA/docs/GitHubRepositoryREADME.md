@@ -32,11 +32,15 @@ From the terminal's `MQL5/Experts` directory, after GitHub authentication:
 .\Advisors\DualEA\ML\Sync-GitHubRepository.ps1 -Push
 # Optional bounded automatic synchronization, five-minute cadence for one hour.
 .\Advisors\DualEA\ML\Watch-GitHubSync.ps1 -DurationMinutes 60
+# Install automatic synchronization at logon and every five minutes.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Advisors\DualEA\ML\Install-GitHubAutoSync.ps1
 ```
 
 The checkout defaults to `.publish/Ultimate`; clone this repository there before first use. The publisher excludes terminal accounts, browser profiles, environments, compiled executables, raw tester logs and bulk training data. Review any custom configuration before publishing a public repository. Previously committed content remains in Git history; deleting it from the current index does not erase history.
 
-Run `ML/Export-DashboardSnapshot.ps1` explicitly to update public aggregate results from local evidence. It exports a real policy snapshot, not invented probabilities. Automatic source synchronization does not silently publish new private terminal data.
+The auto-sync entry point exports allowlisted public aggregate results and the real policy snapshot before synchronizing source. Unchanged snapshots do not generate timestamp-only commits. It does not publish raw account, browser or trade-ledger files. Stop the scheduled job with `Unregister-ScheduledTask -TaskName DualEA-GitHubSourceSync -Confirm:$false`, or run the installer with `-Remove`. Windows Task Scheduler history exposes failures; GitHub Actions logs expose deployment failures.
+
+Existing tracked files are preserved by default, including old generated content. The new ignore rules prevent adding more of it. Removing already tracked environments or terminal state is a separate cleanup; this update does not erase existing files or Git history.
 
 ## Hosting limits
 

@@ -52,6 +52,14 @@ $policyText=[IO.File]::ReadAllText($policyPath)
 if($policyText -match '(?i)"(?:password|passwd|api_key|access_token|private_key|account_number|account_id|login)"\s*:'){throw 'Policy contains private fields; refusing public publication'}
 $policy=$policyText|ConvertFrom-Json
 if(!$policy.policies -and !$policy.slices){throw 'Policy has no actual policies or slices'}
+$data.exported_utc=$null
+$fingerprintInput=($data|ConvertTo-Json -Depth 15 -Compress)+(Get-FileHash -LiteralPath $policyPath -Algorithm SHA256).Hash
+$hasher=[Security.Cryptography.SHA256]::Create()
+try{$fingerprint=([BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($fingerprintInput)))).Replace('-','').ToLowerInvariant()}finally{$hasher.Dispose()}
+$previous=Read-OptionalJson (Join-Path $OutputDirectory 'data\status.json')
+if($previous -and $previous.source_fingerprint -eq $fingerprint){Write-Output 'Dashboard snapshot unchanged';return}
+$data.exported_utc=[DateTime]::UtcNow.ToString('o')
+$data.source_fingerprint=$fingerprint
 $policy|Add-Member -NotePropertyName snapshot_meta -NotePropertyValue ([ordered]@{exported_utc=$data.exported_utc;source_modified_utc=(Get-Item -LiteralPath $policyPath).LastWriteTimeUtc.ToString('o');source_sha256=(Get-FileHash -LiteralPath $policyPath -Algorithm SHA256).Hash.ToLowerInvariant();execution='MT5_ONLY';probabilities='POLICY_VALUES_NOT_CALIBRATED_MODEL_PROOF'}) -Force
 Write-PublicJson (Join-Path $OutputDirectory 'policy.json') $policy
 Write-PublicJson (Join-Path $OutputDirectory 'data\status.json') $data
