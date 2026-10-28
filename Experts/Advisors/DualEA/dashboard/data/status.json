@@ -1,6 +1,6 @@
 {
     "schema_version":  1,
-    "exported_utc":  "2026-10-28T20:50:22.7073780Z",
+    "exported_utc":  "2026-10-28T21:01:05.0444317Z",
     "mode":  "STATIC_SNAPSHOT",
     "model":  {
                   "verification":  {
@@ -795,5 +795,5 @@
                         "Costs include explicit sensitivity assumptions; they are not broker quotations.",
                         "Static publication does not keep MT5 running when its computer is off."
                     ],
-    "source_fingerprint":  "cfbb94dcb5b46d5315c9f77f2d28420d8ae2e6acd27fddc098519ddc2ecd5e4d"
+    "source_fingerprint":  "d06398da8bd83388827af5865ccdff81a4d88971a624f9b1e0e23f4e51523379"
 }

@@ -1,7 +1,7 @@
 {
     "version":  "1.0.2",
     "schema_version":  "2.0",
-    "last_updated":  "2026.10.28 20:27",
+    "last_updated":  "2026.10.28 23:58",
     "total_policies":  144,
     "write_mode":  "atomic",
     "policies":  [
@@ -17,10 +17,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -34,10 +34,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -51,10 +51,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -68,10 +68,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -85,10 +85,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -102,10 +102,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -119,10 +119,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -136,10 +136,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -153,10 +153,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -170,10 +170,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -187,10 +187,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -204,10 +204,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -221,10 +221,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -238,10 +238,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -255,10 +255,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -272,10 +272,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -289,10 +289,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MovingAverageStrategy",
@@ -306,10 +306,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -323,10 +323,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -340,10 +340,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -357,10 +357,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -374,10 +374,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -391,10 +391,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -408,10 +408,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -425,10 +425,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -442,10 +442,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -459,10 +459,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -476,10 +476,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -493,10 +493,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -510,10 +510,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -527,10 +527,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -544,10 +544,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -561,10 +561,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -578,10 +578,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -595,10 +595,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "ADXStrategy",
@@ -612,10 +612,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -629,10 +629,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -646,10 +646,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -663,10 +663,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -680,10 +680,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -697,10 +697,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -714,10 +714,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -731,10 +731,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -748,10 +748,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -765,10 +765,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -782,10 +782,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -799,10 +799,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -816,10 +816,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -833,10 +833,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -850,10 +850,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -867,10 +867,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -884,10 +884,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -901,10 +901,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "RSIStrategy",
@@ -918,10 +918,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -935,10 +935,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -952,10 +952,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -969,10 +969,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -986,10 +986,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1003,10 +1003,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1020,10 +1020,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1037,10 +1037,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1054,10 +1054,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1071,10 +1071,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1088,10 +1088,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1105,10 +1105,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1122,10 +1122,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1139,10 +1139,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1156,10 +1156,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1173,10 +1173,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1190,10 +1190,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1207,10 +1207,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "BollingerBandsStrategy",
@@ -1224,10 +1224,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1241,10 +1241,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1258,10 +1258,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1275,10 +1275,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1292,10 +1292,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1309,10 +1309,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1326,10 +1326,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1343,10 +1343,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1360,10 +1360,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1377,10 +1377,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1394,10 +1394,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1411,10 +1411,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1428,10 +1428,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1445,10 +1445,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1462,10 +1462,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1479,10 +1479,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1496,10 +1496,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1513,10 +1513,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MACDStrategy",
@@ -1530,10 +1530,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1547,10 +1547,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1564,10 +1564,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1581,10 +1581,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1598,10 +1598,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1615,10 +1615,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1632,10 +1632,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1649,10 +1649,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1666,10 +1666,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1683,10 +1683,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1700,10 +1700,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1717,10 +1717,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1734,10 +1734,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1751,10 +1751,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1768,10 +1768,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1785,10 +1785,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1802,10 +1802,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1819,10 +1819,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "StochasticStrategy",
@@ -1836,10 +1836,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1853,10 +1853,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1870,10 +1870,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1887,10 +1887,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1904,10 +1904,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1921,10 +1921,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1938,10 +1938,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1955,10 +1955,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1972,10 +1972,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -1989,10 +1989,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2006,10 +2006,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2023,10 +2023,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2040,10 +2040,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2057,10 +2057,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2074,10 +2074,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2091,10 +2091,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2108,10 +2108,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2125,10 +2125,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "IchimokuStrategy",
@@ -2142,10 +2142,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2159,10 +2159,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2176,10 +2176,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2193,10 +2193,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2210,10 +2210,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2227,10 +2227,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2244,10 +2244,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2261,10 +2261,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2278,10 +2278,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2295,10 +2295,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2312,10 +2312,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2329,10 +2329,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2346,10 +2346,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2363,10 +2363,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2380,10 +2380,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2397,10 +2397,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2414,10 +2414,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2431,10 +2431,10 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      },
                      {
                          "strategy":  "MomentumStrategy",
@@ -2448,16 +2448,16 @@
                          "total_trades":  0,
                          "winning_trades":  0,
                          "win_rate":  0.00,
-                         "profit_factor":  4.7156210378826006E+113,
-                         "expectancy":  3.0157525749619567E+74,
-                         "sharpe_20":  3.2653381904255656E+71,
-                         "max_drawdown_pct":  4.7508169526450339E+48
+                         "profit_factor":  0.00,
+                         "expectancy":  1.3684167507169354E+57,
+                         "sharpe_20":  3.2540911887856808E+83,
+                         "max_drawdown_pct":  0.00
                      }
                  ],
     "snapshot_meta":  {
-                          "exported_utc":  "2026-10-28T20:50:22.7073780Z",
-                          "source_modified_utc":  "2026-10-28T17:27:12.0905061Z",
-                          "source_sha256":  "9fdaea36321795735d242a5ac5a441679e959fae48aaddcd93cb67e5034419d9",
+                          "exported_utc":  "2026-10-28T21:01:05.0444317Z",
+                          "source_modified_utc":  "2026-10-28T20:58:57.9638970Z",
+                          "source_sha256":  "90b759bf0e5caa749544daf3d7ee5332dea327368656555cce4c54bef2cb0e19",
                           "execution":  "MT5_ONLY",
                           "probabilities":  "POLICY_VALUES_NOT_CALIBRATED_MODEL_PROOF"
                       }
