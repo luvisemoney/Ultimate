@@ -1,6 +1,6 @@
 {
     "schema_version":  1,
-    "exported_utc":  "2026-10-28T18:53:41.0093679Z",
+    "exported_utc":  "2026-10-28T19:00:54.5025117Z",
     "mode":  "STATIC_SNAPSHOT",
     "model":  {
                   "verification":  {
@@ -341,7 +341,7 @@
     "news":  [
                  {
                      "id":  "df496099d22cf769e8031404911fff9ebd4dabb92e0dab3e63b7b6b7ab9e4e7e",
-                     "observed_utc":  1793213587,
+                     "observed_utc":  1793213888,
                      "published_utc":  1793180840,
                      "expires_utc":  1793224040,
                      "target":  "CAD",
@@ -353,7 +353,7 @@
                  },
                  {
                      "id":  "a4e689c4183895f02bf3b32efe4d562d47a9d795a6b9389577f71b6e1b7e7379",
-                     "observed_utc":  1793213587,
+                     "observed_utc":  1793213888,
                      "published_utc":  1793180794,
                      "expires_utc":  1793223994,
                      "target":  "CAD",
@@ -365,7 +365,7 @@
                  },
                  {
                      "id":  "0698b5424bb53ec1dd061bda84b99cfb01021637793d753317562d2709b1180d",
-                     "observed_utc":  1793213587,
+                     "observed_utc":  1793213888,
                      "published_utc":  1793180735,
                      "expires_utc":  1793223935,
                      "target":  "CAD",
@@ -377,7 +377,7 @@
                  },
                  {
                      "id":  "a0c3e1be77e8b5a27f797ac2698e8181f11f02e52a904b55b7ef35c0555dc710",
-                     "observed_utc":  1793213587,
+                     "observed_utc":  1793213888,
                      "published_utc":  1793210400,
                      "expires_utc":  1793253600,
                      "target":  "USD",
@@ -713,5 +713,5 @@
                         "Costs include explicit sensitivity assumptions; they are not broker quotations.",
                         "Static publication does not keep MT5 running when its computer is off."
                     ],
-    "source_fingerprint":  "e1ec193e4e306a6d3309377a45b1911993252f83a5aecdb7957b0d1c54f0bb18"
+    "source_fingerprint":  "1de02bb5330bd632a17e5f0ad7cce874f88ee542482d509c2de7ee7deb258a2d"
 }
