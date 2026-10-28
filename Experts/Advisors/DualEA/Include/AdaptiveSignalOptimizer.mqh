@@ -359,6 +359,7 @@ public:
       }
       
       // Original failed - start adaptive optimization
+      PrintFormat("[GATE-REJECT] signal=%s reason=%s",signal.id,block_reason);
       blocking_reason = "Original signal blocked";
       decision.original_signal_id = signal.id;
       decision.is_adjusted = true;
@@ -579,7 +580,7 @@ public:
    }
    
    // Helper to copy decision data
-   void CopyDecision(const CSignalDecision &source, CSignalDecision &dest)
+   static void CopyDecision(const CSignalDecision &source, CSignalDecision &dest)
    {
       dest.signal_id = source.signal_id;
       dest.strategy = source.strategy;  // CRITICAL: Copy strategy name
@@ -592,6 +593,8 @@ public:
       dest.original_tp = source.original_tp;
       dest.original_volume = source.original_volume;
       dest.executed = source.executed;
+      dest.order_type = source.order_type;
+      dest.final_confidence = source.final_confidence;
       dest.final_price = source.final_price;
       dest.final_sl = source.final_sl;
       dest.final_tp = source.final_tp;

@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| CShadowLogger.mqh - Shadow Mode Logging System                   |
 //| Based on chat-8Stage Gate System Integration Guide               |
@@ -192,7 +193,7 @@ public:
       
       // Try to create lock file (exclusive access)
       m_lock_handle = FileOpen(m_lock_filename, 
-                              FILE_WRITE|FILE_TXT|FILE_COMMON);
+                              FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON);
       
       if(m_lock_handle == INVALID_HANDLE)
       {
@@ -225,7 +226,7 @@ public:
       }
       
       // Delete lock file
-      FileDelete(m_lock_filename, FILE_COMMON);
+      FileDelete(m_lock_filename, DUALEA_FILE_COMMON);
       m_is_locked = false;
    }
    
@@ -277,7 +278,7 @@ public:
       {
          // Efficient append: open file for writing at end (no read required)
          int handle = FileOpen(m_filename,
-                              FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_SHARE_READ,
+                              FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON|FILE_SHARE_READ,
                               ',');
          
          if(handle == INVALID_HANDLE)
@@ -296,7 +297,7 @@ public:
          FileClose(handle);
          
          // Quick verification: just check file exists and grew
-         if(FileIsExist(m_filename, FILE_COMMON))
+         if(FileIsExist(m_filename, DUALEA_FILE_COMMON))
          {
             success = true;
          }
@@ -343,7 +344,7 @@ public:
       {
          // Use simple write (no verification needed for buffered data)
          int handle = FileOpen(m_filename,
-                              FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_SHARE_READ,
+                              FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON|FILE_SHARE_READ,
                               ',');
          
          if(handle == INVALID_HANDLE) break;
@@ -377,7 +378,7 @@ public:
    bool VerifyLastWrite(const string expected_data)
    {
       int verify_handle = FileOpen(m_filename,
-                                 FILE_READ|FILE_CSV|FILE_COMMON,
+                                 FILE_READ|FILE_CSV|DUALEA_FILE_COMMON,
                                  ',');
       
       if(verify_handle == INVALID_HANDLE) return false;
@@ -410,7 +411,7 @@ public:
       
       // Open as TEXT file to read line by line (not CSV field by field)
       int handle = FileOpen(m_filename,
-                           FILE_READ|FILE_TXT|FILE_COMMON);
+                           FILE_READ|FILE_TXT|DUALEA_FILE_COMMON);
       
       if(handle == INVALID_HANDLE) return false;
       
@@ -477,7 +478,7 @@ public:
          
          // Write recovered content back
          int recover_handle = FileOpen(m_filename,
-                                    FILE_WRITE|FILE_TXT|FILE_COMMON);
+                                    FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON);
          
          if(recover_handle != INVALID_HANDLE)
          {
@@ -529,14 +530,14 @@ public:
       m_lock_filename = m_filename + ".lock";
       
       // P0-1: Check for and recover from corruption on startup
-      if(FileIsExist(m_filename, FILE_COMMON))
+      if(FileIsExist(m_filename, DUALEA_FILE_COMMON))
       {
          DetectAndRecoverCorruption();
       }
       
       // Write CSV header
       int handle = FileOpen(m_filename, 
-                           FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_SHARE_READ,
+                           FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON|FILE_SHARE_READ,
                            ',');
       
       if(handle == INVALID_HANDLE)

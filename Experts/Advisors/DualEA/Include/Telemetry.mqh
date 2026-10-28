@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 // Telemetry.mqh
 // Buffered JSONL telemetry writer for PaperEA
 #ifndef __DUALEA_TELEMETRY_MQH__
@@ -47,8 +48,8 @@ class CTelemetry
     void     EnsureFolders()
       {
         // Ensure common folder structure exists
-        FolderCreate("DualEA", FILE_COMMON);
-        FolderCreate(m_base_dir, FILE_COMMON);
+        FolderCreate("DualEA", DUALEA_FILE_COMMON);
+        FolderCreate(m_base_dir, DUALEA_FILE_COMMON);
       }
 
     void     AppendLine(const string line)
@@ -84,7 +85,7 @@ class CTelemetry
         if(ArraySize(m_buffer)==0) return;
         EnsureFolders();
         string path = ResolveFilePath();
-        int h = FileOpen(path, FILE_READ|FILE_WRITE|FILE_TXT|FILE_SHARE_WRITE|FILE_ANSI|FILE_COMMON);
+        int h = FileOpen(path, FILE_READ|FILE_WRITE|FILE_TXT|FILE_SHARE_WRITE|FILE_ANSI|DUALEA_FILE_COMMON);
         if(h==INVALID_HANDLE)
           {
             PrintFormat("Telemetry: cannot open %s, err=%d", path, GetLastError());

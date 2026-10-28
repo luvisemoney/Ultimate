@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| GateSystemAutoLearning.mqh - Master Include for Auto-Learning   |
 //| Single include that activates full learning pipeline:           |
@@ -12,7 +13,7 @@
 // Core components
 #include "CGateBase.mqh"
 #include "CShadowLogger.mqh"
-#include "CMLPolishGateONNX.mqh"
+// ONNX support is provided by CMLPolishGateEnhanced and ModelPredictor.
 #include "EnhancedEfficientGateSystem.mqh"
 
 //+------------------------------------------------------------------+
@@ -90,9 +91,9 @@ public:
       }
       
       // Clear any stale reload signal
-      if(FileIsExist(m_reload_signal_file, FILE_COMMON))
+      if(FileIsExist(m_reload_signal_file, DUALEA_FILE_COMMON))
       {
-         FileDelete(m_reload_signal_file, FILE_COMMON);
+         FileDelete(m_reload_signal_file, DUALEA_FILE_COMMON);
       }
    }
    
@@ -111,22 +112,22 @@ public:
       m_last_model_check = TimeCurrent();
       
       // Check for reload signal from Python
-      if(FileIsExist(m_reload_signal_file, FILE_COMMON))
+      if(FileIsExist(m_reload_signal_file, DUALEA_FILE_COMMON))
       {
          Print("[AutoLearning] Model reload signal detected");
          ReloadModels();
-         FileDelete(m_reload_signal_file, FILE_COMMON);
+         FileDelete(m_reload_signal_file, DUALEA_FILE_COMMON);
       }
       
       // Also check file modification times
       for(int i=0; i<3; i++)
       {
-         if(!FileIsExist(m_model_files[i], FILE_COMMON))
+         if(!FileIsExist(m_model_files[i], DUALEA_FILE_COMMON))
             continue;
          
          datetime file_time = (datetime)FileGetInteger(m_model_files[i], 
                                                         FILE_MODIFY_DATE, 
-                                                        FILE_COMMON);
+                                                        DUALEA_FILE_COMMON);
          
          if(file_time > m_model_load_times[i])
          {
@@ -149,11 +150,11 @@ public:
       
       for(int i=0; i<3; i++)
       {
-         if(FileIsExist(m_model_files[i], FILE_COMMON))
+         if(FileIsExist(m_model_files[i], DUALEA_FILE_COMMON))
          {
             m_model_load_times[i] = (datetime)FileGetInteger(m_model_files[i], 
                                                             FILE_MODIFY_DATE, 
-                                                            FILE_COMMON);
+                                                            DUALEA_FILE_COMMON);
             Print(StringFormat("[AutoLearning] Loaded model %d: %s", i, m_model_files[i]));
          }
       }
@@ -171,7 +172,7 @@ public:
       
       // Create trigger file for Python optimizer
       int handle = FileOpen(m_trigger_file, 
-                           FILE_WRITE|FILE_TXT|FILE_COMMON);
+                           FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON);
       
       if(handle != INVALID_HANDLE)
       {

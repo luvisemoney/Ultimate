@@ -25,7 +25,7 @@
 
 // Include existing components
 #include "EnhancedEfficientGateSystem.mqh"
-#include "CMLPolishGateONNX.mqh"
+// ONNX support is provided by CMLPolishGateEnhanced and ModelPredictor.
 
 //+------------------------------------------------------------------+
 //| Configuration Structure                                            |
@@ -265,7 +265,10 @@ public:
    
    bool InitializeSystemMonitor()
    {
-      m_system_monitor = new CSystemMonitor();
+      // PaperEA may already have obtained the singleton during core startup.
+      // Reuse it instead of overwriting the global alias and leaking that object.
+      m_system_monitor = CSystemMonitor::GetInstance();
+      if(CheckPointer(m_system_monitor)==POINTER_INVALID) return false;
       
       // Thresholds are configured internally via SHealthThresholds.SetDefaults()
       // m_system_monitor.SetThresholds() is not available - using default thresholds
@@ -331,21 +334,28 @@ public:
    void OnTick()
    {
       if(!m_initialized) return;
+#ifdef DUALEA_TICK_PROFILING
+      const ulong profile_start=GetMicrosecondCount();
+#endif
       
       // P0-5: Update feature cache
       if(m_feature_cache != NULL)
          m_feature_cache.Update();
+#ifdef DUALEA_TICK_PROFILING
+      const ulong profile_cache=GetMicrosecondCount();
+#endif
       
       // P1-3: Update regime detection
       if(m_regime_strategy != NULL)
          m_regime_strategy.Update();
+#ifdef DUALEA_TICK_PROFILING
+      const ulong profile_regime=GetMicrosecondCount();
+#endif
       
-      // P1-4: Update system monitor
-      if(m_system_monitor != NULL)
-         m_system_monitor.OnTickUpdate();
+      // The host records elapsed work after the complete OnTick handler.
       
       // P1-6: Check volatility exits
-      if(m_position_manager != NULL)
+      if(m_position_manager != NULL && !m_config.shadow_mode_only)
          m_position_manager.CheckVolatilityExits();
       
       // P1-2: Sync insight bridge periodically
@@ -365,6 +375,13 @@ public:
          LogSystemStatus();
          m_last_status_log = TimeCurrent();
       }
+#ifdef DUALEA_TICK_PROFILING
+      const ulong profile_end=GetMicrosecondCount();
+      if(profile_end-profile_start>10000)
+         PrintFormat("[LIVE-TICK PROFILE] cache_ms=%.3f regime_ms=%.3f remaining_ms=%.3f total_ms=%.3f",
+            (double)(profile_cache-profile_start)/1000.0,(double)(profile_regime-profile_cache)/1000.0,
+            (double)(profile_end-profile_regime)/1000.0,(double)(profile_end-profile_start)/1000.0);
+#endif
    }
    
    //+------------------------------------------------------------------+
@@ -569,13 +586,14 @@ public:
       if(m_sqlite_kb != NULL) m_sqlite_kb.Close();
       
       // Cleanup
+      if(m_explore_counter != NULL) { if(g_sqliteCounter == m_explore_counter) g_sqliteCounter = NULL; delete m_explore_counter; m_explore_counter = NULL; }
       if(m_shadow_logger != NULL) { delete m_shadow_logger; m_shadow_logger = NULL; }
-      if(m_position_manager != NULL) { delete m_position_manager; m_position_manager = NULL; }
-      if(m_system_monitor != NULL) { delete m_system_monitor; m_system_monitor = NULL; }
-      if(m_insight_bridge != NULL) { delete m_insight_bridge; m_insight_bridge = NULL; }
-      if(m_regime_strategy != NULL) { delete m_regime_strategy; m_regime_strategy = NULL; }
-      if(m_sqlite_kb != NULL) { delete m_sqlite_kb; m_sqlite_kb = NULL; }
-      if(m_feature_cache != NULL) { delete m_feature_cache; m_feature_cache = NULL; }
+      if(m_position_manager != NULL) { if(g_position_manager == m_position_manager) g_position_manager = NULL; delete m_position_manager; m_position_manager = NULL; }
+      if(m_system_monitor != NULL) { if(g_system_monitor == m_system_monitor) g_system_monitor = NULL; delete m_system_monitor; m_system_monitor = NULL; }
+      if(m_insight_bridge != NULL) { if(g_insight_gate_bridge == m_insight_bridge) g_insight_gate_bridge = NULL; delete m_insight_bridge; m_insight_bridge = NULL; }
+      if(m_regime_strategy != NULL) { if(g_regime_strategy == m_regime_strategy) g_regime_strategy = NULL; delete m_regime_strategy; m_regime_strategy = NULL; }
+      if(m_sqlite_kb != NULL) { if(g_sqlite_kb == m_sqlite_kb) g_sqlite_kb = NULL; delete m_sqlite_kb; m_sqlite_kb = NULL; }
+      if(m_feature_cache != NULL) { if(g_gate_feature_cache == m_feature_cache) g_gate_feature_cache = NULL; delete m_feature_cache; m_feature_cache = NULL; }
       
       m_initialized = false;
       Print("=== DualEA Master Controller v2.0 Shutdown Complete ===");

@@ -1,0 +1,10 @@
+; Explicitly test the heuristic mode because no trained ONNX assets are present.
+UseOnnxPredictor=false||false||0||true||N
+LoadONNXModels=false||false||0||true||N
+LiveTradingEnabled=true||false||0||true||N
+ShadowMode=true||false||0||true||N
+NoConstraintsMode=false||false||0||true||N
+LotSize=0.01||0.01||0.01||0.1||N
+HeartbeatEnabled=true||false||0||true||N
+HeartbeatVerbose=false||false||0||true||N
+AutoReloadModels=false||false||0||true||N

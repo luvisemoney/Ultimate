@@ -180,6 +180,9 @@ public:
          adjusted_volume = m_regime_strategy.AdjustPositionSize(adjusted_volume);
       }
       
+      // Preserve a regime veto before applying broker minimum volume.
+      if(!MathIsValidNumber(adjusted_volume) || adjusted_volume <= 0.0) return 0.0;
+
       // Normalize to lot step
       double lot_step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
       double min_lot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);

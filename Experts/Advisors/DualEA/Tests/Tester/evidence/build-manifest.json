@@ -1,0 +1,32 @@
+﻿[
+    {
+        "File":  "Advisors/DualEA/PaperEA/PaperEA_v2.mq5",
+        "SHA256":  "4280AAB9DA6BD3E69C470EB08576514BED855C7684A9DFE6B44939EF40FB9940",
+        "Bytes":  180220
+    },
+    {
+        "File":  "Advisors/DualEA/PaperEA/PaperEA_v2.ex5",
+        "SHA256":  "53853B9B88F88108B049F57D880BD9232F13ED78B7B44C5DEB8724501FF19A6A",
+        "Bytes":  507004
+    },
+    {
+        "File":  "Advisors/DualEA/Include/ModelPredictor.mqh",
+        "SHA256":  "3287122DFCE01528F295FB77557C31BA5A33CF71A3EB1D03126BDD47F56B1711",
+        "Bytes":  12940
+    },
+    {
+        "File":  "Advisors/DualEA/Include/UnifiedTradeLogger.mqh",
+        "SHA256":  "6BA916FD939C121639439ECF07F80D00F3B951E2AEF64C83F3AFFADA6322D7EB",
+        "Bytes":  16476
+    },
+    {
+        "File":  "Advisors/DualEA/Include/EnhancedEfficientGateSystem.mqh",
+        "SHA256":  "F0096A4DD0AA9E229C70A5061E154D650EF669BA58B53CD7E231D42B199371D1",
+        "Bytes":  45807
+    },
+    {
+        "File":  "Advisors/DualEA/Include/CSQLiteKnowledgeBase.mqh",
+        "SHA256":  "AAB74F2667F83175BFCFD7093B812F8EDDA10D13A74EF8EB24DB99D309FFDE99",
+        "Bytes":  47246
+    }
+]

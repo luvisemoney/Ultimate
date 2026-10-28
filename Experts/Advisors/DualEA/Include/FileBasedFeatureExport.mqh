@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 // FileBasedFeatureExport.mqh
 // Alternative to DLL-based feature export for strategy tester compatibility
 
@@ -17,7 +18,7 @@ public:
    {
       m_base_dir = "";
       m_file_counter = 0;
-      // Using FILE_COMMON for all writes; no directory creation needed
+      // Using DUALEA_FILE_COMMON for all writes; no directory creation needed
    }
    
    ~CFileBasedFeatureExport()
@@ -39,7 +40,7 @@ public:
       
       // Write binary data to file
       CFileBin file;
-      if (!file.Open(full_path, FILE_BIN | FILE_WRITE | FILE_COMMON))
+      if (!file.Open(full_path, FILE_BIN | FILE_WRITE | DUALEA_FILE_COMMON))
       {
          Print("Failed to open file for writing: ", full_path);
          return -3; // Failed to open file
@@ -77,7 +78,7 @@ public:
       string full_path = filename;
       
       // Write features as text file
-      int file_handle = FileOpen(full_path, FILE_WRITE | FILE_TXT | FILE_COMMON);
+      int file_handle = FileOpen(full_path, FILE_WRITE | FILE_TXT | DUALEA_FILE_COMMON);
       if (file_handle == INVALID_HANDLE)
       {
          Print("Failed to open file for writing: ", full_path);
@@ -109,7 +110,7 @@ private:
    
    void CreateDirectoryStructure()
    {
-      // No-op when using FILE_COMMON storage
+      // No-op when using DUALEA_FILE_COMMON storage
    }
    
    string GenerateTimestampedFilename()

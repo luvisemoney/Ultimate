@@ -1,27 +1,48 @@
-```
-# MT4/MT5 build artifacts
+# Source is tracked; terminal state, credentials and generated bulk data are not.
+/.publish/
+/.tools/
+/Files/
+/Profiles/
+**/.git/
+**/.venv/
+**/venv/
+**/node_modules/
+**/__pycache__/
+**/runtime/
+**/browser-profile/
+**/onnxruntime/
+**/dist/
+**/ML/artifacts/
 *.ex4
 *.ex5
-*.mqh
-*.mq4
-*.mq5
-
-# Temporary files
-*.tmp
-*.temp
-
-# Logs
+*.dll
+*.pyd
+*.pyc
+*.dat
+*.sqlite*
+*.db
 *.log
-
-# Local configuration
-.config/
-*.ini
-
-# Backup files
+*.tmp*
+*.previous
 *.bak
 *.backup
-
-# OS generated files
-.DS_Store
-Thumbs.db
-```
+.env
+.env.*
+**/Tests/Tester/model-evidence/
+**/Tests/Tester/live-evidence/
+**/screenshots/browser-target.txt
+# Small verified model bundle is part of the reproducible source publication.
+!Experts/Advisors/DualEA/ML/artifacts/
+Experts/Advisors/DualEA/ML/artifacts/*
+!Experts/Advisors/DualEA/ML/artifacts/universal/
+Experts/Advisors/DualEA/ML/artifacts/universal/*
+!Experts/Advisors/DualEA/ML/artifacts/universal/signal_model.onnx
+!Experts/Advisors/DualEA/ML/artifacts/universal/onnx_config.ini
+!Experts/Advisors/DualEA/ML/artifacts/universal/onnx_config.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/model_data.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/metrics.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/verification.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/dataset_audit.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/integration-verification.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/integration-results.json
+!Experts/Advisors/DualEA/ML/artifacts/universal/heldout_auc.png

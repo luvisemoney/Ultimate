@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| CSQLiteKnowledgeBase.mqh - ACID-Compliant Database Layer         |
 //| P1-1: Native SQLite integration replacing CSV-based KB           |
@@ -67,6 +68,21 @@ private:
       return s;
    }
 
+   string SQLText(string value)
+   {
+      StringReplace(value, "'", "''");
+      return value;
+   }
+
+   datetime CSVTime(string value)
+   {
+      StringTrimLeft(value);
+      StringTrimRight(value);
+      if(StringFind(value, ".") >= 0 || StringFind(value, "-") >= 0 || StringFind(value, ":") >= 0)
+         return StringToTime(value);
+      return (datetime)StringToInteger(value);
+   }
+
    
 public:
    // Constructor
@@ -97,19 +113,19 @@ public:
       
       // Ensure directory exists
       string db_dir = "DualEA\\Database";
-      if(!FolderCreate(db_dir, FILE_COMMON))
+      if(!FolderCreate(db_dir, DUALEA_FILE_COMMON))
       {
          // Folder may already exist - that's OK
       }
       
-      // Open database connection (FILE_COMMON for shared access)
-      m_db_handle = DatabaseOpen(m_db_path, DATABASE_OPEN_COMMON);
+      // Open database connection (DUALEA_FILE_COMMON for shared access)
+      m_db_handle = DatabaseOpen(m_db_path, DUALEA_DATABASE_COMMON);
       
       if(m_db_handle == INVALID_HANDLE)
       {
          // Try to create new database
          m_db_handle = DatabaseOpen(m_db_path, 
-            DATABASE_OPEN_COMMON | DATABASE_OPEN_CREATE | DATABASE_OPEN_READWRITE);
+            DUALEA_DATABASE_COMMON | DATABASE_OPEN_CREATE | DATABASE_OPEN_READWRITE);
          
          if(m_db_handle == INVALID_HANDLE)
          {
@@ -270,14 +286,14 @@ public:
          "entry_price, volume, sl, tp, market_regime) "
          "VALUES (%I64d, '%s', '%s', %d, %.5f, %.2f, %.5f, %.5f, '%s')",
          trade.timestamp,
-         trade.symbol,
-         trade.strategy,
+         SQLText(trade.symbol),
+         SQLText(trade.strategy),
          trade.order_type,
          trade.entry_price,
          trade.volume,
          trade.sl,
          trade.tp,
-         trade.market_regime
+         SQLText(trade.market_regime)
       );
       
       bool result = DatabaseExecute(m_db_handle, sql);
@@ -340,7 +356,7 @@ public:
       string sql = StringFormat(
          "SELECT win_rate, profit_factor, total_pnl, total_trades "
          "FROM strategy_stats WHERE strategy='%s' AND symbol='%s'",
-         strategy, symbol
+         SQLText(strategy), SQLText(symbol)
       );
       
       int request = DatabasePrepare(m_db_handle, sql);
@@ -386,7 +402,7 @@ public:
          "SUM(CASE WHEN pnl>0 THEN pnl ELSE 0 END), "
          "ABS(SUM(CASE WHEN pnl<0 THEN pnl ELSE 0 END)) "
          "FROM trades WHERE strategy='%s' AND symbol='%s' AND pnl IS NOT NULL",
-         strategy, symbol
+         SQLText(strategy), SQLText(symbol)
       );
       
       int request = DatabasePrepare(m_db_handle, sql);
@@ -422,7 +438,7 @@ public:
             "(strategy, symbol, total_trades, win_count, loss_count, "
             "total_pnl, avg_pnl, profit_factor, win_rate, last_updated) "
             "VALUES ('%s', '%s', %d, %d, %d, %.2f, %.2f, %.2f, %.4f, CURRENT_TIMESTAMP)",
-            strategy, symbol, total, wins, losses, sum_pnl, avg_pnl, pf, wr
+            SQLText(strategy), SQLText(symbol), total, wins, losses, sum_pnl, avg_pnl, pf, wr
          );
          
          return DatabaseExecute(m_db_handle, sql);
@@ -444,7 +460,7 @@ public:
          "volume, pnl, is_winner, r_multiple, market_regime "
          "FROM trades WHERE strategy='%s' AND symbol='%s' "
          "ORDER BY timestamp DESC LIMIT %d",
-         strategy, symbol, max_count
+         SQLText(strategy), SQLText(symbol), max_count
       );
       
       int request = DatabasePrepare(m_db_handle, sql);
@@ -510,8 +526,8 @@ public:
       PrintFormat("[SQLiteKB] Checking for consolidated trades CSV files in: %s", full_dir);
 
       // Ensure directory exists
-      FolderCreate("DualEA", FILE_COMMON);
-      FolderCreate("DualEA\\trades", FILE_COMMON);
+      FolderCreate("DualEA", DUALEA_FILE_COMMON);
+      FolderCreate("DualEA\\trades", DUALEA_FILE_COMMON);
 
       int total_imported = 0;
       int file_count = 0;
@@ -538,8 +554,8 @@ public:
          string filename = sym + "_trades.csv";
          string rel_path = rel_dir + filename;
          
-         // Check if file exists using FILE_COMMON
-         if(!FileIsExist(rel_path, FILE_COMMON))
+         // Check if file exists using DUALEA_FILE_COMMON
+         if(!FileIsExist(rel_path, DUALEA_FILE_COMMON))
          {
             PrintFormat("[SQLiteKB] No trades file found for %s: %s", sym, filename);
             continue;
@@ -549,13 +565,13 @@ public:
          PrintFormat("[SQLiteKB] Found consolidated trades file: %s%s", full_dir, filename);
 
          // Try reading as ANSI/UTF-8 first (most common), then UTF-16 if needed
-         int handle = FileOpen(rel_path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+         int handle = FileOpen(rel_path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
          bool is_utf16 = false;
          
          if(handle == INVALID_HANDLE)
          {
             // Try UTF-16 if ANSI fails
-            handle = FileOpen(rel_path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_UNICODE);
+            handle = FileOpen(rel_path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_UNICODE);
             is_utf16 = true;
          }
          else
@@ -566,7 +582,7 @@ public:
             {
                // It's UTF-16 with BOM, reopen with UNICODE flag
                FileClose(handle);
-               handle = FileOpen(rel_path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_UNICODE);
+               handle = FileOpen(rel_path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_UNICODE);
                is_utf16 = true;
             }
             else
@@ -716,13 +732,23 @@ public:
       PrintFormat("[SQLiteKB] Importing historical data from CSV: %s", csv_path);
 
       // knowledge_base.csv is stored in Common Files under DualEA\knowledge_base.csv.
-      // If an absolute path is passed in, convert to the FILE_COMMON relative form.
+      // If an absolute path is passed in, convert to the DUALEA_FILE_COMMON relative form.
       string open_path = csv_path;
       string common_prefix = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\";
       if(StringFind(open_path, common_prefix) == 0)
          open_path = StringSubstr(open_path, StringLen(common_prefix));
 
-      int file_handle = FileOpen(open_path, FILE_READ|FILE_CSV|FILE_COMMON, ',');
+      // Our native KB writer uses UTF-16; external exports commonly use UTF-8.
+      // Probe bytes independently rather than assuming the platform default.
+      int probe = FileOpen(open_path, FILE_READ|FILE_BIN|DUALEA_FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      bool utf16 = false;
+      if(probe != INVALID_HANDLE)
+      {
+         if(FileSize(probe) >= 2) utf16 = (FileReadInteger(probe, SHORT_VALUE) == 0xFEFF);
+         FileClose(probe);
+      }
+      int encoding = utf16 ? FILE_UNICODE : FILE_ANSI;
+      int file_handle = FileOpen(open_path, FILE_READ|FILE_CSV|DUALEA_FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE|encoding, ',', CP_UTF8);
       if(file_handle == INVALID_HANDLE)
       {
          PrintFormat("[SQLiteKB] ERROR: Cannot open CSV file: %s", csv_path);
@@ -766,13 +792,13 @@ public:
          
          if(col == "timestamp") col_timestamp = i;
          else if(col == "symbol") col_symbol = i;
-         else if(col == "strategy") col_strategy = i;
-         else if(col == "order_type") col_order_type = i;
-         else if(col == "entry_price") col_entry_price = i;
+         else if(col == "strategy" || col == "strategy_id") col_strategy = i;
+         else if(col == "order_type" || col == "type") col_order_type = i;
+         else if(col == "entry_price" || col == "price") col_entry_price = i;
          else if(col == "volume") col_volume = i;
-         else if(col == "sl") col_sl = i;
-         else if(col == "tp") col_tp = i;
-         else if(col == "pnl") col_pnl = i;
+         else if(col == "sl" || col == "stop_loss") col_sl = i;
+         else if(col == "tp" || col == "take_profit") col_tp = i;
+         else if(col == "pnl" || col == "profit") col_pnl = i;
          else if(col == "close_time") col_close_time = i;
          else if(col == "close_price") col_close_price = i;
          else if(col == "duration_minutes") col_duration = i;
@@ -785,7 +811,7 @@ public:
       if(col_symbol < 0 || col_strategy < 0)
       {
          FileClose(file_handle);
-         Print("[SQLiteKB] ERROR: CSV missing required columns (symbol, strategy)");
+         Print("[SQLiteKB] ERROR: CSV missing required columns (symbol, strategy or strategy_id)");
          return 0;
       }
       
@@ -808,6 +834,7 @@ public:
          if(field_count < header_count) continue;
 
          STradeRecord trade;
+         ZeroMemory(trade);
          trade.symbol = (col_symbol >= 0 && col_symbol < field_count) ? fields[col_symbol] : "";
          trade.strategy = (col_strategy >= 0 && col_strategy < field_count) ? fields[col_strategy] : "";
          trade.symbol = StripBOMText(trade.symbol);
@@ -820,16 +847,48 @@ public:
          if(col_sl >= 0 && col_sl < field_count) trade.sl = StringToDouble(fields[col_sl]);
          if(col_tp >= 0 && col_tp < field_count) trade.tp = StringToDouble(fields[col_tp]);
          if(col_pnl >= 0 && col_pnl < field_count) trade.pnl = StringToDouble(fields[col_pnl]);
-         if(col_close_time >= 0 && col_close_time < field_count) trade.close_time = (datetime)StringToInteger(fields[col_close_time]);
+         if(col_close_time >= 0 && col_close_time < field_count) trade.close_time = CSVTime(fields[col_close_time]);
          if(col_close_price >= 0 && col_close_price < field_count) trade.close_price = StringToDouble(fields[col_close_price]);
          if(col_duration >= 0 && col_duration < field_count) trade.duration_minutes = (int)StringToInteger(fields[col_duration]);
          if(col_is_winner >= 0 && col_is_winner < field_count) trade.is_winner = (StringToInteger(fields[col_is_winner]) == 1);
          if(col_r_multiple >= 0 && col_r_multiple < field_count) trade.r_multiple = StringToDouble(fields[col_r_multiple]);
          if(col_market_regime >= 0 && col_market_regime < field_count) trade.market_regime = fields[col_market_regime];
-         if(col_timestamp >= 0 && col_timestamp < field_count) trade.timestamp = (datetime)StringToInteger(fields[col_timestamp]);
-         else trade.timestamp = TimeCurrent();
+         if(col_timestamp >= 0 && col_timestamp < field_count) trade.timestamp = CSVTime(fields[col_timestamp]);
+         if(trade.timestamp <= 0)
+         {
+            Print("[SQLiteKB] Skipping CSV row with missing/invalid timestamp");
+            continue;
+         }
 
-         if(LogTrade(trade)) imported_count++;
+         // LogTrade intentionally inserts only an opening execution. Historical
+         // rows must retain their outcome or the strategy statistics stay empty.
+         bool has_pnl = col_pnl >= 0 && fields[col_pnl] != "";
+         if(col_is_winner < 0) trade.is_winner = has_pnl && trade.pnl > 0.0;
+         string pnl_sql = has_pnl ? DoubleToString(trade.pnl, 8) : "NULL";
+         string sql = StringFormat(
+            "INSERT INTO trades (timestamp,symbol,strategy,order_type,entry_price,volume,sl,tp,"
+            "pnl,close_time,close_price,duration_minutes,is_winner,r_multiple,market_regime) "
+            "SELECT %I64d,'%s','%s',%d,%.10f,%.8f,%.10f,%.10f,%s,%I64d,%.10f,%d,%d,%.8f,'%s' "
+            "WHERE NOT EXISTS (SELECT 1 FROM trades WHERE timestamp=%I64d AND symbol='%s' "
+            "AND strategy='%s' AND order_type=%d AND entry_price=%.10f AND volume=%.8f "
+            "AND pnl IS %s AND close_price=%.10f)",
+            trade.timestamp, SQLText(trade.symbol), SQLText(trade.strategy), trade.order_type,
+            trade.entry_price, trade.volume, trade.sl, trade.tp, pnl_sql, trade.close_time,
+            trade.close_price, trade.duration_minutes, (int)trade.is_winner, trade.r_multiple,
+            SQLText(trade.market_regime), trade.timestamp, SQLText(trade.symbol), SQLText(trade.strategy),
+            trade.order_type, trade.entry_price, trade.volume, pnl_sql, trade.close_price);
+         if(DatabaseExecute(m_db_handle, sql))
+         {
+            int change_request = DatabasePrepare(m_db_handle, "SELECT changes()");
+            int changes = 0;
+            if(change_request != INVALID_HANDLE)
+            {
+               if(DatabaseRead(change_request)) DatabaseColumnInteger(change_request, 0, changes);
+               DatabaseFinalize(change_request);
+            }
+            imported_count += changes;
+         }
+         else PrintFormat("[SQLiteKB] ERROR: Historical CSV insert failed (error=%d)", GetLastError());
       }
       
       FileClose(file_handle);
@@ -913,7 +972,7 @@ public:
             string daily_filename = sym + "_trades_" + date_str + ".csv";
             string daily_path = rel_dir + daily_filename;
             
-            if(FileIsExist(daily_path, FILE_COMMON))
+            if(FileIsExist(daily_path, DUALEA_FILE_COMMON))
             {
                has_daily_files = true;
                int idx = ArraySize(daily_files);
@@ -931,9 +990,9 @@ public:
          // Read existing trades from consolidated file (to avoid duplicates)
          string existing_trades[];
          int existing_count = 0;
-         if(FileIsExist(consolidated_path, FILE_COMMON))
+         if(FileIsExist(consolidated_path, DUALEA_FILE_COMMON))
          {
-            int h_consol = FileOpen(consolidated_path, FILE_READ|FILE_CSV|FILE_COMMON|FILE_UNICODE, ',');
+            int h_consol = FileOpen(consolidated_path, FILE_READ|FILE_CSV|DUALEA_FILE_COMMON|FILE_UNICODE, ',');
             if(h_consol != INVALID_HANDLE)
             {
                int line_num = 0;
@@ -957,7 +1016,7 @@ public:
          }
          
          // Open consolidated file for writing (as TXT for proper line-by-line UTF-8 handling)
-         int h_out = FileOpen(consolidated_path, FILE_WRITE|FILE_READ|FILE_COMMON|FILE_TXT|FILE_UNICODE);
+         int h_out = FileOpen(consolidated_path, FILE_WRITE|FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_UNICODE);
          if(h_out == INVALID_HANDLE)
          {
             PrintFormat("[SQLiteKB] ERROR: Cannot open consolidated file for writing: %s", consolidated_path);
@@ -981,7 +1040,7 @@ public:
          {
             string daily_path = rel_dir + daily_files[d];
             // Read as TXT for proper line reading
-            int h_daily = FileOpen(daily_path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_UNICODE);
+            int h_daily = FileOpen(daily_path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_UNICODE);
             
             if(h_daily == INVALID_HANDLE)
             {
@@ -1028,7 +1087,7 @@ public:
             FileClose(h_daily);
             
             // Delete the daily file after successful processing
-            FileDelete(daily_path, FILE_COMMON);
+            FileDelete(daily_path, DUALEA_FILE_COMMON);
             PrintFormat("[SQLiteKB] Processed and removed: %s", daily_files[d]);
          }
          

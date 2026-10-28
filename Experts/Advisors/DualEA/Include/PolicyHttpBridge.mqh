@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 #ifndef __DUALEA_POLICY_HTTP_BRIDGE_MQH__
 #define __DUALEA_POLICY_HTTP_BRIDGE_MQH__
 
@@ -7,128 +8,147 @@
 class CPolicyHttpBridge
 {
 private:
-   string   m_policy_file;     // where EA reads policy from (Common Files path allowed)
-   int      m_reload_secs;     // minimum interval between checks
+   string m_policy_file;
+   int m_reload_secs;
    datetime m_last_check;
-   long     m_last_size;
-   bool     m_warned_whitelist;
+   ulong m_last_hash;
+   bool m_seen_file;
+   bool m_warned_tester;
+   bool m_http_blocked;
+   datetime m_last_failure_log;
 
-public:
-   CPolicyHttpBridge(): m_policy_file(""), m_reload_secs(10), m_last_check(0), m_last_size(-1), m_warned_whitelist(false) {}
-
-   void Configure(const string policy_file, const int reload_secs)
+   bool CanRequest()
    {
-      m_policy_file = policy_file;
-      m_reload_secs = (reload_secs>0? reload_secs:10);
-      m_last_check  = 0;
-      m_last_size   = -1;
-   }
-
-   bool VerifyAccess(const string url)
-   {
-      string trimmed = url;
-      StringTrimLeft(trimmed);
-      StringTrimRight(trimmed);
-      if(StringLen(trimmed) == 0)
-         return true;
-
-      char payload[];
-      ArrayResize(payload, 0);
-      char response[];
-      string response_headers = "";
-      int status = WebRequest("HEAD", trimmed, "", 3000, payload, response, response_headers);
-      if(status == -1)
+      // MQL_TESTER is a runtime property, not a preprocessor symbol.
+      if(MQLInfoInteger(MQL_TESTER))
       {
-         int err = GetLastError();
-         if((err == 4014 || err == 5204) && !m_warned_whitelist)
+         if(!m_warned_tester)
          {
-            string guidance = StringFormat(
-               "Policy HTTP access blocked (error %d). Enable WebRequest in MT5: Tools → Options → Expert Advisors → 'Allow WebRequest for listed URL' and add %s. Then press OK and restart the EA.",
-               err, trimmed);
-            LOG(guidance);
-            m_warned_whitelist = true;
+            LOG("Policy HTTP disabled in Strategy Tester; using the supplied policy file only.");
+            m_warned_tester=true;
          }
          return false;
       }
-
-      if(status >= 400 && !m_warned_whitelist)
-      {
-         LOG(StringFormat("Policy HTTP verification returned status %d for %s", status, trimmed));
-      }
-
-      return (status >= 200 && status < 500);
+      return !m_http_blocked;
    }
-
-   // Returns true if the on-disk policy file size changed since last check
+   void RequestFailed(string url,int status,int error)
+   {
+      if(error==4014)
+      {
+         if(!m_http_blocked)
+            LOG(StringFormat("Policy HTTP prohibited (4014). For terminal use, allow the policy URL in Tools > Options > Expert Advisors > WebRequest: %s. File policy remains available; HTTP retries stop until EA restart.",url));
+         m_http_blocked=true;
+         return;
+      }
+      datetime now=TimeCurrent();
+      if(m_last_failure_log==0 || now-m_last_failure_log>=60)
+      {
+         LOG(StringFormat("Policy HTTP failed: status=%d error=%d url=%s; keeping the current file policy",status,error,url));
+         m_last_failure_log=now;
+      }
+   }
+public:
+   CPolicyHttpBridge() : m_policy_file(""),m_reload_secs(10),m_last_check(0),m_last_hash(0),m_seen_file(false),m_warned_tester(false),m_http_blocked(false),m_last_failure_log(0) {}
+   void Configure(const string policy_file,const int reload_secs)
+   {
+      m_policy_file=policy_file;
+      m_reload_secs=(reload_secs>0 ? reload_secs : 10);
+      m_last_check=0;
+      m_last_hash=0;
+      m_seen_file=false;
+      m_http_blocked=false;
+   }
+   bool VerifyAccess(const string url)
+   {
+      if(!CanRequest()) return false;
+      string trimmed=url;
+      StringTrimLeft(trimmed);
+      StringTrimRight(trimmed);
+      if(trimmed=="") return false;
+      char data[],response[];
+      string headers;
+      ArrayResize(data,0);
+      ResetLastError();
+      int status=WebRequest("GET",trimmed,"",3000,data,response,headers);
+      if(status>=200 && status<300) return true;
+      RequestFailed(trimmed,status,GetLastError());
+      return false;
+   }
+   // Fingerprint content as well as size: fixed-length risk changes must reload.
    bool UpdateIfStale()
    {
-      datetime now = TimeCurrent();
+      datetime now=TimeCurrent();
       if(m_policy_file=="") return false;
-      if(m_last_check!=0 && (now - m_last_check) < m_reload_secs) return false;
-      m_last_check = now;
-
-      // Check file in Common first
-      int h = FileOpen(m_policy_file, FILE_READ|FILE_TXT|FILE_COMMON);
-      if(h == INVALID_HANDLE)
+      if(m_last_check!=0 && now-m_last_check<m_reload_secs) return false;
+      m_last_check=now;
+      int file=FileOpen(m_policy_file,FILE_READ|FILE_BIN|DUALEA_FILE_COMMON|FILE_SHARE_READ);
+      if(file==INVALID_HANDLE) file=FileOpen(m_policy_file,FILE_READ|FILE_BIN|FILE_SHARE_READ);
+      if(file==INVALID_HANDLE) return false;
+      ulong size=FileSize(file);
+      if(size==0 || size>16777216)
       {
-         // Fall back to user Files
-         h = FileOpen(m_policy_file, FILE_READ|FILE_TXT);
-         if(h == INVALID_HANDLE)
-         {
-            // File absent is not an error; simply no update
-            return false;
-         }
+         FileClose(file);
+         return false;
       }
-
-      long sz = (long)FileSize(h);
-      FileClose(h);
-      if(sz != m_last_size)
+      uchar bytes[];
+      ArrayResize(bytes,(int)size);
+      uint copied=FileReadArray(file,bytes,0,(int)size);
+      FileClose(file);
+      if(copied!=size) return false;
+      ulong hash=1469598103934665603;
+      for(int i=0;i<(int)size;i++) hash=(hash^(ulong)bytes[i])*1099511628211;
+      if(!m_seen_file || hash!=m_last_hash)
       {
-         m_last_size = sz;
-         LOG(StringFormat("Policy file changed, size=%ld", sz));
+         m_last_hash=hash;
+         m_seen_file=true;
+         LOG(StringFormat("Policy file content changed, size=%I64u",size));
          return true;
       }
       return false;
    }
-
-   // Pull policy JSON from HTTP endpoint and write to file. Requires MT5 WebRequest whitelist.
    bool Pull(const string url)
    {
-      if(m_policy_file=="") return false;
-      string headers = "Content-Type: application/json\r\n";
-      char data[]; ArrayResize(data, 0);
-      char result[]; string result_headers;
-      int status = WebRequest("GET", url, headers, 5000, data, result, result_headers);
-      if(status==200 || status==201)
+      if(m_policy_file=="" || !CanRequest()) return false;
+      char data[],result[];
+      string headers;
+      ArrayResize(data,0);
+      ResetLastError();
+      int status=WebRequest("GET",url,"Accept: application/json\r\n",5000,data,result,headers);
+      if(status!=200 && status!=201)
       {
-         string body = CharArrayToString(result, 0, -1);
-         int h = FileOpen(m_policy_file, FILE_WRITE|FILE_TXT|FILE_COMMON);
-         if(h == INVALID_HANDLE)
-         {
-            h = FileOpen(m_policy_file, FILE_WRITE|FILE_TXT);
-         }
-         if(h == INVALID_HANDLE)
-         {
-            LOG(StringFormat("PolicyHttpBridge: Cannot open %s for write, error=%d", m_policy_file, GetLastError()));
-            return false;
-         }
-         FileWriteString(h, body);
-         FileClose(h);
-         LOG(StringFormat("Policy pull success: %s (len=%d)", url, StringLen(body)));
-         // Force stale so UpdateIfStale will report change on next call
-         m_last_size = -1;
-         return true;
+         RequestFailed(url,status,GetLastError());
+         return false;
       }
-      if(status==-1)
+      string body=CharArrayToString(result,0,ArraySize(result),CP_UTF8);
+      StringTrimLeft(body);
+      StringTrimRight(body);
+      // Reject error pages/empty responses before replacing the last good policy.
+      if(StringLen(body)<2 || StringGetCharacter(body,0)!='{' || StringGetCharacter(body,StringLen(body)-1)!='}')
       {
-         LOG(StringFormat("Policy pull failed: %s (error=%d). Ensure URL is whitelisted in MT5 WebRequest.", url, GetLastError()));
+         LOG("PolicyHttpBridge: response is not a JSON object; retaining existing policy");
+         return false;
       }
-      else
+      string temporary=m_policy_file+".http.tmp";
+      int file=FileOpen(temporary,FILE_WRITE|FILE_BIN|DUALEA_FILE_COMMON);
+      if(file==INVALID_HANDLE)
       {
-         LOG(StringFormat("Policy pull HTTP status: %d for %s", status, url));
+         LOG(StringFormat("PolicyHttpBridge: cannot write temporary policy, error=%d",GetLastError()));
+         return false;
       }
-      return false;
+      uchar bytes[];
+      int length=StringToCharArray(body,bytes,0,WHOLE_ARRAY,CP_UTF8)-1;
+      uint written=FileWriteArray(file,bytes,0,length);
+      FileFlush(file);
+      FileClose(file);
+      if(written!=(uint)length || !FileMove(temporary,DUALEA_FILE_COMMON,m_policy_file,DUALEA_FILE_COMMON|FILE_REWRITE))
+      {
+         LOG(StringFormat("PolicyHttpBridge: policy replacement failed, error=%d",GetLastError()));
+         FileDelete(temporary,DUALEA_FILE_COMMON);
+         return false;
+      }
+      m_seen_file=false;
+      LOG(StringFormat("Policy pull succeeded: %s (%d UTF-8 bytes)",url,length));
+      return true;
    }
 };
-
-#endif // __DUALEA_POLICY_HTTP_BRIDGE_MQH__
+#endif

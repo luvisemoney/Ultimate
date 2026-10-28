@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 #include <Files/File.mqh>
 
 class CStrategySelector
@@ -43,6 +44,12 @@ private:
    string TrimCopy(string s){ StringTrimLeft(s); StringTrimRight(s); return s; }
 
 public:
+   bool HasHistoricalEvidence()
+   {
+      if(!m_has_data) return false;
+      for(int i=0;i<ArraySize(m_cnt);i++) if(m_cnt[i]>0) return true;
+      return false;
+   }
    CStrategySelector()
      {
       th_min_trades = 20; th_min_wr = 0.50; th_min_exp = 0.0; th_min_pf = 2.0; th_max_dd = 6.0;
@@ -68,7 +75,7 @@ public:
 
    bool Load()
      {
-      int h = FileOpen("DualEA\\insights.json", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
+      int h = FileOpen("DualEA\\insights.json", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|DUALEA_FILE_COMMON|FILE_ANSI);
       if(h==INVALID_HANDLE) return false;
       ArrayResize(m_strat,0); ArrayResize(m_sym,0); ArrayResize(m_tf,0);
       ArrayResize(m_cnt,0); ArrayResize(m_wr,0); ArrayResize(m_avgR,0); ArrayResize(m_pf,0); ArrayResize(m_dd,0);
@@ -110,7 +117,7 @@ public:
    bool LoadRecent()
      {
       if(!use_recency) return false;
-      int h = FileOpen("DualEA\\features.csv", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON|FILE_ANSI);
+      int h = FileOpen("DualEA\\features.csv", FILE_READ|FILE_TXT|FILE_SHARE_READ|FILE_SHARE_WRITE|DUALEA_FILE_COMMON|FILE_ANSI);
       if(h==INVALID_HANDLE) return false;
       datetime now = TimeCurrent();
       datetime cutoff = now - recent_days*24*60*60;

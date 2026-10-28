@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| LogMiddleware.mqh - Logging Middleware Stub                        |
 //| Provides backward compatible logging functionality                 |
@@ -62,10 +63,10 @@ public:
          if(sepPos > 0)
          {
             folder = StringSubstr(m_logFile, 0, sepPos);
-            FolderCreate(folder, FILE_COMMON);
+            FolderCreate(folder, DUALEA_FILE_COMMON);
          }
          
-         int handle = FileOpen(m_logFile, FILE_WRITE | FILE_TXT | FILE_COMMON);
+         int handle = FileOpen(m_logFile, FILE_WRITE | FILE_TXT | DUALEA_FILE_COMMON);
          if (handle != INVALID_HANDLE)
          {
             FileSeek(handle, 0, SEEK_END);

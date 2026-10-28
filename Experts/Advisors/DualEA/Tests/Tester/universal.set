@@ -1,0 +1,13 @@
+; Verified universal symbol-aware H1 model; demo/tester accounts only.
+UseOnnxPredictor=true||false||0||true||N
+LoadONNXModels=false||false||0||true||N
+AutoReloadModels=false||false||0||true||N
+OnnxPathsUseCommonDir=true||false||0||true||N
+OnnxModelPath=DualEA\signal_model.onnx
+OnnxConfigJsonPath=DualEA\onnx_config.json
+OnnxConfigIniPath=DualEA\onnx_config.ini
+NoConstraintsMode=false||false||0||true||N
+LiveTradingEnabled=true||false||0||true||N
+ShadowMode=false||false||0||true||N
+LotSize=0.01||0.01||0.01||0.1||N
+HeartbeatVerbose=false||false||0||true||N

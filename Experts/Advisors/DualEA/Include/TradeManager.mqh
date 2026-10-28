@@ -11,7 +11,7 @@
 #include <Arrays\ArrayObj.mqh>
 #include <Object.mqh>
 #include "IStrategy.mqh"
-#include "../Include/Indicators\ATR.mqh"
+#include "..\Include\Indicators\ATR.mqh"
 #include "LogMiddleware.mqh"
 
 // Use TrailingType from IStrategy.mqh instead of defining a duplicate enum
@@ -51,6 +51,7 @@ private:
    double            m_lot_size;
    int               m_magic_number;
    CArrayObj         m_trails;           // Array of CTrailConfig objects
+   bool              m_demo_only;
    ENUM_EXEC_MODE    m_exec_mode;        // Execution mode (disabled/enabled/shadow)
 
    // Find trail configuration by symbol - implementation moved to public section
@@ -335,6 +336,11 @@ public:
                      CTradeManager(string symbol, double lot_size, int magic_number);
                     ~CTradeManager();
 
+   void SetDemoOnly(bool enabled) { m_demo_only = enabled; }
+   bool AccountExecutionAllowed() const
+   {
+      return !m_demo_only || MQLInfoInteger(MQL_TESTER) || AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_DEMO;
+   }
    // Execution mode control
    void              SetExecutionMode(ENUM_EXEC_MODE mode) { m_exec_mode = mode; }
    ENUM_EXEC_MODE    GetExecutionMode() const { return m_exec_mode; }
@@ -364,6 +370,7 @@ CTradeManager::CTradeManager(string symbol, double lot_size, int magic_number)
    m_symbol = symbol;
    m_lot_size = lot_size;
    m_magic_number = magic_number;
+   m_demo_only = false;
    m_exec_mode = EXEC_ENABLED;  // Default to enabled
    m_trade.SetExpertMagicNumber(m_magic_number);
    m_trade.SetMarginMode();
@@ -387,6 +394,7 @@ CTradeManager::~CTradeManager()
 bool CTradeManager::ExecuteOrder(const TradeOrder &order)
   {
    if(order.action == ACTION_NONE) return false;
+   if(!AccountExecutionAllowed()) { LOG("[PAPER-SAFETY] Non-demo account: order blocked at TradeManager."); return false; }
    
    // EXECUTION MODE CHECK
    if(m_exec_mode == EXEC_DISABLED)
@@ -401,7 +409,7 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
       LOG(StringFormat("[SHADOW] Would execute: %s %s vol=%.2f price=%.5f sl=%.5f tp=%.5f strategy=%s",
           EnumToString(order.order_type), m_symbol, order.lots>0.0?order.lots:m_lot_size, 
           order.price, order.stop_loss, order.take_profit, order.strategy_name));
-      return true; // Shadow mode reports success but doesn't trade
+      return false; // No broker execution occurred.
      }
    
    bool ok = false;
@@ -410,8 +418,13 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
       LOG(StringFormat("[SYMBOL] Not ready for trading: %s. Skipping order %s", m_symbol, EnumToString(order.order_type)));
       return false;
      }
-   double vol_in = (order.lots>0.0 ? order.lots : m_lot_size);
+   double vol_in = order.lots; // Explicit zero is a veto, not a default-size request.
    bool   lots_overridden = (order.lots>0.0);
+   if(!MathIsValidNumber(vol_in) || vol_in <= 0.0)
+   {
+      LOG("[VOL] Zero, negative, or invalid size rejected; no implicit minimum-lot trade.");
+      return false;
+   }
    double vol = NormalizeVolume(vol_in);
    if(vol<=0.0)
      {
@@ -573,6 +586,7 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
      datetime now = TimeCurrent();
      LOG(StringFormat("OrderSend: type=%s symbol=%s lots_req=%.4f lots_used=%.4f override=%s retcode=%u deal=%I64u order=%I64u price=%.5f ok=%s attempt=%d time=%s",
                  EnumToString(order.order_type), m_symbol, vol_in, vol, (lots_overridden?"true":"false"), rc, deal, ord, px, (ok?"true":"false"), attempt, TimeToString(now, TIME_DATE|TIME_SECONDS)));
+     ok = ok && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_DONE_PARTIAL || rc == TRADE_RETCODE_PLACED);
      if(ok) break;
      // Log transient errors but DO NOT Sleep on tick path
      if(rc==10004 || rc==10006 || rc==10007 || rc==10009 || rc==10010 || rc==10013 || rc==10014)
@@ -640,6 +654,7 @@ void CTradeManager::ConfigureTrailing(const TradeOrder &order)
 //+------------------------------------------------------------------+
 void CTradeManager::UpdateTrailingStops()
   {
+   if(m_exec_mode != EXEC_ENABLED || !AccountExecutionAllowed()) return;
    int total = PositionsTotal();
    for(int i=0;i<total;++i)
      {

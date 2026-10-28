@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| LearningBridge.mqh - Bidirectional Learning Between Paper/Live EA |
 //+------------------------------------------------------------------+
@@ -416,7 +417,7 @@ public:
       
       string file_path = target_path + "\\paper_signals.txt";
       CFileTxt file;
-      if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+      if(file.Open(file_path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON))
       {
          int transferred_count = 0;
          for(int i = 0; i < m_decisions.Total(); i++)
@@ -459,12 +460,12 @@ private:
          return;
       }
       
-      // Check if file exists (use FILE_COMMON for Strategy Tester)
-      if(!FileIsExist(file_path, FILE_COMMON))
+      // Check if file exists (use DUALEA_FILE_COMMON for Strategy Tester)
+      if(!FileIsExist(file_path, DUALEA_FILE_COMMON))
       {
          // Create empty initialized file with header
          CFileTxt file;
-         if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+         if(file.Open(file_path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON))
          {
             file.WriteString("# DualEA Learning Data - Auto-generated\n");
             file.WriteString("# Format: signal_id,symbol,price,sl,tp,volume,executed\n");
@@ -476,7 +477,7 @@ private:
       
       // File exists - load data
       CFileTxt file;
-      if(file.Open(file_path, FILE_READ|FILE_TXT|FILE_COMMON))
+      if(file.Open(file_path, FILE_READ|FILE_TXT|DUALEA_FILE_COMMON))
       {
          int loaded_count = 0;
          while(!file.IsEnding() && loaded_count < m_max_records)
@@ -511,11 +512,11 @@ private:
       if(m_directory_initialized)
          return true;
       
-      // CRITICAL FIX: Use FILE_COMMON for Strategy Tester compatibility
-      // Strategy Tester requires FILE_COMMON flag for directory operations
+      // CRITICAL FIX: Use DUALEA_FILE_COMMON for Strategy Tester compatibility
+      // Strategy Tester requires DUALEA_FILE_COMMON flag for directory operations
       
-      // Try to create directory with FILE_COMMON flag
-      if(FolderCreate(path, FILE_COMMON))
+      // Try to create directory with DUALEA_FILE_COMMON flag
+      if(FolderCreate(path, DUALEA_FILE_COMMON))
       {
          PrintFormat("LearningBridge: Created directory: %s (Common Files)", path);
          m_directory_initialized = true;
@@ -532,7 +533,7 @@ private:
          return true;
       }
       
-      // If FILE_COMMON failed, log and return false
+      // If DUALEA_FILE_COMMON failed, log and return false
       PrintFormat("LearningBridge: Failed to create directory %s (Error: %d)", path, error);
       PrintFormat("   Hint: Use relative paths like 'DualEA\\PaperData' instead of absolute paths");
       return false;
@@ -549,7 +550,7 @@ private:
       
       string file_path = m_data_path + "\\learning_data.txt";
       CFileTxt file;
-      if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+      if(file.Open(file_path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON))
       {
          // Write header
          file.WriteString("# DualEA Learning Data - Auto-updated\n");
@@ -582,7 +583,7 @@ private:
       
       string file_path = m_data_path + "\\signals.txt";
       CFileTxt file;
-      if(file.Open(file_path, FILE_WRITE|FILE_TXT|FILE_COMMON))
+      if(file.Open(file_path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON))
       {
          string line = FormatDecisionToString(&decision);
          file.WriteString(line);

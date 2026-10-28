@@ -5,7 +5,6 @@
 #ifndef __STRATEGY_SIGNAL_GENERATORS_MQH__
 #define __STRATEGY_SIGNAL_GENERATORS_MQH__
 
-#include "IStrategy.mqh"
 #include "GateManager.mqh"
 
 //+------------------------------------------------------------------+
@@ -51,6 +50,9 @@ void SetSignalDefaults(TradingSignal &signal, string symbol, ENUM_TIMEFRAMES tf,
    signal.type = type;
    signal.order_type = (type == 0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;  // Set order_type based on type
    signal.strategy = strategy;
+   signal.strategy_name = strategy;
+   signal.entry_price = price;
+   signal.direction = type==0 ? 1 : -1;
    signal.volume = 0.1;
    signal.confidence = 0.6;
    
@@ -93,6 +95,8 @@ void SetSignalDefaults(TradingSignal &signal, string symbol, ENUM_TIMEFRAMES tf,
    {
       signal.tp = (type == 0) ? price + atr * tp_mult : price - atr * tp_mult;
    }
+   signal.stop_loss=signal.sl;
+   signal.take_profit=signal.tp;
 }
 
 //+------------------------------------------------------------------+
@@ -114,27 +118,29 @@ public:
       if(handle == INVALID_HANDLE) return false;
       
       double adx[2], di_plus[2], di_minus[2];
-      if(CopyBuffer(handle, 0, 0, 2, adx) != 2) { IndicatorRelease(handle); return false; }
-      if(CopyBuffer(handle, 1, 0, 2, di_plus) != 2) { IndicatorRelease(handle); return false; }
-      if(CopyBuffer(handle, 2, 0, 2, di_minus) != 2) { IndicatorRelease(handle); return false; }
+      // Physical CopyBuffer order: [0]=older closed bar, [1]=newer closed bar.
+      // Use completed bars so evaluation at H1 open can see the last crossover.
+      if(CopyBuffer(handle, 0, 1, 2, adx) != 2) { IndicatorRelease(handle); return false; }
+      if(CopyBuffer(handle, 1, 1, 2, di_plus) != 2) { IndicatorRelease(handle); return false; }
+      if(CopyBuffer(handle, 2, 1, 2, di_minus) != 2) { IndicatorRelease(handle); return false; }
       IndicatorRelease(handle);
       
-      if(adx[0] < m_threshold) return false;
+      if(adx[1] < m_threshold) return false;
       
       double price = GetCurrentPrice(symbol);
       
       // DI+ crosses above DI- = Buy
-      if(di_plus[1] <= di_minus[1] && di_plus[0] > di_minus[0])
+      if(di_plus[0] <= di_minus[0] && di_plus[1] > di_minus[1])
       {
-         SetSignalDefaults(signal, symbol, tf, GetName(), 0, price);
-         signal.confidence = 0.5 + (adx[0] / 100.0) * 0.3;
+         SetSignalDefaults(signal, symbol, tf, GetName(), 0, GetCurrentPrice(symbol,false));
+         signal.confidence = 0.5 + (adx[1] / 100.0) * 0.3;
          return true;
       }
       // DI- crosses above DI+ = Sell
-      if(di_minus[1] <= di_plus[1] && di_minus[0] > di_plus[0])
+      if(di_minus[0] <= di_plus[0] && di_minus[1] > di_plus[1])
       {
          SetSignalDefaults(signal, symbol, tf, GetName(), 1, price);
-         signal.confidence = 0.5 + (adx[0] / 100.0) * 0.3;
+         signal.confidence = 0.5 + (adx[1] / 100.0) * 0.3;
          return true;
       }
       return false;

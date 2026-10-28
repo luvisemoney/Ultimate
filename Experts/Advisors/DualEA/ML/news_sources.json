@@ -1,0 +1,5 @@
+[
+  {"name":"bank_of_canada","target":"CAD","url":"https://www.bankofcanada.ca/utility/news/feed/"},
+  {"name":"federal_reserve","target":"USD","url":"https://www.federalreserve.gov/feeds/press_monetary.xml"},
+  {"name":"ecb","target":"EUR","url":"https://www.ecb.europa.eu/rss/press.html"}
+]

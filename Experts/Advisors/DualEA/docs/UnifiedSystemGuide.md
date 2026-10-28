@@ -1,3 +1,6 @@
+
+> Current model workflow: [UniversalONNXGuide.md](UniversalONNXGuide.md). The supported training commands now build a real-history, symbol-aware native ONNX model; historical snapshot/status-label instructions are superseded.
+
 # Unified System Guide
 
 ## Overview

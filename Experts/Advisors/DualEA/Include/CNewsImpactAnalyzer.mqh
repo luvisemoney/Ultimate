@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| CNewsImpactAnalyzer.mqh - Dynamic News-Based Threshold Adjustment  |
 //| Analyzes news impact in real-time and adjusts trading thresholds     |
@@ -506,7 +507,7 @@ public:
       
       // Append to training file
       int handle = FileOpen(m_export_filename, 
-                           FILE_WRITE|FILE_READ|FILE_CSV|FILE_COMMON,
+                           FILE_WRITE|FILE_READ|FILE_CSV|DUALEA_FILE_COMMON,
                            ',');
       
       if(handle != INVALID_HANDLE)

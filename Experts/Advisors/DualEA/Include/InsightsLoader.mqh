@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| InsightsLoader.mqh - Load insights from JSON for LiveEA gating  |
 //+------------------------------------------------------------------+
@@ -29,12 +30,12 @@ int Insights_Load_Default(
    ArrayResize(out_dd, 0);
    
    string path = "DualEA\\insights.json";
-   FolderCreate("DualEA", FILE_COMMON);
-   if(!FileIsExist(path, FILE_COMMON))
+   FolderCreate("DualEA", DUALEA_FILE_COMMON);
+   if(!FileIsExist(path, DUALEA_FILE_COMMON))
    {
       return 0;  // Cold start: insights not generated yet
    }
-   int h = FileOpen(path, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
+   int h = FileOpen(path, FILE_READ|FILE_TXT|DUALEA_FILE_COMMON|FILE_ANSI);
    if(h == INVALID_HANDLE)
    {
       int err = GetLastError();

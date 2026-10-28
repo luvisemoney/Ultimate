@@ -198,19 +198,63 @@ def enrich_with_yahoo(df: pd.DataFrame,
     return pd.concat(enriched_frames, ignore_index=True)
 
 
-def build_feature_matrix(df: pd.DataFrame,
-                         drop_cols: Tuple[str, ...] = ("r_multiple", "close_event", "strategy", "order_id", "deal_id")) -> Tuple[np.ndarray, List[str]]:
-    x = df.copy()
-    for c in drop_cols:
-        if c in x.columns:
-            x = x.drop(columns=[c])
-    # Remove non-numeric columns
-    num = x.select_dtypes(include=[np.number]).copy()
-    features = num.columns.tolist()
-    return num.values.astype(float), features
+# Exact order shared with Include/CMarketModelFeatures.mqh. Python diagnostics
+# may consume this contract, but must not infer inputs from every numeric CSV
+# column (which previously admitted close prices and realized profit).
+MARKET_BASE_FEATURES = (
+    "mm_signed_logret1", "mm_signed_logret3", "mm_signed_logret12", "mm_signed_zscore12",
+    "mm_return_std12", "mm_range", "mm_signed_body", "mm_spread",
+    "mm_hour_sin", "mm_hour_cos", "mm_direction", "mm_atr14",
+)
 
 
-def scale_features(x: np.ndarray) -> Tuple[np.ndarray, StandardScaler]:
-    scaler = StandardScaler()
-    xs = scaler.fit_transform(x)
-    return xs, scaler
+def build_feature_matrix(df: pd.DataFrame, drop_cols: Tuple[str, ...] = (), *,
+                         feature_names: Optional[List[str]] = None) -> Tuple[np.ndarray, List[str]]:
+    """Read only the explicit shared causal contract; never guess predictors.
+
+    The supported trainer remains Build-MarketModel.ps1. This helper is for
+    inspecting dense parity data, not rebuilding post-trade snapshot features.
+    """
+    if feature_names is None:
+        raise ValueError("Explicit shared market feature_names metadata is required; use Build-MarketModel.ps1 for training")
+    names = list(feature_names)
+    if tuple(names[:12]) != MARKET_BASE_FEATURES or (len(names) - 12) % 4:
+        raise ValueError("Feature names do not match the shared market feature contract")
+    if len(names) != len(set(names)):
+        raise ValueError("Duplicate model feature names")
+    for offset in range(12, len(names), 4):
+        first = names[offset]
+        if not first.startswith("sym_") or not first.endswith("_flag"):
+            raise ValueError("Invalid symbol-conditioned feature group")
+        prefix = first[:-5]
+        if names[offset:offset + 4] != [prefix + suffix for suffix in ("_flag", "_ret1", "_ret3", "_zscore")]:
+            raise ValueError("Symbol-conditioned features have the wrong order")
+    absent = set(names) - set(df.columns)
+    if absent:
+        raise ValueError(f"Missing observed causal features: {sorted(absent)}")
+    matrix = df.loc[:, names].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
+    if matrix.ndim != 2 or not np.isfinite(matrix).all():
+        raise ValueError("Unknown or nonfinite causal features cannot be imputed silently")
+    return matrix, names
+
+
+def scale_features(x: np.ndarray, *, scaler: Optional[StandardScaler] = None,
+                   fit_training_partition: bool = False) -> Tuple[np.ndarray, StandardScaler]:
+    """Fit only when a caller explicitly supplies the training partition.
+
+    Validation/test calls must provide the already fitted scaler and leave
+    fit_training_partition false. No full-dataset default fitting remains.
+    """
+    values = np.asarray(x, dtype=np.float64)
+    if values.ndim != 2 or values.shape[0] == 0 or not np.isfinite(values).all():
+        raise ValueError("Scaling requires a nonempty finite observed feature matrix")
+    if scaler is None:
+        if not fit_training_partition:
+            raise ValueError("Supply a training-fitted scaler, or explicitly fit_training_partition=True on training rows only")
+        scaler = StandardScaler()
+        return scaler.fit_transform(values), scaler
+    if fit_training_partition:
+        raise ValueError("Refitting an existing scaler is prohibited; validation/test must only transform")
+    if not hasattr(scaler, "mean_") or not hasattr(scaler, "scale_"):
+        raise ValueError("Scaler must already be fitted on training rows")
+    return scaler.transform(values), scaler

@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| CUnifiedFileIO.mqh - Thread-Safe File Operations with Retry Logic  |
 //| Provides robust file I/O with automatic retry, buffering, and       |
@@ -148,7 +149,7 @@ public:
       EnsureFolderExists(filename, use_common);
       
       int flags = FILE_READ | FILE_TXT | FILE_ANSI;
-      if(use_common) flags |= FILE_COMMON;
+      if(use_common) flags |= DUALEA_FILE_COMMON;
       flags |= m_file_share_flags;
       
       int handle = INVALID_HANDLE;
@@ -216,7 +217,7 @@ public:
       }
       
       int flags = FILE_WRITE | FILE_TXT | FILE_ANSI;
-      if(use_common) flags |= FILE_COMMON;
+      if(use_common) flags |= DUALEA_FILE_COMMON;
       if(append) flags |= FILE_READ; // Required for seek
       flags |= m_file_share_flags;
       
@@ -304,7 +305,7 @@ public:
       
       // Write to temp file
       int flags = FILE_WRITE | FILE_TXT | FILE_ANSI;
-      if(use_common) flags |= FILE_COMMON;
+      if(use_common) flags |= DUALEA_FILE_COMMON;
       flags |= m_file_share_flags;
       
       int handle = FileOpen(temp_filename, flags);
@@ -322,32 +323,32 @@ public:
       if(!write_ok || temp_size <= 0)
       {
          // Clean up temp file
-         FileDelete(temp_filename, use_common ? FILE_COMMON : 0);
+         FileDelete(temp_filename, use_common ? DUALEA_FILE_COMMON : 0);
          return false;
       }
       
       // Delete old file if exists
-      if(FileIsExist(filename, use_common ? FILE_COMMON : 0))
+      if(FileIsExist(filename, use_common ? DUALEA_FILE_COMMON : 0))
       {
-         FileDelete(filename, use_common ? FILE_COMMON : 0);
+         FileDelete(filename, use_common ? DUALEA_FILE_COMMON : 0);
       }
       
       // Rename temp to final
       // Note: MQL5 doesn't have direct FileRename, so we copy and delete
-      bool renamed = FileCopy(temp_filename, use_common ? FILE_COMMON : 0, 
-                              filename, use_common ? FILE_COMMON : 0, 
+      bool renamed = FileCopy(temp_filename, use_common ? DUALEA_FILE_COMMON : 0, 
+                              filename, use_common ? DUALEA_FILE_COMMON : 0, 
                               FILE_REWRITE);
       
       if(renamed)
       {
-         FileDelete(temp_filename, use_common ? FILE_COMMON : 0);
+         FileDelete(temp_filename, use_common ? DUALEA_FILE_COMMON : 0);
          m_successful_operations++;
          return true;
       }
       else
       {
          // Cleanup
-         FileDelete(temp_filename, use_common ? FILE_COMMON : 0);
+         FileDelete(temp_filename, use_common ? DUALEA_FILE_COMMON : 0);
          m_failed_operations++;
          BufferWrite(filename, content);
          return false;
@@ -473,7 +474,7 @@ public:
       }
       
       // Create folder
-      int flags = use_common ? FILE_COMMON : 0;
+      int flags = use_common ? DUALEA_FILE_COMMON : 0;
       bool created = FolderCreate(folder, flags);
       
       if(created || GetLastError() == 0)

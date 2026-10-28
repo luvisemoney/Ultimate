@@ -4,17 +4,25 @@
 #property copyright "DualEA Enhanced Paper System"
 #property version   "2.0"
 #property strict
+#property tester_file "DualEA\\signal_model.onnx"
+#property tester_file "DualEA\\onnx_config.ini"
+#property tester_file "DualEA\\onnx_config.json"
 
 //+------------------------------------------------------------------+
 //| INCLUDES - COMPREHENSIVE MODULE INTEGRATION                     |
 //+------------------------------------------------------------------+
+#include "..\Include\RuntimeStorage.mqh"
+#include "..\Include\PaperExecutionSafety.mqh"
+#include "..\Include\CNewsSentimentStore.mqh"
+
 // NEW: Auto-learning gate system (replaces old GateManager/GateRegistry)
-#include "../Include/GateSystemAutoLearning.mqh"
+#define DUALEA_HAS_GATE_RECORDER
+#include "..\Include\GateSystemAutoLearning.mqh"
 
 // Core Services
-#include "../Include/KnowledgeBase.mqh"
-#include "../Include/TradeManager.mqh"
-#include "../Include/PolicyEngine.mqh"
+#include "..\Include\KnowledgeBase.mqh"
+#include "..\Include\TradeManager.mqh"
+#include "..\Include\PolicyEngine.mqh"
 
 // Telemetry System
 #include "../Include/Telemetry.mqh"
@@ -24,18 +32,18 @@
 #include "../Include/VolatilitySizer.mqh"
 
 // Centralized gate orchestration macros
-#include "../Include/GatingPipeline.mqh"
+// GatingPipeline is included after host globals below.
 
 // Adaptive Signal Optimization System
-#include "../Include/AdaptiveSignalOptimizer.mqh"
-#include "../Include/PolicyUpdater.mqh"
-#include "../Include/PositionReviewer.mqh"
-#include "../Include/GateLearningSystem.mqh"
-#include "../Include/UnifiedTradeLogger.mqh"
+#include "..\Include\AdaptiveSignalOptimizer.mqh"
+#include "..\Include\PolicyUpdater.mqh"
+#include "..\Include\PositionReviewer.mqh"
+#include "..\Include\GateLearningSystem.mqh"
+#include "..\Include\UnifiedTradeLogger.mqh"
 
 // Unified System Components
-#include "../Include/ConfigManager.mqh"
-#include "../Include/EventBus.mqh"
+#include "..\Include\ConfigManager.mqh"
+#include "..\Include\EventBus.mqh"
 
 // Standard Libraries
 #include <Arrays/ArrayObj.mqh>
@@ -71,50 +79,51 @@
 #endif
 
 // Advanced Regime Detection
-#include "../Include/AdvancedRegimeDetector.mqh"
+#include "..\\Include\\AdvancedRegimeDetector.mqh"
 
 // Nuclear-Grade 100-Level Optimization
 #include "NuclearOptimization.mqh"
 
 // Regime-based parameter adaptation
-#include "regime_adaptation.mqh"
+// Regime adaptation is included after host globals below.
 
 // Position management
-#include "../Include/ModelPredictor.mqh"
+#include "..\\Include\\ModelPredictor.mqh"
+#include "..\Include\CMarketModelFeatures.mqh"
 
 // Policy hot-reload bridge
-#include "../Include/PolicyHttpBridge.mqh"
+#include "..\\Include\\PolicyHttpBridge.mqh"
 
 // Strategy Implementations - Per-asset registry (internally includes concrete strategy headers)
-#include "../Include/Strategies\\AssetRegistry.mqh"
+#include "..\\Include\\Strategies\\AssetRegistry.mqh"
 
 // Strategy selector
-#include "../Include/StrategySelector.mqh"
+#include "..\Include\StrategySelector.mqh"
 
 // P0/P1 COMPREHENSIVE HARDENING & INTELLIGENCE UPGRADE
-#include "../Include/DualEA_MasterIntegration.mqh"
+#include "..\Include\DualEA_MasterIntegration.mqh"
 
 // P0-P5 ADVANCED HARDENING & INTELLIGENCE INTEGRATION
-#include "../Include/PaperEA_v2_P0P5_Integration.mqh"
+#include "..\Include\PaperEA_v2_P0P5_Integration.mqh"
 
 // Additional components referenced by PaperEA_v2
-#include "../Include/CGateAudit.mqh"
-#include "../Include/CInsightsRealtime.mqh"
+#include "..\Include\CGateAudit.mqh"
+// Realtime statistics are maintained by CIncrementalInsightEngine.
 
 // Learning and Export Systems - Using file-based export for strategy tester compatibility
-#include "../Include/LearningBridge.mqh"
-#include "../Include/FileBasedFeatureExport.mqh"  // Replaces DLL-based export
-#include "../Include/StrategySignalGenerators.mqh"  // Extensible strategy signal generators
-#include "../Include/IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
+#include "..\Include\LearningBridge.mqh"
+#include "..\Include\FileBasedFeatureExport.mqh"  // Replaces DLL-based export
+#include "..\Include\StrategySignalGenerators.mqh"  // Extensible strategy signal generators
+#include "..\Include\IncrementalInsightEngine.mqh"   // Real-time O(1) statistics engine
 
 // ===================[ EFFICIENT GATE SYSTEM CONFIGURATION ]===================
 input group "=== EFFICIENT 8-STAGE GATE SYSTEM ==="
 input bool UseEfficientGates = true;        // Use optimized gate implementation
 input int GateProcessingMode = 0;           // 0=Full, 1=RiskOnly, 2=Fast, 3=Bypass
-input bool ShadowMode = false;               // Disable shadow mode for real trading
-input bool LiveTradingEnabled = true;      // Enable demo trading
-input bool LoadONNXModels = true;           // Load dynamic threshold ONNX models
-input bool AutoReloadModels = true;         // Auto-reload models when updated
+input bool ShadowMode = false;               // Log decisions without sending orders
+input bool LiveTradingEnabled = true;      // Enable orders on DEMO accounts or Strategy Tester only
+input bool LoadONNXModels = false;           // Load dynamic threshold ONNX models
+input bool AutoReloadModels = false;         // Auto-reload models when updated
 input int RetrainIntervalHours = 24;        // Hours between model retraining
 input bool G5_PerformanceWaxEnabled = true;   // Enable performance validation
 input double G5_MinWinRate = 0.45;            // Min strategy win rate
@@ -126,8 +135,8 @@ input double G7_MaxSpreadPercent = 0.05;      // Max spread (5%)
 
 // Risk gates ALWAYS enforced (G1, G4, G7, G8) - per MQL5 risk management best practices
 // IMPORTANT: "Paper" refers to DEMO ACCOUNT, NOT simulated trades!
-// - PaperEA executes REAL MT5 trades via OrderSend() on DEMO accounts
-// - LiveEA executes REAL MT5 trades via OrderSend() on LIVE accounts  
+// - PaperEA executes DEMO/TESTER MT5 orders via OrderSend() on DEMO accounts
+// - LiveEA executes DEMO/TESTER MT5 orders via OrderSend() on LIVE accounts  
 // - Both use identical execution logic through TradeManager
 // - All positions tracked by MT5's native position system
 // - Use PositionSelect(), PositionGetDouble(), OnTradeTransaction() for real position data
@@ -158,7 +167,7 @@ input int    TrailATRPeriod       = 14;      // 7:28:7 - ATR period for dynamic 
 input double TrailATRMultiplier   = 2.0;     // 1.0:4.0:0.5 - ATR multiplier for trail distance
 input bool   UsePositionManager   = true;
 input int    PMMaxOpenPositions   = 10;      // 3:20:1 - Max concurrent positions
-input bool   NoConstraintsMode    = true;
+input bool   NoConstraintsMode    = false;
 
 // ===================[ GATING/INSIGHTS ]===================
 input bool   UseInsightsGating    = true;
@@ -245,6 +254,11 @@ input int    NewsBufferAfterMin  = 30;        // 15:120:15 - News buffer after e
 input int    NewsImpactMin       = 2;         // 1:5:1 - Minimum news impact level to filter
 input bool   NewsUseFile         = true;
 input string NewsFileRelPath     = "DualEA\\news_blackouts.csv";
+input bool UseNewsSentiment = false; // Timestamped headline context; separate from scheduled blackouts
+input string NewsSentimentFile = "DualEA\\news_sentiment.tsv";
+input bool NewsSentimentBlockOpposing = false; // Experimental opt-in; default observes only
+input double NewsSentimentOppositionThreshold = 0.5; // Rule score, not a model probability
+CNewsSentimentStore g_news_sentiment;
 input bool   UsePromotionGate    = false;
 input bool   PromoLiveOnly       = false;
 input int    PromoStartHour      = 0;
@@ -485,7 +499,7 @@ CSessionManager* g_session_manager = NULL;
 CCorrelationManager* g_correlation_manager = NULL;
 CVolatilitySizer* g_volatility_sizer = NULL;
 CPolicyEngine*     g_policy_engine    = NULL;
-CInsightsRealtime* g_ins_rt = NULL;
+
 // Policy bridge for file-change detection
 CPolicyHttpBridge* g_policy_bridge = NULL;
 
@@ -513,20 +527,21 @@ CKnowledgeBase*          g_kb = NULL;
 CTelemetry*              g_telemetry_base = NULL;
 CModelPredictor          g_model_predictor;
 bool                     g_model_predictor_ready = false;
+string                   g_market_model_symbols[];
+bool                     g_market_model_features = false;
+datetime                 g_market_prediction_bar=0;
+double                   g_market_buy_probability=-1.0;
+double                   g_market_sell_probability=-1.0;
 string                   g_mlp_feature_columns[];
 double                   g_mlp_feature_buffer[];
 bool                     g_mlp_warned_unready = false;
 bool                     g_mlp_warned_features = false;
 
+#include "..\Include\GatingPipeline.mqh"
+#include "regime_adaptation.mqh"
+
 // ===================[ ONNX PREDICTOR HELPERS ]===================
-// Define ENUM_STATISTICS values if not already defined (for TesterStatistics compatibility)
-#ifndef STAT_BALANCE_DDREL_PERCENT
-   #define STAT_BALANCE_DDREL_PERCENT 0
-   #define STAT_SHARPE_RATIO 1
-   #define STAT_TRADES_WIN 2
-   #define STAT_TRADES_LOSS 3
-   #define STAT_TRADES_TOTAL 4
-#endif
+// Use MT5's ENUM_STATISTICS directly; enum members are not preprocessor macros.
 
 string ResolveDualEAPath(const string relative_path, const bool prefer_common)
 {
@@ -647,6 +662,13 @@ bool BuildPredictorFeatureVector(const TradingSignal &signal,
    int feat_count = ArraySize(g_mlp_feature_columns);
    if(feat_count == 0)
       return false;
+
+   if(g_market_model_features)
+   {
+      double market_base[];
+      if(!BuildMarketModelFeatures(_Symbol,(ENUM_TIMEFRAMES)_Period,ts,signal.type,market_base)) return false;
+      return ExpandUniversalModelFeatures(market_base,_Symbol,g_market_model_symbols,buffer);
+   }
 
    ArrayResize(buffer, feat_count);
 
@@ -1020,6 +1042,9 @@ double EvaluateModelProbability(const TradingSignal &signal,
 
 bool InitModelPredictor()
 {
+   g_market_prediction_bar=0;
+   g_market_buy_probability=-1.0;
+   g_market_sell_probability=-1.0;
    ArrayResize(g_mlp_feature_columns, 0);
    ArrayResize(g_mlp_feature_buffer, 0);
    g_mlp_warned_unready = false;
@@ -1040,7 +1065,7 @@ bool InitModelPredictor()
       return false;
    }
 
-   int common_flag = OnnxPathsUseCommonDir ? FILE_COMMON : 0;
+   int common_flag = OnnxPathsUseCommonDir ? DUALEA_FILE_COMMON : 0;
 
    int h_model = FileOpen(OnnxModelPath, FILE_READ|FILE_BIN|common_flag);
    if(h_model == INVALID_HANDLE)
@@ -1084,6 +1109,30 @@ bool InitModelPredictor()
    }
 
    ArrayResize(g_mlp_feature_buffer, ArraySize(g_mlp_feature_columns));
+   g_market_model_features=(g_model_predictor.FeatureContract()=="market_universal_v1");
+   if(!g_market_model_features)
+   {
+      LOG("[MODEL-CONTRACT] Retired or unknown feature contract; use the real-history universal model bundle.");
+      g_model_predictor.Shutdown();
+      return false;
+   }
+   if(g_market_model_features)
+   {
+      string expected[];
+      bool matches=g_model_predictor.GetSupportedSymbols(g_market_model_symbols) &&
+                   UniversalModelFeatureNames(g_market_model_symbols,expected);
+      if(matches) matches=ArraySize(expected)==ArraySize(g_mlp_feature_columns);
+      if(matches)
+         for(int i=0;i<ArraySize(expected);i++)
+            if(expected[i]!=g_mlp_feature_columns[i]) matches=false;
+      if(!matches || !g_model_predictor.SupportsSymbol(_Symbol) ||
+         g_model_predictor.TrainedTimeframe()!=(int)_Period || _Period!=PERIOD_H1)
+      {
+         LOG("[MODEL-CONTRACT] Unsupported symbol, timeframe, or universal feature schema.");
+         g_model_predictor.Shutdown();
+         return false;
+      }
+   }
    LOG(StringFormat("ONNX predictor ready (%d features)", ArraySize(g_mlp_feature_columns)));
    return true;
 }
@@ -1113,6 +1162,15 @@ static datetime g_last_paper_action = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   if(NewsSentimentOppositionThreshold<=0 || NewsSentimentOppositionThreshold>1)
+      return INIT_PARAMETERS_INCORRECT;
+   if(!PaperAccountAllowed((bool)MQLInfoInteger(MQL_TESTER), AccountInfoInteger(ACCOUNT_TRADE_MODE)))
+   {
+      Print("[PAPER-SAFETY] Initialization refused: DEMO accounts and Strategy Tester only.");
+      return INIT_FAILED;
+   }
+   Print("[PAPER-SAFETY] Environment: ", MQLInfoInteger(MQL_TESTER) ? "STRATEGY_TESTER" : "DEMO",
+         " execution=", LiveTradingEnabled && !ShadowMode ? "ENABLED" : "DISABLED");
    // ===================[ INSTANCE COLLISION DETECTION ]===================
    // Check if another instance with same magic is already running on this chart
    static bool g_instance_initialized = false;
@@ -1134,8 +1192,8 @@ int OnInit()
    LOG("=== PaperEA v2 Enhanced Initialization Starting ===");
    LOG(StringFormat("Instance ID: %s-%s-M%d", _Symbol, EnumToString((ENUM_TIMEFRAMES)_Period), MagicNumber));
    // Seed RNG for rate-based polling and start 10s timer
-   MathSrand((int)TimeLocal());
-   if(HotReloadIntervalSec > 0) EventSetTimer(HotReloadIntervalSec);
+   MathSrand(MQLInfoInteger(MQL_TESTER) ? 12345 : (int)TimeLocal());
+   EventSetTimer(HotReloadIntervalSec > 0 ? HotReloadIntervalSec : 10);
    
    // ===================[ INITIALIZE MODIFIABLE PARAMETERS ]===================
    // Copy user input values to modifiable runtime variables
@@ -1200,7 +1258,8 @@ int OnInit()
       g_model_predictor_ready = InitModelPredictor();
       if(!g_model_predictor_ready)
       {
-         LOG("WARNING: ONNX predictor init failed - heuristic confidence will be used");
+         LOG("[MODEL-REQUIRED] ONNX requested but initialization failed. Supply the model/config or explicitly set UseOnnxPredictor=false for heuristic mode.");
+         return INIT_FAILED;
       }
    }
    else
@@ -1283,16 +1342,8 @@ int OnInit()
    }
    
    // Initialize Position Manager
-   if(UsePositionManager)
-   {
-      g_position_manager = new CPositionManager();
-      if(CheckPointer(g_position_manager) != POINTER_INVALID)
-      {
-         // Position cap enforced via MaxOpenPositions gating inputs
-         LOG("Position Manager initialized");
-      }
-   }
-   
+   // The master controller constructs and owns the position manager.
+
    // ===================[ EFFICIENT GATE SYSTEM CONFIGURATION ]===================
    // Note: Input variables already declared at global scope (lines 82-95)
    // Using existing GateProcessingMode, G5_PerformanceWaxEnabled, etc.
@@ -1317,23 +1368,16 @@ int OnInit()
          {
             int interval = (HotReloadIntervalSec>0? HotReloadIntervalSec : 60);
             g_policy_bridge.Configure(PolicyFilePath, interval);
-            if(!g_policy_bridge.VerifyAccess(PolicyServerUrl))
+            if(!MQLInfoInteger(MQL_TESTER) && !g_policy_bridge.VerifyAccess(PolicyServerUrl))
             {
                LOG("WARNING: Policy HTTP endpoint not accessible yet. Follow the MT5 WebRequest instructions above to enable it.");
             }
-            else if(ShouldLog(LOG_INFO))
+            else if(!MQLInfoInteger(MQL_TESTER) && ShouldLog(LOG_INFO))
             {
                LOG(StringFormat("Policy HTTP access verified for %s", PolicyServerUrl));
             }
          }
       }
-   }
-   
-   // Initialize Insights Realtime
-   g_ins_rt = new CInsightsRealtime();
-   if(CheckPointer(g_ins_rt) != POINTER_INVALID)
-   {
-      LOG("Insights Realtime initialized");
    }
    
    // ===================[ LEGACY SYSTEM INITIALIZATION ]===================
@@ -1439,7 +1483,7 @@ int OnInit()
       
       // Configure from EA inputs
       master_config.shadow_logging_enabled = ShadowMode;
-      master_config.shadow_mode_only = ShadowMode && !LiveTradingEnabled;
+      master_config.shadow_mode_only = ShadowMode || !LiveTradingEnabled;
       master_config.sqlite_enabled = true;
       master_config.circuit_breaker_enabled = UseCircuitBreakers;
       master_config.correlation_sizing_enabled = UseCorrelationManager;
@@ -1504,6 +1548,9 @@ int OnInit()
       return(INIT_FAILED);
    }
    
+   g_trade_manager.SetDemoOnly(true);
+   g_trade_manager.SetExecutionMode(!LiveTradingEnabled ? EXEC_DISABLED : (ShadowMode ? EXEC_SHADOW : EXEC_ENABLED));
+
    // ===================[ ADAPTIVE OPTIMIZATION SYSTEM INITIALIZATION ]===================
    
    // Initialize Policy Updater (auto-creates and updates policy.json)
@@ -1732,11 +1779,11 @@ int OnInit()
    if(HotReloadIntervalSec<=0)
       EventSetTimer(60); // fallback 1-minute timer
    
-   LOG("=== 🚀 PaperEA v2 FULLY INTEGRATED AND READY FOR PRODUCTION ===");
+   LOG("=== 🚀 PaperEA v2 FULLY INTEGRATED AND INITIALIZATION COMPLETE (runtime validation required) ===");
    
    // ===================[ P0-P5 ADVANCED HARDENING INITIALIZATION ]===================
    // Initialize all P0-P5 subsystems (concept drift, CPU budgeting, nuclear risk, etc.)
-   if(!InitializeP0P5Systems())
+   if(!InitializeP0P5Systems(ShadowMode))
    {
       LOG("WARNING: P0-P5 Advanced Hardening initialization failed - continuing with degraded features");
    }
@@ -1763,6 +1810,11 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   if(CheckPointer(g_master_controller)!=POINTER_INVALID)
+   {
+      CSystemMonitor *monitor=g_master_controller.GetSystemMonitor();
+      if(CheckPointer(monitor)!=POINTER_INVALID) monitor.PrintLatencySummary();
+   }
    LOG("=== PaperEA v2 Enhanced Deinitialization Starting ===");
    ShutdownModelPredictor();
    SetGateSanitizeTelemetryCallback(NULL);
@@ -1795,11 +1847,7 @@ void OnDeinit(const int reason)
       g_volatility_sizer = NULL;
    }
    
-   if(g_position_manager != NULL)
-   {
-      delete g_position_manager;
-      g_position_manager = NULL;
-   }
+   // Position manager belongs to the master controller; released once below.
    
    if(g_policy_engine != NULL)
    {
@@ -1812,11 +1860,6 @@ void OnDeinit(const int reason)
       g_policy_bridge = NULL;
    }
    
-   if(g_ins_rt != NULL)
-   {
-      delete g_ins_rt;
-      g_ins_rt = NULL;
-   }
    
    // ===================[ CLEANUP STRATEGY SYSTEM ]===================
    if(g_selector != NULL)
@@ -1962,6 +2005,7 @@ void OnDeinit(const int reason)
    
    // ===================[ CLEANUP P0/P1 MASTER CONTROLLER ]===================
    ShutdownDualEAMasterController();
+   g_position_manager = NULL;
    
    // ===================[ CLEANUP TELEMETRY SYSTEM ]===================
    if(g_tel_standard != NULL)
@@ -2246,7 +2290,7 @@ bool Policy_Load()
    ArrayResize(g_pol_sl,0); ArrayResize(g_pol_tp,0); ArrayResize(g_pol_trail,0);
    string path = PolicyFilePath;
    
-   int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+   int h = FileOpen(path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
    if(h == INVALID_HANDLE)
    {
       if(ShouldLog(LOG_DEBUG))
@@ -2283,6 +2327,7 @@ bool Policy_Load()
 // Load policy from HTTP; returns response length on success, -1 on failure
 int LoadPolicyFromHttp(const string base_url)
 {
+   if(MQLInfoInteger(MQL_TESTER)) return -1;
    string url = base_url;
    if(StringLen(url) == 0) return -1;
    if(StringSubstr(url, StringLen(url) - 1, 1) == "/")
@@ -2318,14 +2363,14 @@ void CheckPolicyReload()
 {
    if(!UsePolicyGating) return;
    string path = "DualEA\\policy.reload";
-   int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+   int h = FileOpen(path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
    if(h==INVALID_HANDLE)
       return;
    FileClose(h);
    bool ok = Policy_Load();
    LogGate("PolicyReload", ok, "reload", NowMs());
    // best-effort delete in Common Files
-   if(!FileDelete(path, FILE_COMMON))
+   if(!FileDelete(path, DUALEA_FILE_COMMON))
    {
       LogGate("PolicyReload", false, "delete", NowMs());
    }
@@ -2335,14 +2380,14 @@ void CheckPolicyReload()
 void CheckInsightsReload()
 {
    string path = "DualEA\\insights.reload";
-   int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+   int h = FileOpen(path, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
    if(h==INVALID_HANDLE)
       return;
    FileClose(h);
    LogGate("InsightsReload", true, "reload", NowMs());
    // bool ok = Insights_RebuildAndReload("reload"); // Would need implementation
    // best-effort delete
-   if(!FileDelete(path, FILE_COMMON))
+   if(!FileDelete(path, DUALEA_FILE_COMMON))
    {
       LogGate("InsightsReload", false, "delete", NowMs());
    }
@@ -2493,13 +2538,49 @@ bool CheckNewsFilter()
    return true;
 }
 
+datetime HeadlineContextNow()
+{
+   return MQLInfoInteger(MQL_TESTER) ? TimeCurrent() : TimeGMT();
+}
+
+void RefreshHeadlineContext()
+{
+   if(!UseNewsSentiment) return;
+   static datetime last_refresh=0;
+   datetime now=HeadlineContextNow();
+   if(last_refresh>0 && now-last_refresh<60) return;
+   last_refresh=now;
+   bool loaded=g_news_sentiment.Load(NewsSentimentFile,DUALEA_FILE_COMMON);
+   double score;int evidence;string headline;
+   bool fresh=g_news_sentiment.Score(SymbolInfoString(_Symbol,SYMBOL_CURRENCY_BASE),
+      SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT),_Symbol,now,score,evidence,headline);
+   PrintFormat("[NEWS-SENTIMENT] symbol=%s loaded=%d rows=%d fresh=%d evidence=%d rule_score=%.3f mode=%s headline=%s",
+      _Symbol,(int)loaded,g_news_sentiment.Count(),(int)fresh,evidence,score,
+      NewsSentimentBlockOpposing?"BLOCK_OPPOSING":"OBSERVE",headline);
+}
+
+bool HeadlineSentimentAllowed(const int direction)
+{
+   if(!UseNewsSentiment || !NewsSentimentBlockOpposing) return true;
+   double score;int evidence;string headline;
+   if(!g_news_sentiment.Score(SymbolInfoString(_Symbol,SYMBOL_CURRENCY_BASE),
+      SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT),_Symbol,HeadlineContextNow(),score,evidence,headline))
+      return true; // Missing context is unknown; the scheduled blackout policy still applies.
+   if(direction*score<=-NewsSentimentOppositionThreshold)
+   {
+      PrintFormat("[NEWS-SENTIMENT BLOCK] symbol=%s direction=%d rule_score=%.3f headline=%s",_Symbol,direction,score,headline);
+      return false;
+   }
+   return true;
+}
+
 // Load news events from CSV file
 void LoadNewsEvents()
 {
    if(!NewsUseFile) return;
    
    string path = NewsFileRelPath;
-   int h = FileOpen(path, FILE_READ|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+   int h = FileOpen(path, FILE_READ|DUALEA_FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
    if(h == INVALID_HANDLE)
    {
       if(ShouldLog(LOG_DEBUG))
@@ -2649,11 +2730,21 @@ string SelectBestStrategy()
       "ZigZagStrategy", "MovingAverageStrategy"
    };
    double scores[];
-   int best_idx = g_selector.PickBest(_Symbol, _Period, strategies, scores);
+   int best_idx = g_selector.HasHistoricalEvidence() ? g_selector.PickBest(_Symbol, _Period, strategies, scores) : -1;
    string selected = (best_idx>=0? strategies[best_idx] : "");
    
    if(selected == "")
    {
+      if(!ExploreOnNoSlice) return "";
+      if(UseOnnxPredictor && g_market_model_features)
+      {
+         // Unknown rankings must not silently select ADX forever on a zero-score tie.
+         // Rotate genuine strategy candidates; a missing signal remains no trade.
+         static uint next_candidate=0;
+         selected=strategies[(int)(next_candidate++%(uint)ArraySize(strategies))];
+         PrintFormat("[STRATEGY-EXPLORE] no historical ranking; candidate=%s",selected);
+         return selected;
+      }
       // Fallback selection based on simple criteria
       string fallback_strategies[] = {
          "MovingAverageStrategy", "MACDStrategy", "RSIStrategy", 
@@ -2811,10 +2902,77 @@ bool CheckMemoryLimits()
 //+------------------------------------------------------------------+
 //| DECISION PIPELINE (MOVED OFF OnTick)                             |
 //+------------------------------------------------------------------+
+bool PaperOrderPrerequisites(double volume)
+{
+   if(!PaperExecutionAllowed((bool)MQLInfoInteger(MQL_TESTER), AccountInfoInteger(ACCOUNT_TRADE_MODE), LiveTradingEnabled, ShadowMode)) return false;
+   if(!MathIsValidNumber(volume) || volume <= 0.0) return false;
+   if(MaxOpenPositions > 0 && PositionsTotal() >= MaxOpenPositions) return false;
+   if(UseOnnxPredictor && !g_model_predictor_ready) return false;
+   return true;
+}
+
+bool PreparePaperVolume(TradingSignal &signal)
+{
+   // LotSize=0 requests explicit risk sizing, never an invented 0.1-lot order.
+   if(LotSize > 0.0) signal.volume = LotSize;
+   if(!MathIsValidNumber(signal.volume) || signal.volume < 0.0) return false;
+   if(signal.volume == 0.0)
+   {
+      if(!UseVolatilitySizer || VolSizerTargetRisk <= 0.0 || signal.sl <= 0.0) return false;
+      double loss_per_lot = 0.0;
+      ENUM_ORDER_TYPE side = signal.type == 0 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      if(!OrderCalcProfit(side, _Symbol, 1.0, signal.price, signal.sl, loss_per_lot) || loss_per_lot >= 0.0) return false;
+      signal.volume = AccountInfoDouble(ACCOUNT_EQUITY) * VolSizerTargetRisk / 100.0 / MathAbs(loss_per_lot);
+   }
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minimum = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maximum = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   if(step <= 0.0 || maximum <= 0.0) return false;
+   signal.volume = MathFloor(MathMin(signal.volume, maximum) / step + 1e-9) * step;
+   return MathIsValidNumber(signal.volume) && signal.volume >= minimum && signal.volume > 0.0;
+}
+
+bool RefreshUniversalClassification()
+{
+   datetime bar=iTime(_Symbol,(ENUM_TIMEFRAMES)_Period,0);
+   if(bar<=0 || !g_model_predictor_ready || !g_market_model_features) return false;
+   // Startup/history synchronization must not classify a stale Friday bar on Monday.
+   datetime current_time=TimeCurrent();
+   if(current_time<bar || current_time-bar>=PeriodSeconds((ENUM_TIMEFRAMES)_Period)) return false;
+   if(bar==g_market_prediction_bar) return true;
+   double probabilities[2];
+   for(int direction=0;direction<2;direction++)
+   {
+      double base[],expanded[];
+      if(!BuildMarketModelFeatures(_Symbol,(ENUM_TIMEFRAMES)_Period,bar,direction,base) ||
+         !ExpandUniversalModelFeatures(base,_Symbol,g_market_model_symbols,expanded)) return false;
+      probabilities[direction]=g_model_predictor.Predict(expanded,ArraySize(expanded));
+      if(probabilities[direction]<0.0) return false;
+   }
+   g_market_buy_probability=probabilities[0];
+   g_market_sell_probability=probabilities[1];
+   g_market_prediction_bar=bar;
+   string classification="NO_EDGE";
+   if(MathMax(probabilities[0],probabilities[1])>0.5)
+      classification=probabilities[0]>probabilities[1] ? "LONG_BIAS" : "SHORT_BIAS";
+   PrintFormat("[MODEL-CLASSIFY] symbol=%s timeframe=H1 bar=%s long_positive_4h=%.6f short_positive_4h=%.6f class=%s",
+               _Symbol,TimeToString(bar,TIME_DATE|TIME_MINUTES),probabilities[0],probabilities[1],classification);
+   return true;
+}
+
 void RunDecisionPipelineOnce()
 {
    datetime now = TimeCurrent();
 
+   if(UseOnnxPredictor && !g_model_predictor_ready) return;
+   if(UseOnnxPredictor && g_market_model_features)
+   {
+      if(!RefreshUniversalClassification()) return;
+      static datetime last_model_bar=0;
+      datetime current_bar=iTime(_Symbol,(ENUM_TIMEFRAMES)_Period,0);
+      if(current_bar<=0 || current_bar==last_model_bar) return;
+      last_model_bar=current_bar;
+   }
    // ===================[ TRADE FREQUENCY GATING ]===================
    if(now - last_paper_trade_time < PaperTradeCooldownSec)
       return;
@@ -2880,6 +3038,7 @@ void RunDecisionPipelineOnce()
    if(signal.id == "")
       return;
 
+   if(!PreparePaperVolume(signal)) return;
    g_gate_audit.LogStrategyProcessed(selected_strategy, signal.id, true, signal.confidence, "generated");
 
    if(signal.strategy == "")
@@ -2893,6 +3052,7 @@ void RunDecisionPipelineOnce()
    if(UseOnnxPredictor && g_model_predictor_ready)
    {
       double pre_prob = EvaluateModelProbability(signal, selected_strategy, NULL, "generated", "pre_gate");
+      if(pre_prob < 0.0) { LOG("[MODEL-REQUIRED] Inference failed; signal blocked."); return; }
       if(pre_prob >= 0.0)
       {
          double strategy_conf = signal.confidence;
@@ -2903,7 +3063,9 @@ void RunDecisionPipelineOnce()
 
          const double neutral_band = 0.02;
          double final_conf = strategy_conf;
-         if(MathAbs(pre_prob - 0.5) > neutral_band)
+         if(g_market_model_features)
+            final_conf=pre_prob;
+         else if(MathAbs(pre_prob - 0.5) > neutral_band)
             final_conf = MathMax(strategy_conf, pre_prob);
          if(final_conf < 0.0) final_conf = 0.0;
          if(final_conf > 1.0) final_conf = 1.0;
@@ -2933,13 +3095,13 @@ void RunDecisionPipelineOnce()
       else
       {
          CSignalDecision standard_decision;
-         if(UseEfficientGates && CheckPointer(g_gate_manager) != POINTER_INVALID)
-            passed = true;
+         if(CheckPointer(g_gate_manager) != POINTER_INVALID)
+            passed = g_gate_manager.ProcessSignalEnhanced(signal, standard_decision, blocking_reason);
          else
-            passed = true;
+            passed = false;
          if(passed)
          {
-            g_adaptive_optimizer.CopyDecision(standard_decision, decision);
+            CAdaptiveSignalOptimizer::CopyDecision(standard_decision, decision);
             decision.is_adjusted = false;
          }
       }
@@ -2949,6 +3111,7 @@ void RunDecisionPipelineOnce()
          if(UseOnnxPredictor && g_model_predictor_ready)
          {
             double final_prob = EvaluateModelProbability(signal, selected_strategy, &decision, "passed_gates", blocking_reason);
+            if(final_prob < 0.0) { LOG("[MODEL-REQUIRED] Final inference failed; signal blocked."); return; }
             if(final_prob >= 0.0)
             {
                decision.confidence = final_prob;
@@ -2957,7 +3120,7 @@ void RunDecisionPipelineOnce()
             }
          }
 
-         if(UsePolicyGating && g_policy_loaded)
+         if(UsePolicyGating)
          {
             if(!ApplyPolicyGating(decision))
             {
@@ -2980,7 +3143,7 @@ void RunDecisionPipelineOnce()
                }
             }
 
-            if(UseVolatilitySizer && CheckPointer(g_volatility_sizer) != POINTER_INVALID)
+            if(decision.final_volume <= 0.0 && UseVolatilitySizer && CheckPointer(g_volatility_sizer) != POINTER_INVALID)
             {
                double sl_points = 0.0;
                if(decision.final_sl > 0.0)
@@ -2997,7 +3160,7 @@ void RunDecisionPipelineOnce()
          }
 
          // PaperEA executes real trades on DEMO when enabled
-         if(LiveTradingEnabled)
+         if(LiveTradingEnabled && !ShadowMode)
             ExecutePaperTrade(decision);
 
          LogDecisionTelemetry(decision);
@@ -3029,7 +3192,7 @@ void RunDecisionPipelineOnce()
    {
       if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_DEBUG))
          LOG("Gate system disabled - executing signal directly");
-      if(LiveTradingEnabled)
+      if(LiveTradingEnabled && !ShadowMode)
          ExecutePaperTrade(signal);
       last_paper_trade_time = now;
    }
@@ -3040,9 +3203,20 @@ void RunDecisionPipelineOnce()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   const ulong tick_started_us=GetMicrosecondCount();
+   CSystemMonitor *tick_monitor=NULL;
    if(g_master_controller != NULL)
+   {
       g_master_controller.OnTick();
+      tick_monitor=g_master_controller.GetSystemMonitor();
+   }
    OnTickP0P5();
+   const ulong tick_work_us=GetMicrosecondCount()-tick_started_us;
+   if(CheckPointer(tick_monitor)!=POINTER_INVALID)
+   {
+      tick_monitor.OnTickUpdate(tick_work_us);
+      tick_monitor.RecordHandlerCompletion(GetMicrosecondCount()-tick_started_us);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -3141,15 +3315,17 @@ TradingSignal GenerateSignal()
 //+------------------------------------------------------------------+
 void ExecutePaperTrade(CSignalDecision &decision)
 {
-   if(!LiveTradingEnabled)
+   if(!CheckNewsFilter() || !HeadlineSentimentAllowed(decision.order_type==ORDER_TYPE_BUY ? 1 : -1)) return;
+   if(!PaperExecutionAllowed((bool)MQLInfoInteger(MQL_TESTER), AccountInfoInteger(ACCOUNT_TRADE_MODE), LiveTradingEnabled, ShadowMode))
    {
       // PaperEA safety: do not execute real trades unless explicitly enabled
       if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
          LOG(StringFormat("[PAPER-SAFETY] LiveTradingEnabled=false -> skipping REAL trade execution for %s", decision.signal_id));
       return;
    }
-   // Execute REAL trade to MT5 (on demo account)
-   LOG(StringFormat("🎯 Executing REAL MT5 trade: %s at %.5f", 
+   if(!PaperOrderPrerequisites(decision.final_volume)) return;
+   // Execute on the tester or demo account only.
+   LOG(StringFormat("🎯 Executing DEMO/TESTER MT5 order: %s at %.5f", 
                decision.signal_id, decision.final_price));
    
    // Validate trade manager
@@ -3231,7 +3407,7 @@ void ExecutePaperTrade(CSignalDecision &decision)
       decision.execution_time = TimeCurrent();
       decision.execution_price = exec_price;  // Actual fill price
       
-      LOG(StringFormat("✅ REAL TRADE EXECUTED: Deal=%I64u Order=%I64u Price=%.5f Volume=%.2f SL=%.5f TP=%.5f",
+      LOG(StringFormat("✅ DEMO/TESTER ORDER EXECUTED: Deal=%I64u Order=%I64u Price=%.5f Volume=%.2f SL=%.5f TP=%.5f",
                   deal_ticket, order_ticket, exec_price, exec_volume, decision.final_sl, decision.final_tp));
       
       // Log to unified trade logger (with gate journey)
@@ -3302,15 +3478,17 @@ void ExecutePaperTrade(CSignalDecision &decision)
 
 void ExecutePaperTrade(TradingSignal &signal)
 {
-   if(!LiveTradingEnabled)
+   if(!CheckNewsFilter() || !HeadlineSentimentAllowed(signal.type==ORDER_TYPE_BUY ? 1 : -1)) return;
+   if(!PaperExecutionAllowed((bool)MQLInfoInteger(MQL_TESTER), AccountInfoInteger(ACCOUNT_TRADE_MODE), LiveTradingEnabled, ShadowMode))
    {
       // PaperEA safety: do not execute real trades unless explicitly enabled
       if(PAPEREA_SHOULD_LOG(PAPEREA_LOG_INFO))
          LOG(StringFormat("[PAPER-SAFETY] LiveTradingEnabled=false -> skipping REAL trade execution for %s", signal.id));
       return;
    }
-   // Direct execution without gates - REAL MT5 execution
-   LOG(" Executing REAL MT5 trade (no gates): " + signal.id + " at " + DoubleToString(signal.price, 5));
+   if(!PaperOrderPrerequisites(signal.volume)) return;
+   // Direct demo/tester execution.
+   LOG(" Executing DEMO/TESTER MT5 order (no gates): " + signal.id + " at " + DoubleToString(signal.price, 5));
      
      if(CheckPointer(g_trade_manager) == POINTER_INVALID)
      {
@@ -3387,7 +3565,7 @@ void ExecutePaperTrade(TradingSignal &signal)
       ulong order_ticket = g_trade_manager.ResultOrder();
       double exec_price = g_trade_manager.ResultPrice();
       
-      LOG(StringFormat("✅ REAL TRADE EXECUTED (no gates): Deal=%I64u Order=%I64u Price=%.5f Volume=%.2f",
+      LOG(StringFormat("✅ DEMO/TESTER ORDER EXECUTED (no gates): Deal=%I64u Order=%I64u Price=%.5f Volume=%.2f",
                   deal_ticket, order_ticket, exec_price, signal.volume));
       
       // Log to KB
@@ -3684,31 +3862,8 @@ TradingSignal GenerateSignalFromStrategy(const string strategy_name)
       Print("[SignalGen] ERROR: g_signal_registry is NULL or invalid");
    }
    
-   // Fallback to legacy MA crossover signal generation if registry unavailable or no signal
-   Print("[SignalGen] Falling back to legacy GenerateSignal()");
-   signal = GenerateSignal();
-   
-   // Only override strategy name and ID if a valid signal was generated
-   if(signal.id != "")
-   {
-      signal.id = strategy_name + "_" + IntegerToString(TimeCurrent());
-      signal.strategy = strategy_name;
-      
-      // Ensure market context is set
-      if(signal.volatility <= 0.0)
-         signal.volatility = GetVolatility(_Symbol, (ENUM_TIMEFRAMES)_Period);
-      if(signal.regime == "")
-         signal.regime = GetMarketRegime();
-      if(signal.market_regime == "")
-         signal.market_regime = signal.regime;
-      if(signal.correlation == 0.0)
-         signal.correlation = GetCorrelation();
-   }
-   else
-   {
-      Print("[SignalGen] WARNING: Legacy GenerateSignal() also returned empty signal");
-   }
-   
+   // No condition means no signal. Never relabel a different strategy's trade.
+   signal.Init();
    return signal;
 }
 
@@ -3735,11 +3890,11 @@ bool ApplyPolicyGating(CSignalDecision &decision)
       return false;
    }
    
-   // Apply policy scaling (placeholder implementation)
+   // Preserve validated execution fields. Policy thresholds must not overwrite them.
    // In production, this would look up specific strategy/symbol/timeframe policies
-   decision.final_sl = decision.original_sl * 1.0; // No scaling for now
-   decision.final_tp = decision.original_tp * 1.0; // No scaling for now
-   decision.final_volume = decision.original_volume * 1.0; // No scaling for now
+
+
+
    
    return true;
 }
@@ -3864,6 +4019,10 @@ void ExportEnhancedFeaturesAdaptive(const CAdaptiveDecision &decision, const str
 //+------------------------------------------------------------------+
 void OnTimer()
 {
+   RefreshHeadlineContext();
+   string audit_skipped;
+   int audit_count;
+   g_gate_audit.RunAudit(audit_skipped, audit_count);
    // Real positions updated automatically by MT5
    // No need for UpdatePaperPositions()
    
@@ -3892,7 +4051,7 @@ void OnTimer()
          else
          {
             // Check file length first to avoid unnecessary reload logs
-            int hpf = FileOpen(PolicyFilePath, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+            int hpf = FileOpen(PolicyFilePath, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
             if(hpf != INVALID_HANDLE)
             {
                int flen = (int)FileSize(hpf); FileClose(hpf);
@@ -3909,7 +4068,7 @@ void OnTimer()
          }
       }
       // Config reload: size-based change detection
-      int hcf = FileOpen(ConfigFilePath, FILE_READ|FILE_COMMON|FILE_TXT|FILE_ANSI);
+      int hcf = FileOpen(ConfigFilePath, FILE_READ|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
       if(hcf != INVALID_HANDLE)
       {
          int clen = (int)FileSize(hcf); FileClose(hcf);
@@ -4214,12 +4373,16 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 //+------------------------------------------------------------------+
 double OnTester()
 {
+   PrintFormat("[PAPER-PERFORMANCE] trades=%.0f net_profit=%.2f gross_profit=%.2f gross_loss=%.2f profit_factor=%.6f equity_drawdown_pct=%.4f wins=%.0f",
+      TesterStatistics(STAT_TRADES),TesterStatistics(STAT_PROFIT),TesterStatistics(STAT_GROSS_PROFIT),
+      TesterStatistics(STAT_GROSS_LOSS),TesterStatistics(STAT_PROFIT_FACTOR),
+      TesterStatistics(STAT_EQUITY_DDREL_PERCENT),TesterStatistics(STAT_PROFIT_TRADES));
    // Use robust metric (not just profit)
    double profit_factor = TesterStatistics(STAT_PROFIT_FACTOR);
    double drawdown = TesterStatistics(STAT_BALANCE_DDREL_PERCENT);
    double sharpe = TesterStatistics(STAT_SHARPE_RATIO);
-   double win_rate = TesterStatistics(STAT_TRADES_WIN) / 
-                     (TesterStatistics(STAT_TRADES_WIN) + TesterStatistics(STAT_TRADES_LOSS));
+   double trades = TesterStatistics(STAT_TRADES);
+   double win_rate = trades > 0.0 ? TesterStatistics(STAT_PROFIT_TRADES) / trades : 0.0;
    
    // Multi-objective fitness: ProfitFactor * (1 - DD) * Sharpe * WR
    // Penalize high drawdown heavily
@@ -4235,7 +4398,7 @@ double OnTester()
    double fitness = (pf_score * 0.4 + dd_score * 0.3 + sharpe_score * 0.2 + wr_score * 0.1);
    
    // Additional penalties
-   if(TesterStatistics(STAT_TRADES_TOTAL) < 20) fitness *= 0.5;  // Insufficient trades
+   if(trades < 20) fitness *= 0.5;  // Insufficient trades
    if(profit_factor < 1.0) fitness *= 0.1;  // Losing system
    
    return fitness;
@@ -4416,7 +4579,7 @@ void CheckWFAReload()
    if((now - g_last_wfa_reload) < WFA_RetrainIntervalDays * 86400) return;
    
    string filepath = StringFormat("DualEA\\%s", WFA_ParameterFile);
-   if(FileIsExist(filepath, FILE_COMMON))
+   if(FileIsExist(filepath, DUALEA_FILE_COMMON))
    {
       Print(StringFormat("[WFA] Reloading parameters from %s", WFA_ParameterFile));
       

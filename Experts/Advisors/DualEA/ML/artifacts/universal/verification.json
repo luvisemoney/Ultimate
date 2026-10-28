@@ -1,0 +1,13 @@
+{
+    "model_sha256":  "73e604c067ea197be3f14f093fd13bf7e67c5acdeb1e5a55804855bf4e54b325",
+    "feature_contract":  "market_universal_v1",
+    "symbol_count":  23,
+    "feature_count":  104,
+    "native_parity":  "PASS",
+    "causal_features":  "PASS",
+    "dataset_audit":  "PASS",
+    "training_rows":  380892,
+    "validation_rows":  44296,
+    "test_rows":  22036,
+    "verified_utc":  "2026-10-28T04:49:04.5985341Z"
+}

@@ -1,0 +1,66 @@
+﻿[
+    {
+        "Case":  "smoke",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  true,
+        "FreshReport":  true,
+        "AgentLog":  "smoke-agent.log"
+    },
+    {
+        "Case":  "csv",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "csv-agent.log"
+    },
+    {
+        "Case":  "native",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "native-agent.log"
+    },
+    {
+        "Case":  "safety",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "safety-agent.log"
+    },
+    {
+        "Case":  "gates",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "gates-agent.log"
+    },
+    {
+        "Case":  "logger",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "logger-agent.log"
+    },
+    {
+        "Case":  "shadow",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "shadow-agent.log"
+    },
+    {
+        "Case":  "missing_model",
+        "Status":  "PASS",
+        "Issues":  "",
+        "OrderActivity":  false,
+        "FreshReport":  true,
+        "AgentLog":  "missing_model-agent.log"
+    }
+]

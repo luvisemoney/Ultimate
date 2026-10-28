@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| IncrementalInsightEngine.mqh - Real-time Statistics Engine      |
 //| Replaces batch InsightsRebuild with O(1) incremental updates    |
@@ -131,8 +132,8 @@ private:
    {
       string flag_file = "DualEA\\promotions\\" + s.strategy + "_" + s.symbol + "_" + 
                         IntegerToString(s.timeframe) + ".promo";
-      FolderCreate("DualEA\\promotions", FILE_COMMON);
-      int h = FileOpen(flag_file, FILE_WRITE|FILE_TXT|FILE_COMMON);
+      FolderCreate("DualEA\\promotions", DUALEA_FILE_COMMON);
+      int h = FileOpen(flag_file, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON);
       if(h != INVALID_HANDLE)
       {
          FileWriteString(h, TimeToString(TimeCurrent()) + ",APPROVED");
@@ -221,8 +222,8 @@ public:
    
    void SaveState()
    {
-      FolderCreate("DualEA", FILE_COMMON);
-      int h = FileOpen(m_state_file, FILE_WRITE|FILE_BIN|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      FolderCreate("DualEA", DUALEA_FILE_COMMON);
+      int h = FileOpen(m_state_file, FILE_WRITE|FILE_BIN|DUALEA_FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
       if(h == INVALID_HANDLE)
       {
          PrintFormat("[InsightEngine] SaveState: cannot open %s (Common). err=%d", m_state_file, GetLastError());
@@ -253,13 +254,13 @@ public:
    
    void LoadState()
    {
-      FolderCreate("DualEA", FILE_COMMON);
+      FolderCreate("DualEA", DUALEA_FILE_COMMON);
       if(FileGetInteger(m_state_file, FILE_EXISTS, true) <= 0)
       {
          PrintFormat("[InsightEngine] State file NOT FOUND: %s (Common=%s) - cold start", m_state_file, TerminalInfoString(TERMINAL_COMMONDATA_PATH));
          return;
       }
-      int h = FileOpen(m_state_file, FILE_READ|FILE_BIN|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      int h = FileOpen(m_state_file, FILE_READ|FILE_BIN|DUALEA_FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
       if(h == INVALID_HANDLE)
       {
          PrintFormat("[InsightEngine] LoadState: cannot open %s (Common). err=%d", m_state_file, GetLastError());

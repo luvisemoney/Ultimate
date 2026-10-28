@@ -90,52 +90,44 @@ def load_features(common_dir: str = None) -> pd.DataFrame:
 
 
 def make_label_from_r_multiple(df: pd.DataFrame, threshold: float = 0.0) -> Tuple[pd.DataFrame, pd.Series]:
-    # Accept common variants
-    candidates = [
-        "r_multiple",
-        "r",
-        "rmultiple",
-    ]
-    col = None
-    for c in candidates:
-        if c in df.columns:
-            col = c
-            break
-    if col is None:
-        # Try fuzzy search for any col containing both 'r' and 'multiple'
-        for c in df.columns:
-            s = str(c)
-            if "r" in s and "multiple" in s:
-                col = c
-                break
-    if col is None:
-        # Fallback 1: profit column present in the same frame
-        if "profit" in df.columns:
-            vals = pd.to_numeric(df["profit"], errors="coerce").fillna(0.0)
-            y = (vals > 0.0).astype(int)
-            return df, y
-        # Fallback 2: try to read knowledge_base.csv and merge
-        kb_path = os.path.join(os.path.dirname(resolve_features_path()), "knowledge_base.csv")
-        if os.path.exists(kb_path):
-            try:
-                kb = pd.read_csv(kb_path)
-                kb.columns = [str(c).strip().lower().replace(" ", "_").replace("-", "_") for c in kb.columns]
-                # Candidate join keys
-                join_keys_priority = [
-                    ["order_id"],
-                    ["deal_id"],
-                    ["position_id"],
-                    ["symbol", "close_time"],
-                ]
-                for keys in join_keys_priority:
-                    if all(k in df.columns for k in keys) and all(k in kb.columns for k in keys):
-                        merged = pd.merge(df, kb[[*keys, "profit"]], on=keys, how="left")
-                        vals = pd.to_numeric(merged["profit"], errors="coerce").fillna(0.0)
-                        y = (vals > 0.0).astype(int)
-                        return merged, y
-            except Exception:
-                pass
-        raise ValueError("features.csv must contain r_multiple (or 'r'); profit-based fallback also unavailable")
-    vals = pd.to_numeric(df[col], errors="coerce")
-    y = (vals > threshold).astype(int)
-    return df, y
+    """Return labels only for explicitly closed, finite realized outcomes.
+
+    This diagnostic helper never joins Common Files implicitly, fills missing
+    outcomes with zero, or interprets a gate/status flag as an outcome. The
+    standard training entry point is the shared real-history MQL5 pipeline.
+    """
+    import math
+
+    if not math.isfinite(float(threshold)):
+        raise ValueError("Outcome threshold must be finite")
+    outcome = next((name for name in ("r_multiple", "r", "rmultiple") if name in df.columns), None)
+    if outcome is None:
+        if "profit" not in df.columns:
+            raise ValueError("Realized R multiple or profit is required; no implicit file merge or unknown-label fallback")
+        if threshold != 0.0:
+            raise ValueError("A nonzero R-multiple threshold cannot be applied to currency profit")
+        outcome = "profit"
+
+    if "is_closed" in df.columns:
+        closed = df["is_closed"].astype(str).str.strip().str.lower().isin({"true", "1", "1.0", "yes", "closed"})
+    elif "close_event" in df.columns:
+        closed = df["close_event"].astype(str).str.strip().str.lower().isin({"true", "1", "1.0", "yes", "close", "closed"})
+    elif "close_time" in df.columns:
+        values = pd.to_numeric(df["close_time"], errors="coerce")
+        nonempty = df["close_time"].notna()
+        if nonempty.any() and values[nonempty].notna().all():
+            times = pd.to_datetime(values, unit="s", errors="coerce", utc=True)
+        else:
+            times = pd.to_datetime(df["close_time"], errors="coerce", utc=True)
+        closed = times.notna() & (times > pd.Timestamp("1970-01-02", tz="UTC"))
+    else:
+        raise ValueError("Explicit is_closed/close_event/close_time evidence is required; open trades cannot be labeled")
+
+    realized = pd.to_numeric(df[outcome], errors="coerce")
+    finite = realized.map(lambda value: bool(pd.notna(value) and math.isfinite(float(value))))
+    observed = closed & finite
+    selected = df.loc[observed].copy()
+    if selected.empty:
+        raise ValueError("No explicitly closed trades with finite observed outcomes; collect real outcomes instead of bootstrapping labels")
+    labels = (realized.loc[observed] > float(threshold)).astype(int)
+    return selected, labels

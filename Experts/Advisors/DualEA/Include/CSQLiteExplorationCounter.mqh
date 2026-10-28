@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| CSQLiteExplorationCounter.mqh - SQLite-based Atomic Counters     |
 //| P1-5: SQLite exploration counters with zero external deps          |
@@ -37,7 +38,7 @@ public:
       if(m_initialized) return true;
       
       // Open database (creates if not exists)
-      m_db = DatabaseOpen(m_dbPath, DATABASE_OPEN_READWRITE | DATABASE_OPEN_CREATE | DATABASE_OPEN_COMMON);
+      m_db = DatabaseOpen(m_dbPath, DATABASE_OPEN_READWRITE | DATABASE_OPEN_CREATE | DUALEA_DATABASE_COMMON);
       if(m_db == INVALID_HANDLE)
       {
          Print("[CSQLiteExplorationCounter] Failed to open database: ", GetLastError());

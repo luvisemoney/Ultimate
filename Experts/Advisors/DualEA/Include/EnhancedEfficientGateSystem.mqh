@@ -10,9 +10,13 @@
 #include "CGateBase.mqh"
 #include "CShadowLogger.mqh"
 #include "LearningBridge.mqh"
-#include "CFeatures.mqh"
+// Indicators are provided by CGateFeatureCache.
 #include "CGateFeatureCache.mqh"
 #include <Trade\Trade.mqh>
+
+#ifdef DUALEA_HAS_GATE_RECORDER
+void PostGateRecord(const string &gate_name, bool passed, double confidence);
+#endif
 
 // Simple logging macros
 #define LOG_DEBUG(msg) Print(msg)
@@ -878,8 +882,8 @@ private:
    double m_avg_latency_ms;
    
    // Feature extraction
-   CFeatures    m_features;
-   bool         m_features_initialized;
+
+
    
 public:
    // Constructor
@@ -895,7 +899,7 @@ public:
       m_total_signals = 0;
       m_passed_signals = 0;
       m_avg_latency_ms = 0.0;
-      m_features_initialized = false;
+
       
       // Build gate array
       m_gates[0] = GetPointer(m_g1_signal);
@@ -943,6 +947,7 @@ public:
    void SetMode(EGateProcessingMode mode) 
    { 
       m_mode = mode;
+      for(int reset=0; reset<8; reset++) m_gates[reset].Enable(true);
       
       // Configure gates based on mode
       switch(mode)
@@ -973,10 +978,10 @@ public:
             break;
             
          case GATE_MODE_ALL_BYPASS:
-            // DATA COLLECTION MODE: Disable ALL gates
+            // Data collection skips optional gates; mandatory gates are restored below.
             for(int i=0; i<8; i++)
                m_gates[i].Enable(false);
-            Print("[GateMgr] Mode: ALL_BYPASS (ALL gates disabled - DATA COLLECTION)");
+            Print("[GateMgr] Mode: ALL_BYPASS (optional gates skipped; risk gates active)");
             break;
             
          default: // GATE_MODE_FULL
@@ -986,8 +991,13 @@ public:
             Print("[GateMgr] Mode: FULL (all 8 gates active)");
             break;
       }
+      // Exploration may skip optional gates, never execution/risk validation.
+      m_gates[0].Enable(true);
+      m_gates[3].Enable(true);
+      m_gates[6].Enable(true);
+      m_gates[7].Enable(true);
    }
-   
+
    // Configure individual gates
    void SetPerformanceWaxEnabled(bool val, double min_wr=0.45, int lookback=20)
    {
@@ -1005,7 +1015,7 @@ public:
    void SetLiveCleanEnabled(bool val, double max_spread=0.05)
    {
       m_g7_live.SetMaxSpreadPct(max_spread);
-      m_g7_live.Enable(val);
+      m_g7_live.Enable(true); // Mandatory market/execution safety is not optional.
    }
    
    // Enable auto-tuning for specific gates
@@ -1079,12 +1089,28 @@ public:
          block_reason = "Invalid price";
          return false;
       }
-      if(signal.volume < 0.0 || !MathIsValidNumber(signal.volume))
+      if(signal.volume <= 0.0 || !MathIsValidNumber(signal.volume))
       {
          block_reason = "Invalid volume";
          return false;
       }
       
+      decision.timestamp = signal.timestamp;
+      decision.timeframe = signal.timeframe;
+      decision.original_price = signal.price;
+      decision.original_type = signal.type;
+      decision.original_sl = signal.sl;
+      decision.original_tp = signal.tp;
+      decision.original_volume = signal.volume;
+      decision.confidence = signal.confidence;
+      decision.executed = false;
+      for(int state=0; state<8; state++)
+      {
+         decision.gate_results[state] = false;
+         decision.gate_reasons[state] = "Not evaluated";
+         decision.gate_timestamps[state] = 0;
+      }
+
       // Create shadow log entry
       SShadowLogEntry log_entry;
       double log_price = (signal.entry_price > 0) ? signal.entry_price : signal.price;
@@ -1110,7 +1136,7 @@ public:
          CGateBase* gate = m_gates[i];
          
          // Skip ALL gates in ALL_BYPASS mode (data collection)
-         if(m_mode == GATE_MODE_ALL_BYPASS)
+         if(m_mode == GATE_MODE_ALL_BYPASS && i != 0 && i != 3 && i != 6 && i != 7)
             continue;
          
          // FIX: Explicit mode-based gate skipping
@@ -1135,8 +1161,9 @@ public:
          
          // Check remaining budget before evaluating gate
          ulong elapsed_total_us = GetMicrosecondCount() - start_time;
-         if(elapsed_total_us > 15000) // Hard stop at 15ms total
+         if(elapsed_total_us > 15000 && i != 0 && i != 3 && i != 6 && i != 7) // Hard stop at 15ms total
          {
+            passed = false; // An unvalidated gate cannot count as a pass.
             gates_skipped_budget++;
             PrintFormat("[GATE-BUDGET] Skipping G%d due to total budget exceeded (%.2fms)", i+1, elapsed_total_us/1000.0);
             continue;
@@ -1144,6 +1171,9 @@ public:
          
          EGateResult result;
          bool gate_passed = gate.Validate(signal, result);
+         decision.gate_results[i] = gate_passed;
+         decision.gate_reasons[i] = result.block_reason;
+         decision.gate_timestamps[i] = TimeCurrent();
          
          // Enforce per-gate budget post-validation
          ulong gate_latency_us = GetMicrosecondCount() - gate_start_us;
@@ -1154,7 +1184,10 @@ public:
          gate.RecordLatency(gate_latency_us);
 
          // P0-P5 integration: record gate outcomes for controller status/auditing
-         PostGateRecord(StringFormat("G%d", i+1), gate_passed, result.confidence);
+#ifdef DUALEA_HAS_GATE_RECORDER
+         string gate_name = StringFormat("G%d", i+1);
+         PostGateRecord(gate_name, gate_passed, result.confidence);
+#endif
          
          // Record in log entry
          log_entry.SetGateResult(i, result);
@@ -1190,14 +1223,14 @@ public:
       // Update shadow log
       log_entry.all_gates_passed = passed;
       log_entry.final_confidence = signal.confidence;
-      log_entry.execution_status = (m_use_shadow_logging ? "SHADOW" : "EXECUTED");
+      log_entry.execution_status = (!passed ? "BLOCKED" : (m_use_shadow_logging ? "SHADOW" : "VALIDATED"));
       
       if(m_shadow_logger.IsInitialized())
          m_shadow_logger.LogGateDecision(log_entry);
       
       // Soft gating: we still execute/build the decision, but expose soft reasons for auditing
       block_reason = soft_reasons;
-      decision.signal_id = signal.strategy_name;
+      decision.signal_id = signal.id;
       decision.strategy = (signal.strategy != "") ? signal.strategy : signal.strategy_name;  // CRITICAL: Set strategy name
       decision.symbol = (signal.symbol != "") ? signal.symbol : _Symbol;
       decision.order_type = (signal.type == 0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
@@ -1206,15 +1239,16 @@ public:
       decision.final_price = (signal.entry_price > 0) ? signal.entry_price : signal.price;
       decision.final_sl = (signal.stop_loss > 0) ? signal.stop_loss : signal.sl;
       decision.final_tp = (signal.take_profit > 0) ? signal.take_profit : signal.tp;
-      decision.final_volume = (signal.volume > 0) ? signal.volume : 0.1;  // Use signal volume or default
+      decision.final_volume = signal.volume;  // Use signal volume or default
       decision.final_confidence = signal.confidence;
+      decision.confidence = signal.confidence;
       decision.is_adjusted = (soft_reasons != "");
       decision.block_reason = soft_reasons;
       
       // Performance tracking
       ulong total_latency = GetMicrosecondCount() - start_time;
       m_total_signals++;
-      m_passed_signals++; // In adjust-only mode, all execution-valid signals are considered passed
+      if(passed) m_passed_signals++;
       
       // Update average latency (EMA)
       if(m_avg_latency_ms == 0)
@@ -1226,7 +1260,7 @@ public:
       if(total_latency > 10000) // 10ms
          Print(StringFormat("[GateMgr] WARNING: Slow processing: %.2fms", (double)total_latency/1000.0));
       
-      return true;
+      return passed;
    }
    
    // Statistics

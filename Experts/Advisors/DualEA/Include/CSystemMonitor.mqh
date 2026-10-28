@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| CSystemMonitor.mqh - Health-Based Circuit Breaker                |
 //| P1-4: Auto-trip on degradation - monitors EA health metrics       |
@@ -150,8 +151,13 @@ private:
    int m_cb_cooldown_minutes;
    
    // Performance tracking
-   ulong m_last_tick_time;
+   datetime m_last_health_check;
    double m_tick_latency_ms;
+   double m_max_tick_work_ms;
+   double m_max_handler_ms;
+   ulong m_handler_samples;
+   ulong m_handler_warning_count;
+   ulong m_handler_critical_count;
    int m_tick_count;
    int m_error_count_hour;
    int m_trade_count_hour;
@@ -173,8 +179,13 @@ public:
       m_cb_triggered_time = 0;
       m_cb_cooldown_minutes = 15;
       m_cb_trigger_reason = "";
-      m_last_tick_time = 0;
+      m_last_health_check = 0;
       m_tick_latency_ms = 0;
+      m_max_tick_work_ms = 0;
+      m_max_handler_ms = 0;
+      m_handler_samples = 0;
+      m_handler_warning_count = 0;
+      m_handler_critical_count = 0;
       m_tick_count = 0;
       m_error_count_hour = 0;
       m_trade_count_hour = 0;
@@ -192,18 +203,13 @@ public:
    }
    
    //+------------------------------------------------------------------+
-   //| Update metrics on each tick                                       |
+   //| Record completed OnTick work, measured by the host EA             |
    //+------------------------------------------------------------------+
-   void OnTickUpdate()
+   void OnTickUpdate(const ulong elapsed_microseconds)
    {
-      ulong now = GetTickCount();
-      
-      // Calculate tick latency
-      if(m_last_tick_time > 0)
-      {
-         m_tick_latency_ms = (double)(now - m_last_tick_time);
-      }
-      m_last_tick_time = now;
+      // Quote arrival intervals, idle time and OnTimer work are not tick work.
+      m_tick_latency_ms = (double)elapsed_microseconds / 1000.0;
+      m_max_tick_work_ms = MathMax(m_max_tick_work_ms,m_tick_latency_ms);
       m_tick_count++;
       
       // Add to history
@@ -222,12 +228,35 @@ public:
       }
       
       // Periodic health check
-      static datetime last_check = 0;
-      if(TimeCurrent() - last_check >= 5)  // Check every 5 seconds
+      if(m_tick_latency_ms > m_thresholds.tick_latency_warning ||
+         TimeCurrent() - m_last_health_check >= 5)
       {
          EvaluateHealth();
-         last_check = TimeCurrent();
+         m_last_health_check = TimeCurrent();
       }
+   }
+
+   // Host calls this after OnTickUpdate: includes normal monitor overhead.
+   // Final telemetry/violation handling itself is outside this stopwatch.
+   void RecordHandlerCompletion(const ulong elapsed_microseconds)
+   {
+      const double elapsed_ms=(double)elapsed_microseconds/1000.0;
+      m_handler_samples++;
+      m_max_handler_ms=MathMax(m_max_handler_ms,elapsed_ms);
+      if(elapsed_ms>m_thresholds.tick_latency_warning) m_handler_warning_count++;
+      if(elapsed_ms>m_thresholds.tick_latency_critical)
+      {
+         m_handler_critical_count++;
+         m_metric_status[HEALTH_TICK_LATENCY]=HEALTH_CRITICAL;
+         m_overall_status=HEALTH_CRITICAL;
+         if(!m_circuit_breaker_active) TriggerCircuitBreaker();
+      }
+   }
+
+   void PrintLatencySummary()
+   {
+      PrintFormat("[TICK-SLA] samples=%I64u max_work_ms=%.3f max_handler_ms=%.3f warning_exceedances=%I64u critical_exceedances=%I64u live_feed_guarantee=UNVERIFIED",
+         m_handler_samples,m_max_tick_work_ms,m_max_handler_ms,m_handler_warning_count,m_handler_critical_count);
    }
    
    //+------------------------------------------------------------------+
@@ -238,7 +267,7 @@ public:
       ENUM_HEALTH_STATUS worst_status = HEALTH_OK;
       
       // Check tick latency
-      double avg_tick_latency = m_history[HEALTH_TICK_LATENCY].GetAverage(5);
+      double avg_tick_latency = MathMax(m_tick_latency_ms,m_history[HEALTH_TICK_LATENCY].GetAverage(5));
       if(avg_tick_latency > m_thresholds.tick_latency_critical)
          m_metric_status[HEALTH_TICK_LATENCY] = HEALTH_CRITICAL;
       else if(avg_tick_latency > m_thresholds.tick_latency_warning)
@@ -365,6 +394,8 @@ public:
    void ResetCircuitBreaker()
    {
       m_circuit_breaker_active = false;
+      m_cb_trigger_reason = "";
+      m_cb_triggered_time = 0;
       Print("✅ System Monitor circuit breaker reset - health restored");
       
       WriteHealthAlert("Circuit breaker reset - trading resumed");
@@ -382,7 +413,7 @@ public:
       m_last_alert_time = TimeCurrent();
       
       string status_str = StatusToString(m_overall_status);
-      string msg = StringFormat("[HealthMonitor] Status: %s | Tick: %.1fms | Gate: %.1fms | Errors/hr: %d | Trades/hr: %d",
+      string msg = StringFormat("[HealthMonitor] Status: %s | TickWork: %.3fms | Gate: %.1fms | Errors/hr: %d | Trades/hr: %d",
          status_str,
          m_history[HEALTH_TICK_LATENCY].GetAverage(5),
          m_history[HEALTH_GATE_LATENCY].GetAverage(),
@@ -430,7 +461,7 @@ public:
    void WriteHealthAlert(string msg)
    {
       string path = "DualEA\\health_alerts.log";
-      int handle = FileOpen(path, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_SHARE_READ);
+      int handle = FileOpen(path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON|FILE_SHARE_READ);
       if(handle != INVALID_HANDLE)
       {
          FileSeek(handle, 0, SEEK_END);
@@ -447,6 +478,11 @@ public:
    datetime GetCircuitBreakerTriggeredTime() { return m_cb_triggered_time; }
    ENUM_HEALTH_STATUS GetOverallStatus() { return m_overall_status; }
    ENUM_HEALTH_STATUS GetMetricStatus(ENUM_HEALTH_METRIC m) { return m_metric_status[m]; }
+   double GetLastTickWorkMs() const { return m_tick_latency_ms; }
+   double GetMaxTickWorkMs() const { return m_max_tick_work_ms; }
+   double GetMaxHandlerMs() const { return m_max_handler_ms; }
+   ulong GetHandlerCriticalCount() const { return m_handler_critical_count; }
+   int GetTickSampleCount() const { return m_tick_count; }
    
    //+------------------------------------------------------------------+
    //| Get health report                                                 |
@@ -454,7 +490,7 @@ public:
    string GetHealthReport()
    {
       return StringFormat(
-         "Health: %s | CB: %s | Tick: %.1fms | Gate: %.1fms | Err/hr: %d | Trade/hr: %d | RegimeChg/hr: %d",
+         "Health: %s | CB: %s | TickWork: %.3fms | Gate: %.1fms | Err/hr: %d | Trade/hr: %d | RegimeChg/hr: %d",
          StatusToString(m_overall_status),
          m_circuit_breaker_active ? "ACTIVE" : "OK",
          m_history[HEALTH_TICK_LATENCY].GetAverage(5),

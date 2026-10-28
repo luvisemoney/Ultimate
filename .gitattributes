@@ -1,0 +1,4 @@
+# Preserve native MQL encodings and exact artifact hashes across Windows/Linux.
+* -text
+*.onnx binary
+*.png binary

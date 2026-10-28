@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 // include guard for MQL5
 #ifndef __POLICYENGINE_MQH__
 #define __POLICYENGINE_MQH__
@@ -187,7 +188,7 @@ public:
       ClearIndex();
       
       // Try to open policy file
-      int h = FileOpen(path, FILE_READ|FILE_TXT|FILE_COMMON);
+      int h = FileOpen(path, FILE_READ|FILE_TXT|DUALEA_FILE_COMMON);
       if(h == INVALID_HANDLE)
         {
          h = FileOpen(path, FILE_READ|FILE_TXT); // Try user files

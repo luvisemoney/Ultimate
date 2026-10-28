@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| ConfigManager.mqh - Unified Configuration Management             |
 //+------------------------------------------------------------------+
@@ -206,7 +207,7 @@ public:
    void SaveToFile(const string& filename)
   {
      // Save configuration to JSON file
-     int h = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_COMMON);
+     int h = FileOpen(filename, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON);
      if(h == INVALID_HANDLE)
        {
         string err_msg = StringFormat("ConfigManager: Cannot create config file %s, error: %d", filename, GetLastError());
@@ -265,7 +266,7 @@ public:
    void LoadFromFile(const string& filename)
   {
      // Load configuration from JSON file
-     int h = FileOpen(filename, FILE_READ|FILE_TXT|FILE_COMMON);
+     int h = FileOpen(filename, FILE_READ|FILE_TXT|DUALEA_FILE_COMMON);
      if(h == INVALID_HANDLE)
        {
         h = FileOpen(filename, FILE_READ|FILE_TXT); // Try user files

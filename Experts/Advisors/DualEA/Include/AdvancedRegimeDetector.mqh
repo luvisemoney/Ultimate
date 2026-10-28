@@ -1,3 +1,5 @@
+#ifndef DUALEA_ADVANCED_REGIME_DETECTOR_MQH
+#define DUALEA_ADVANCED_REGIME_DETECTOR_MQH
 //+------------------------------------------------------------------+
 //| AdvancedRegimeDetector.mqh                                       |
 //| Sophisticated regime detection with ADX/ATR/HHLL classification  |
@@ -75,6 +77,8 @@ private:
     int m_atr_period;
     int m_hhll_period;
     int m_lookback_bars;
+    int m_adx_handle;
+    int m_atr_handle;
     
     // Historical data
     double m_adx_buffer[];
@@ -100,8 +104,8 @@ public:
     ~CAdvancedRegimeDetector();
     
     // Configuration
-    void SetADXPeriod(const int period) { m_adx_period = period; }
-    void SetATRPeriod(const int period) { m_atr_period = period; }
+    void SetADXPeriod(const int period) { if(period==m_adx_period || period<1) return; if(m_adx_handle!=INVALID_HANDLE) IndicatorRelease(m_adx_handle); m_adx_handle=INVALID_HANDLE; m_adx_period=period; }
+    void SetATRPeriod(const int period) { if(period==m_atr_period || period<1) return; if(m_atr_handle!=INVALID_HANDLE) IndicatorRelease(m_atr_handle); m_atr_handle=INVALID_HANDLE; m_atr_period=period; }
     void SetHHLLPeriod(const int period) { m_hhll_period = period; }
     void SetLookbackBars(const int bars) { m_lookback_bars = bars; }
     void SetADXThresholds(const double trend, const double strong) 
@@ -121,6 +125,16 @@ public:
     }
     
     // Main detection methods
+    bool PrimeIndicators()
+    {
+        if(!EnsureIndicatorHandles()) return false;
+        double adx_sample[1],atr_samples[];
+        // MT5 tester indicators are lazy: request calculation during initialization.
+        // A BarsCalculated-only polling loop can otherwise wait indefinitely.
+        int adx_count=CopyBuffer(m_adx_handle,0,0,1,adx_sample);
+        int atr_count=CopyBuffer(m_atr_handle,0,0,m_lookback_bars,atr_samples);
+        return adx_count==1 && atr_count==m_lookback_bars;
+    }
     SRegimeResult DetectCurrentRegime();
     SRegimeResult GetLastRegime() const { return m_last_regime; }
     
@@ -139,6 +153,14 @@ public:
     double CalculateRegimeConfidence(const ENUM_REGIME_TYPE regime, const SRegimeIndicators& indicators);
     
 private:
+    bool EnsureIndicatorHandles()
+    {
+        // Reacquire the cache reference: another module may have released the
+        // same indicator ID. Repeated identical calls do not add reference counts.
+        m_adx_handle=iADX(m_symbol,(ENUM_TIMEFRAMES)m_timeframe,m_adx_period);
+        m_atr_handle=iATR(m_symbol,(ENUM_TIMEFRAMES)m_timeframe,m_atr_period);
+        return m_adx_handle!=INVALID_HANDLE && m_atr_handle!=INVALID_HANDLE;
+    }
     void UpdatePriceBuffers();
     void CalculateIndicators(SRegimeIndicators& indicators);
     bool IsTrending(const SRegimeIndicators& indicators);
@@ -161,6 +183,9 @@ CAdvancedRegimeDetector::CAdvancedRegimeDetector(const string symbol, const int 
     m_atr_period = 14;
     m_hhll_period = 20;
     m_lookback_bars = 100;
+    m_adx_handle=INVALID_HANDLE;
+    m_atr_handle=INVALID_HANDLE;
+    EnsureIndicatorHandles();
     
     // Default thresholds
     m_adx_trend_threshold = 25.0;
@@ -185,6 +210,7 @@ CAdvancedRegimeDetector::CAdvancedRegimeDetector(const string symbol, const int 
     ArrayInitialize(m_high_buffer, 0);
     ArrayInitialize(m_low_buffer, 0);
     ArrayInitialize(m_close_buffer, 0);
+    PrimeIndicators();
 }
 
 //+------------------------------------------------------------------+
@@ -192,7 +218,8 @@ CAdvancedRegimeDetector::CAdvancedRegimeDetector(const string symbol, const int 
 //+------------------------------------------------------------------+
 CAdvancedRegimeDetector::~CAdvancedRegimeDetector()
 {
-    // Cleanup handled automatically
+    if(m_adx_handle!=INVALID_HANDLE) IndicatorRelease(m_adx_handle);
+    if(m_atr_handle!=INVALID_HANDLE) IndicatorRelease(m_atr_handle);
 }
 
 //+------------------------------------------------------------------+
@@ -203,6 +230,13 @@ SRegimeResult CAdvancedRegimeDetector::DetectCurrentRegime()
     SRegimeResult result;
     result.timestamp = TimeCurrent();
     result.previous_regime = m_last_regime.current_regime;
+    // Request calculation asynchronously; never wait on unbuilt indicator data.
+    if(!EnsureIndicatorHandles() || !SeriesInfoInteger(m_symbol,(ENUM_TIMEFRAMES)m_timeframe,SERIES_SYNCHRONIZED) ||
+       BarsCalculated(m_adx_handle)<m_lookback_bars || BarsCalculated(m_atr_handle)<m_lookback_bars)
+    {
+        result.description="Regime indicators are warming up";
+        return result;
+    }
     
     // Update price buffers
     UpdatePriceBuffers();
@@ -261,7 +295,7 @@ void CAdvancedRegimeDetector::CalculateIndicators(SRegimeIndicators& indicators)
     // Calculate ADX
     indicators.adx_value = CalculateADX();
     {
-        int adx_handle = iADX(m_symbol, (ENUM_TIMEFRAMES)m_timeframe, m_adx_period);
+        int adx_handle = m_adx_handle;
         if(adx_handle != INVALID_HANDLE)
         {
             double plus[1], minus[1];
@@ -292,10 +326,12 @@ void CAdvancedRegimeDetector::CalculateIndicators(SRegimeIndicators& indicators)
 //+------------------------------------------------------------------+
 double CAdvancedRegimeDetector::CalculateADX(const int shift)
 {
-    int handle = iADX(m_symbol, (ENUM_TIMEFRAMES)m_timeframe, m_adx_period);
-    if(handle == INVALID_HANDLE) return 0.0;
+    if(!EnsureIndicatorHandles()) return 0.0;
+    int handle=m_adx_handle;
+    if(BarsCalculated(handle)<=shift) return 0.0;
     double buf[1];
-    if(CopyBuffer(handle, 0 /*MAIN*/, shift, 1, buf) <= 0) return 0.0;
+    int copied = CopyBuffer(handle, 0 /*MAIN*/, shift, 1, buf);
+    if(copied <= 0) return 0.0;
     return buf[0];
 }
 
@@ -304,10 +340,12 @@ double CAdvancedRegimeDetector::CalculateADX(const int shift)
 //+------------------------------------------------------------------+
 double CAdvancedRegimeDetector::CalculateATR(const int shift)
 {
-    int handle = iATR(m_symbol, (ENUM_TIMEFRAMES)m_timeframe, m_atr_period);
-    if(handle == INVALID_HANDLE) return 0.0;
+    if(!EnsureIndicatorHandles()) return 0.0;
+    int handle=m_atr_handle;
+    if(BarsCalculated(handle)<=shift) return 0.0;
     double buf[1];
-    if(CopyBuffer(handle, 0, shift, 1, buf) <= 0) return 0.0;
+    int copied = CopyBuffer(handle, 0, shift, 1, buf);
+    if(copied <= 0) return 0.0;
     return buf[0];
 }
 
@@ -333,15 +371,11 @@ double CAdvancedRegimeDetector::CalculateVolatilityPercentile(const int bars)
     double atr_values[];
     ArrayResize(atr_values, bars);
     
-    for(int i = 0; i < bars; i++)
-    {
-        int h = iATR(m_symbol, (ENUM_TIMEFRAMES)m_timeframe, m_atr_period);
-        if(h == INVALID_HANDLE) { atr_values[i] = 0.0; continue; }
-        double b[1];
-        if(CopyBuffer(h, 0, i, 1, b) <= 0) atr_values[i] = 0.0; else atr_values[i] = b[0];
-    }
+    if(!EnsureIndicatorHandles() || BarsCalculated(m_atr_handle)<bars) return 50.0;
+    // CopyBuffer stores the oldest requested value first in physical memory.
+    if(CopyBuffer(m_atr_handle,0,0,bars,atr_values)!=bars) return 50.0;
     
-    double current_atr = atr_values[0];
+    double current_atr = atr_values[bars-1];
     double percentile = 0;
     
     for(int i = 0; i < bars; i++)
@@ -566,3 +600,5 @@ string CAdvancedRegimeDetector::RegimeToString(const ENUM_REGIME_TYPE regime) co
         default:                     return "UNKNOWN";
     }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 // KnowledgeBase.mqh
 // Shared functions for reading from and writing to the knowledge base.
 
@@ -52,9 +53,9 @@ public:
                                        const double price, const double volume, const int order_type)
                      {
                         // Append a single trade execution row into Common Files under DualEA/trades
-                        FolderCreate("DualEA\\trades", FILE_COMMON);
+                        FolderCreate("DualEA\\trades", DUALEA_FILE_COMMON);
                         string filename = StringFormat("DualEA\\trades\\%s_trades_%s.csv", symbol, TimeToString(exec_time, TIME_DATE));
-                        int h = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                        int h = FileOpen(filename, FILE_READ|FILE_WRITE|DUALEA_FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
                         if(h == INVALID_HANDLE)
                         {
                            PrintFormat("KnowledgeBase: failed to open trades file: %s (err=%d)", filename, GetLastError());
@@ -88,11 +89,11 @@ class CFeaturesKB
     void   EnsureHeader()
       {
        // Ensure folder exists and header is present
-       FolderCreate("DualEA", FILE_COMMON);
-       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_COMMON);
+       FolderCreate("DualEA", DUALEA_FILE_COMMON);
+       int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|DUALEA_FILE_COMMON);
        if(h==INVALID_HANDLE)
          {
-          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+          h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON);
           if(h!=INVALID_HANDLE)
             {
              FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
@@ -104,7 +105,7 @@ class CFeaturesKB
           if(FileSize(h)==0)
             {
              FileClose(h);
-             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+             h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON);
              if(h!=INVALID_HANDLE)
                 FileWriteString(h, "timestamp,symbol,strategy,feature,value\n");
             }
@@ -128,7 +129,7 @@ class CFeaturesKB
                      // File size rotation threshold (100MB)
                      int rotate_threshold = 100*1024*1024;
                      // Check if file exists and exceeds threshold
-              int hsize = FileOpen(m_file_path, FILE_READ|FILE_COMMON);
+              int hsize = FileOpen(m_file_path, FILE_READ|DUALEA_FILE_COMMON);
               if(hsize != INVALID_HANDLE)
               {
                 ulong sz = FileSize(hsize);
@@ -139,9 +140,9 @@ class CFeaturesKB
                   StringReplace(tsuffix, ":", ""); StringReplace(tsuffix, ".", ""); StringReplace(tsuffix, " ", "_");
                     string rotated = m_file_path + "." + tsuffix + ".bak";
                   // Try to rename (no compression in MQL5)
-                  if(FileIsExist(rotated, FILE_COMMON)) FileDelete(rotated, FILE_COMMON);
+                  if(FileIsExist(rotated, DUALEA_FILE_COMMON)) FileDelete(rotated, DUALEA_FILE_COMMON);
                  // Signature: FileMove(src_name, src_common_flag, dst_name, dst_common_flag)
-                 if(FileMove(m_file_path, FILE_COMMON, rotated, FILE_COMMON))
+                 if(FileMove(m_file_path, DUALEA_FILE_COMMON, rotated, DUALEA_FILE_COMMON))
                     PrintFormat("[ROTATE] features.csv rotated to %s", rotated);
                  else
                     PrintFormat("[ROTATE] features.csv rotation failed: %s", rotated);
@@ -151,7 +152,7 @@ class CFeaturesKB
                      // Retry open to mitigate transient locks from readers/writers
                      for(int attempt=0; attempt<10 && h==INVALID_HANDLE; ++attempt)
                        {
-                        h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_UNICODE, ',');
+                        h = FileOpen(m_file_path, FILE_READ|FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON|FILE_UNICODE, ',');
                         if(h==INVALID_HANDLE) Sleep(25);
                        }
                      if(h==INVALID_HANDLE)
@@ -176,9 +177,9 @@ class CFeaturesKB
                     {
                      if(ArraySize(features) == 0) return false;
                      // Ensure base directory exists
-                     FolderCreate("DualEA\\features", FILE_COMMON);
+                     FolderCreate("DualEA\\features", DUALEA_FILE_COMMON);
                      string filename = StringFormat("DualEA\\features\\%s_%s_%s.csv", symbol, strategy, TimeToString(timestamp, TIME_DATE));
-                     int h = FileOpen(filename, FILE_WRITE|FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
+                     int h = FileOpen(filename, FILE_WRITE|DUALEA_FILE_COMMON|FILE_CSV|FILE_ANSI, ',');
                      if(h == INVALID_HANDLE)
                        {
                         PrintFormat("KnowledgeBase: failed to create features file: %s (err=%d)", filename, GetLastError());
@@ -201,11 +202,11 @@ class CFeaturesKB
     bool          LogTradeExecution(const string symbol, const string strategy, const datetime exec_time,
                                     const double price, const double volume, const int order_type)
                     {
-                     FolderCreate("DualEA\\trades", FILE_COMMON);
+                     FolderCreate("DualEA\\trades", DUALEA_FILE_COMMON);
                      // Use consolidated file per symbol (not per day)
                      string filename = StringFormat("DualEA\\trades\\%s_trades.csv", symbol);
                      // Open as CSV with FILE_UNICODE for proper UTF-8 encoding
-                     int h = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_UNICODE, ',');
+                     int h = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON|FILE_UNICODE, ',');
                      if(h == INVALID_HANDLE)
                        {
                         PrintFormat("KnowledgeBase: failed to open trades file: %s (err=%d)", filename, GetLastError());
@@ -373,7 +374,7 @@ class CInsightsBuilder
                     // Establish deadline (if any)
                     ulong t0 = GetTickCount();
                     // Open features.csv with explicit comma delimiter
-                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|FILE_COMMON, (ushort)',');
+                    int hf = FileOpen(m_features_path, FILE_READ|FILE_CSV|DUALEA_FILE_COMMON, (ushort)',');
                     if(hf==INVALID_HANDLE)
                       {
                        PrintFormat("InsightsBuilder: cannot open features '%s'. Err=%d", m_features_path, GetLastError());
@@ -490,7 +491,7 @@ class CInsightsBuilder
                     if(total==0)
                       {
                        // Secondary fallback: parse features.csv as raw text lines and split by comma
-                       int ht = FileOpen(m_features_path, FILE_READ|FILE_COMMON|FILE_ANSI);
+                       int ht = FileOpen(m_features_path, FILE_READ|DUALEA_FILE_COMMON|FILE_ANSI);
                        if(ht!=INVALID_HANDLE)
                          {
                           int added=0; bool header_seen=false; int scanned=0;
@@ -561,14 +562,14 @@ class CInsightsBuilder
                        
                        Print("InsightsBuilder: no r_multiple rows found in features.csv; falling back to knowledge_base.csv using profit as surrogate");
                        // Check if knowledge_base.csv exists first
-                       if(!FileIsExist(m_kb_path, FILE_COMMON))
+                       if(!FileIsExist(m_kb_path, DUALEA_FILE_COMMON))
                        {
                           Print("InsightsBuilder: knowledge_base.csv does not exist, skipping fallback");
                        }
                        else
                        {
                           // Open knowledge_base.csv with explicit comma delimiter
-                          int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|FILE_COMMON, (ushort)',' );
+                          int hk = FileOpen(m_kb_path, FILE_READ|FILE_CSV|DUALEA_FILE_COMMON, (ushort)',' );
                        if(hk!=INVALID_HANDLE)
                          {
                           // No header expected in knowledge_base.csv
@@ -750,8 +751,8 @@ class CInsightsBuilder
                        return false;
                       }
                     // Prepare output
-                    FolderCreate("DualEA", FILE_COMMON);
-                    int out = FileOpen(m_out_path, FILE_WRITE|FILE_COMMON|FILE_TXT|FILE_ANSI);
+                    FolderCreate("DualEA", DUALEA_FILE_COMMON);
+                    int out = FileOpen(m_out_path, FILE_WRITE|DUALEA_FILE_COMMON|FILE_TXT|FILE_ANSI);
                     if(out==INVALID_HANDLE)
                       {
                        PrintFormat("InsightsBuilder: cannot open output '%s'. Err=%d", m_out_path, GetLastError());
@@ -903,18 +904,18 @@ CKnowledgeBase::CKnowledgeBase(string file_name="DualEA\\knowledge_base.csv", st
    // Ensure target subfolder exists in Common files
    // Common files base: TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files"
    // Create "DualEA" if missing
-   FolderCreate("DualEA", FILE_COMMON);
+   FolderCreate("DualEA", DUALEA_FILE_COMMON);
 
    // Debug: show resolved common file path
    string full_main_path = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + m_file_path;
    PrintFormat("KnowledgeBase: writing main CSV to Common Files: %s", full_main_path);
 
    // --- Ensure the header exists (use direct FileOpen to avoid noisy error on first run)
-   int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|FILE_COMMON);
+   int h = FileOpen(m_file_path, FILE_READ|FILE_CSV|DUALEA_FILE_COMMON);
    if(h == INVALID_HANDLE)
      {
       // Create new file with header
-      h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+      h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON);
       if(h != INVALID_HANDLE)
         {
          FileWriteString(h, "timestamp,symbol,type,entry_price,stop_loss,take_profit,close_price,profit,strategy_id\n");
@@ -927,7 +928,7 @@ CKnowledgeBase::CKnowledgeBase(string file_name="DualEA\\knowledge_base.csv", st
       if(FileSize(h) == 0)
         {
          FileClose(h);
-         h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|FILE_COMMON);
+         h = FileOpen(m_file_path, FILE_WRITE|FILE_CSV|DUALEA_FILE_COMMON);
          if(h != INVALID_HANDLE)
            {
             FileWriteString(h, "timestamp,symbol,type,entry_price,stop_loss,take_profit,close_price,profit,strategy_id\n");
@@ -1008,13 +1009,13 @@ bool CKnowledgeBase::LogTrade(const string strategy_name, const int retcode, con
       events_path = events_path + "_events.csv";
 
    // Ensure folder exists in Common files
-   FolderCreate("DualEA", FILE_COMMON);
+   FolderCreate("DualEA", DUALEA_FILE_COMMON);
 
    // Debug: show resolved events file path
    string full_events_path = TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" + events_path;
    PrintFormat("KnowledgeBase: writing events CSV to Common Files: %s", full_events_path);
 
-   int handle = FileOpen(events_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_WRITE|FILE_COMMON);
+   int handle = FileOpen(events_path, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_WRITE|DUALEA_FILE_COMMON);
    if(handle == INVALID_HANDLE)
      {
       PrintFormat("Error opening knowledge base events file '%s'. Error code: %d", events_path, GetLastError());
@@ -1049,7 +1050,7 @@ bool CKnowledgeBase::OpenFile(int flags=FILE_WRITE|FILE_READ|FILE_CSV)
    // Retry open with read/write sharing to mitigate transient locks (e.g., validators or other EAs)
    for(int attempt=0; attempt<10 && m_file_handle==INVALID_HANDLE; ++attempt)
      {
-      m_file_handle = FileOpen(m_file_path, (flags | FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_COMMON));
+      m_file_handle = FileOpen(m_file_path, (flags | FILE_SHARE_READ | FILE_SHARE_WRITE | DUALEA_FILE_COMMON));
       if(m_file_handle==INVALID_HANDLE)
          Sleep(25);
      }
@@ -1080,7 +1081,7 @@ bool CKnowledgeBase::AcquireLock(const int timeout_ms)
    // Do not specify share flags to request exclusive access on the lock file
    while(waited < timeout_ms && m_lock_handle==INVALID_HANDLE)
      {
-      m_lock_handle = FileOpen(m_lock_path, FILE_WRITE|FILE_COMMON);
+      m_lock_handle = FileOpen(m_lock_path, FILE_WRITE|DUALEA_FILE_COMMON);
       if(m_lock_handle==INVALID_HANDLE)
         {
          Sleep(25);
@@ -1107,6 +1108,6 @@ void CKnowledgeBase::ReleaseLock()
       FileClose(m_lock_handle);
       m_lock_handle = INVALID_HANDLE;
       // Best-effort delete to avoid stale locks
-      FileDelete(m_lock_path, FILE_COMMON);
+      FileDelete(m_lock_path, DUALEA_FILE_COMMON);
      }
   }

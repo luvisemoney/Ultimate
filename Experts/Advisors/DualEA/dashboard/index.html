@@ -1,13 +1,24 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DualEA Nuclear Dashboard</title>
-  </head>
-  <body class="bg-gray-950 text-gray-100">
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
-</html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>DualEA · Model operations</title><link rel="stylesheet" href="./styles.css"></head>
+<body>
+<aside><a class="brand" href="#overview"><span class="brandmark">D</span>DualEA</a><p class="eyebrow">OPERATIONS</p><nav aria-label="Main navigation"><a href="#overview">Overview</a><a href="#execution">Execution</a><a href="#news">News context</a><a href="#policy">Policy</a><a href="#evidence">Evidence</a></nav><div class="sidebar-note"><span class="dot amber"></span> Snapshot mode<p>Published observations.<br>Trading runs inside MT5.</p></div></aside>
+<main>
+<header><div><p class="eyebrow">UNIVERSAL MODEL / H1</p><h1>Model operations</h1><p class="muted">Execution evidence, news context, and the published policy.</p></div><div class="header-actions"><span id="freshness" class="pill">Loading</span><button id="refresh" type="button">↻ Refresh</button></div></header>
+<div id="error" role="alert" hidden></div><p class="timestamp" id="updated">Loading the published snapshot…</p>
+<section id="overview" aria-label="Overview"><div class="cards">
+<article class="card"><p class="label">ONNX CONTRACT</p><strong id="model-contract">—</strong><p id="model-detail" class="muted">Awaiting evidence</p><span id="model-state" class="pill">Unknown</span></article>
+<article class="card"><p class="label">ACTUAL EA TRADES</p><strong id="paper-trades">—</strong><p id="paper-net" class="muted">No result loaded</p><span class="pill">Historical test</span></article>
+<article class="card"><p class="label">PROFITABILITY</p><strong id="profit-state">Not established</strong><p id="benchmark-net" class="muted">No result loaded</p><span class="pill amber">Experimental model</span></article>
+<article class="card"><p class="label">LATEST LIVE HANDLER MAX</p><strong id="latency">—</strong><p id="latency-detail" class="muted">No observation loaded</p><span class="pill">Feed delivery unmeasured</span></article>
+</div><div class="notice"><span>01</span><p><b>Functional inference and profitable trading are different checks.</b> Every chart below uses recorded results. Neither a backtest nor a short demo observation guarantees future returns or feed latency.</p></div></section>
+<section id="execution"><div class="section-head"><div><p class="eyebrow">RESULTS</p><h2>Where the model stands</h2></div><label>Symbol <select id="symbol"><option value="*">All symbols</option></select></label></div>
+<div class="split"><article class="panel"><h3>ONNX benchmark · net result</h3><p class="muted">Separate four-hour strategy · October 1–27, 2026 · generated ticks</p><div id="profit-chart" class="profit-chart" aria-label="Profit and cost-stress comparison"></div><div class="legend"><span><i class="blue"></i>Tester net P&amp;L</span><span><i class="orange"></i>After additional cost stress</span></div><p class="fine">Independent runs, each starting at $10,000 with fixed 0.01 lots. Dollar sums are not a shared-capital portfolio backtest.</p></article>
+<article class="panel"><h3>Actual PaperEA · full gate cascade</h3><p class="muted">Scheduled protections and risk checks remain active.</p><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Trades</th><th>Net USD</th><th>PF</th></tr></thead><tbody id="paper-table"></tbody></table></div><p class="fine">M1 OHLC tests. This is the EA, not the separate ONNX benchmark. No live-account profits are claimed.</p></article></div>
+<article class="panel"><h3>Benchmark accounting</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Fills</th><th>Wins</th><th>Net USD</th><th>Cost stress USD</th><th>Drawdown</th><th>Rejected requests</th></tr></thead><tbody id="benchmark-table"></tbody></table></div></article></section>
+<section id="news"><div class="section-head"><div><p class="eyebrow">EXTERNAL CONTEXT</p><h2>News, with provenance</h2></div><input id="news-search" type="search" placeholder="Search headlines or targets" aria-label="Search news"></div><div class="feed-counts" id="feed-counts"></div><article class="panel"><p class="fine">Scores describe explicit policy wording. They are not calibrated return probabilities. Expired context is marked below.</p><div class="table-wrap"><table><thead><tr><th>Target</th><th>Headline / source</th><th>Impact</th><th>Rule score</th><th>State</th></tr></thead><tbody id="news-table"></tbody></table></div></article></section>
+<section id="policy"><div class="section-head"><div><p class="eyebrow">READ-ONLY PUBLICATION</p><h2>Policy snapshot</h2></div><button id="copy-policy" type="button">Copy policy URL</button></div><article class="panel"><div class="policy-meta"><a id="policy-link" href="./policy.json" target="_blank" rel="noopener noreferrer">Open policy.json ↗</a><span id="policy-count" class="muted">—</span></div><p class="fine">GitHub Pages serves a static JSON file. Only the EA can execute trades. This viewer never sends order instructions.</p><details><summary>Inspect published JSON</summary><pre id="policy-json"></pre></details></article></section>
+<section id="evidence"><div class="section-head"><div><p class="eyebrow">TRACEABILITY</p><h2>Evidence &amp; operating limits</h2></div></div><article class="panel"><dl id="evidence-list"></dl><p class="fine">The publisher and terminal need an always-on machine. A Windows VPS can host MT5, the collector browser, and the local policy service. Hosting this dashboard alone does not run those processes.</p></article></section>
+<footer><span>DualEA · measured outcomes, explicit limits</span><a href="https://github.com/luvisemoney/Ultimate" target="_blank" rel="noopener noreferrer">Source repository ↗</a></footer>
+</main><script type="module" src="./app.js"></script>
+</body></html>

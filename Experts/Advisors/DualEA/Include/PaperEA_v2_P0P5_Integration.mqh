@@ -49,7 +49,7 @@ CDualEAController* g_dual_ea_controller = NULL;
 //+------------------------------------------------------------------+
 //| Initialize P0-P5 Systems                                         |
 //+------------------------------------------------------------------+
-bool InitializeP0P5Systems()
+bool InitializeP0P5Systems(bool shadow_mode=false)
 {
    Print("=== [PaperEA_v2] Initializing P0-P5 Hardening Systems ===");
    
@@ -59,7 +59,7 @@ bool InitializeP0P5Systems()
 
    // Map P0-P5 inputs into available SDualEAConfig fields
    config.shadow_logging_enabled = InpEnableShadowBridge;
-   config.shadow_mode_only = ShadowMode;
+   config.shadow_mode_only = shadow_mode;
    config.sqlite_enabled = InpEnableSQLiteParallel;
    config.sqlite_db_name = "dualea_kb.db";
    config.circuit_breaker_enabled = InpEnableNuclearRiskEngine;

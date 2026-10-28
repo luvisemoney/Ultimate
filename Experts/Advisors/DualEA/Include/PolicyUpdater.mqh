@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| PolicyUpdater.mqh                                                |
 //| Purpose: Auto-updating ML policy system                          |
@@ -197,7 +198,7 @@ private:
       string temp_path = m_policy_file_path + ".tmp";
       string backup_path = m_policy_file_path + ".backup";
       
-      int handle = FileOpen(temp_path, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
+      int handle = FileOpen(temp_path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON|FILE_ANSI);
       if(handle == INVALID_HANDLE)
       {
          PrintFormat("❌ PolicyUpdater: Failed to open temp file for writing: %s (Error: %d)", 
@@ -268,15 +269,15 @@ private:
       FileClose(handle);
       
       // ATOMIC: Backup existing file if it exists
-      int existing_handle = FileOpen(m_policy_file_path, FILE_READ|FILE_TXT|FILE_COMMON);
+      int existing_handle = FileOpen(m_policy_file_path, FILE_READ|FILE_TXT|DUALEA_FILE_COMMON);
       if(existing_handle != INVALID_HANDLE)
       {
          FileClose(existing_handle);
          // Copy existing to backup
-         int backup_handle = FileOpen(backup_path, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_ANSI);
+         int backup_handle = FileOpen(backup_path, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON|FILE_ANSI);
          if(backup_handle != INVALID_HANDLE)
          {
-            int old_handle = FileOpen(m_policy_file_path, FILE_READ|FILE_TXT|FILE_COMMON|FILE_ANSI);
+            int old_handle = FileOpen(m_policy_file_path, FILE_READ|FILE_TXT|DUALEA_FILE_COMMON|FILE_ANSI);
             if(old_handle != INVALID_HANDLE)
             {
                while(!FileIsEnding(old_handle))
@@ -291,8 +292,8 @@ private:
       }
       
       // ATOMIC: Rename temp to final
-      FileDelete(m_policy_file_path, FILE_COMMON);
-      FileMove(temp_path, FILE_COMMON, m_policy_file_path, FILE_COMMON|FILE_REWRITE);
+      FileDelete(m_policy_file_path, DUALEA_FILE_COMMON);
+      FileMove(temp_path, DUALEA_FILE_COMMON, m_policy_file_path, DUALEA_FILE_COMMON|FILE_REWRITE);
       
       PrintFormat("✅ PolicyUpdater: Atomically updated policy file with %d entries (version %d)", count, policy_version);
       return true;

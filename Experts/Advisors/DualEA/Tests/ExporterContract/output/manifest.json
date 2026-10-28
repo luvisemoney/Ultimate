@@ -1,0 +1,32 @@
+[
+    {
+        "file":  "signal_model.onnx",
+        "sha256":  "e85fde6ee8104ae0a57c9931c1dc8b3a1cfd8f2777f260ab260d99c67f8b2106",
+        "bytes":  372
+    },
+    {
+        "file":  "onnx_config.ini",
+        "sha256":  "926fe0e71e3c61f330c882561b4e2d8c3a3759eb83bdd37e3412ffbc9b0d5acc",
+        "bytes":  690
+    },
+    {
+        "file":  "onnx_config.json",
+        "sha256":  "a76322aa08c60fdb0569d2901ff9b54539f816da074a9ea3f25d5524b92b731b",
+        "bytes":  3723
+    },
+    {
+        "file":  "model_data.json",
+        "sha256":  "7c97d7848893ef580935c37915a19e9806dcb5ae990e6b44e6a9358f784d82f9",
+        "bytes":  3313
+    },
+    {
+        "file":  "metrics.json",
+        "sha256":  "34f6178cd8f30559dac5c5079b4e6f3d0c367145760c462936535be0b5094f78",
+        "bytes":  41
+    },
+    {
+        "file":  "parity_samples.csv",
+        "sha256":  "2faae2721d593ad3c535590f3fda3ace6896863e956a0f9c5e85c84ae0a01599",
+        "bytes":  32
+    }
+]

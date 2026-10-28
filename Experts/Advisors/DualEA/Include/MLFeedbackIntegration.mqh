@@ -1,3 +1,4 @@
+#include "RuntimeStorage.mqh"
 //+------------------------------------------------------------------+
 //| MLFeedbackIntegration.mqh                                        |
 //| Purpose: Bridge MQL5 trades to Python ML feedback loop           |
@@ -83,10 +84,10 @@ bool WriteTradeFeedback(const STradeFeedback &feedback)
                      IntegerToString((int)TimeCurrent()));
    string filepath = g_ml_feedback_dir + filename;
    
-   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_UNICODE);
+   int handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|DUALEA_FILE_COMMON|FILE_UNICODE);
    if(handle == INVALID_HANDLE)
    {
-      // Try without FILE_COMMON
+      // Try without DUALEA_FILE_COMMON
       handle = FileOpen(filepath, FILE_WRITE|FILE_TXT|FILE_UNICODE);
       if(handle == INVALID_HANDLE)
       {
@@ -200,7 +201,7 @@ void InitializeMLFeedback()
    // Ensure directory exists (best effort)
    long dummy = 0;
    string path = "DualEA";
-   if(!FolderCreate(path, FILE_COMMON))
+   if(!FolderCreate(path, DUALEA_FILE_COMMON))
    {
       // Try alternate path
       path = "\\\" + path;
