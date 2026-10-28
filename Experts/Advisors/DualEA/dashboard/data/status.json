@@ -1,6 +1,6 @@
 {
     "schema_version":  1,
-    "exported_utc":  "2026-10-28T19:05:55.0107452Z",
+    "exported_utc":  "2026-10-28T19:35:54.6690219Z",
     "mode":  "STATIC_SNAPSHOT",
     "model":  {
                   "verification":  {
@@ -64,7 +64,7 @@
                                             "BTCUSD",
                                             "ETHUSD"
                                         ],
-                  "current_ea_sha256":  "67bb4eee377f46628096264467a4e73fd47962bb88ba2f75e9955e5d9795058a",
+                  "current_ea_sha256":  "e820eda1a596469b467bbe425374690dae38575ca14bf3eeaa79f4b1290c8332",
                   "tested_ea_matches":  false,
                   "performance_status":  "NOT_PROVEN_PROFITABLE"
               },
@@ -725,5 +725,5 @@
                         "Costs include explicit sensitivity assumptions; they are not broker quotations.",
                         "Static publication does not keep MT5 running when its computer is off."
                     ],
-    "source_fingerprint":  "2fe055f658dacac546673491339c2f8bfe9c35ba0f47053da13570702e4605f1"
+    "source_fingerprint":  "dc15714ea7c11ca8644b0ed687eae3e63bd5c6281ae12100f9fb77275ec881a0"
 }
