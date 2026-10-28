@@ -16,6 +16,7 @@ $model=Read-OptionalJson (Join-Path $bundle 'verification.json')
 $integration=Read-OptionalJson (Join-Path $bundle 'integration-verification.json')
 $modelConfig=Read-OptionalJson (Join-Path $bundle 'onnx_config.json')
 $metrics=Read-OptionalJson (Join-Path $bundle 'metrics.json')
+$diagnostics=Read-OptionalJson (Join-Path $bundle 'diagnostic-audit.json')
 $benchmark=Read-OptionalJson (Join-Path $evidence 'profitability-generated-results.json')
 $paper=Read-OptionalJson (Join-Path $evidence 'paper-execution-results.json')
 $ff=Read-OptionalJson (Join-Path $PSScriptRoot 'artifacts\forexfactory\verification.json')
@@ -38,7 +39,7 @@ $ea=Join-Path $dual 'PaperEA\PaperEA_v2.ex5'
 $eaHash=if(Test-Path -LiteralPath $ea){(Get-FileHash -LiteralPath $ea -Algorithm SHA256).Hash.ToLowerInvariant()}else{$null}
 $data=[ordered]@{
  schema_version=1;exported_utc=[DateTime]::UtcNow.ToString('o');mode='STATIC_SNAPSHOT';
- model=[ordered]@{verification=$model;integration=$integration;supported_symbols=@($modelConfig.supported_symbols);current_ea_sha256=$eaHash;tested_ea_matches=($integration -and $integration.ea_sha256 -eq $eaHash);performance_status='NOT_PROVEN_PROFITABLE'};
+ model=[ordered]@{verification=$model;integration=$integration;supported_symbols=@($modelConfig.supported_symbols);current_ea_sha256=$eaHash;tested_ea_matches=($integration -and $integration.ea_sha256 -eq $eaHash);performance_status='NOT_PROVEN_PROFITABLE';metrics=[ordered]@{train=$metrics.train;validation=$metrics.validation;test=$metrics.test};diagnostics=@(Select-PublicRows @($diagnostics|Where-Object {$_.group -in @('train','validation','test')}) @('group','rows','auc','above55','above60','above70','minProbability','maxProbability'))};
  benchmark=[ordered]@{strategy='Separate tester-only ONNX four-hour strategy';from='2026-10-01';to_exclusive='2026-10-28';tick_model='GENERATED_EVERY_TICK';additional_commission_per_roundturn_lot=7;additional_slippage_points_per_side=2;rows=@(Select-PublicRows $benchmark @('symbol','decisions','entry_requests','entries_filled','request_failures','trades','wins','net_profit','profit_factor','equity_drawdown_pct','commission','swap','fees','net_after_extra_commission','net_after_stress_costs','benchmark_sha256'))};
  paper=[ordered]@{strategy='Actual PaperEA with risk gates';from='2026-10-01';to_exclusive='2026-10-28';tick_model='M1_OHLC';rows=@(Select-PublicRows $paper @('symbol','trades','net_profit','profit_factor','equity_drawdown_pct','wins','generated_signals','ea_sha256'))};
  live_observations=$live;news=$news;

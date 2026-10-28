@@ -129,3 +129,7 @@ See [TickLatencyFix.md](TickLatencyFix.md). The monitor now measures completed O
 
 ## Timestamped news context
 Headline context is now connected to PaperEA's existing news/filter section, with scheduled blackouts preserved and observation-only defaults. See [NewsSentimentIntegration.md](NewsSentimentIntegration.md). This is separate from the 104-feature ONNX input and does not retrain or alter its probability outputs.
+# Current diagnostic audit
+
+See [ModelAndTakeProfitAudit.md](ModelAndTakeProfitAudit.md) for the independently reproduced weak AUC, actual four-hour labels, probability coverage, symbol differences and TP-preservation fix. The model weights and 104-input contract were not replaced with the pasted PCA or tercile examples. The audit distinguishes native inference correctness from predictive and economic performance.
+

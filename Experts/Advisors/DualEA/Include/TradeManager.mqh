@@ -479,7 +479,7 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
      }
    
    // CRITICAL SAFETY CHECK: Prevent execution without SL/TP
-   if(sl <= 0.0 || tp <= 0.0)
+   if(!MathIsValidNumber(sl) || !MathIsValidNumber(tp) || sl <= 0.0 || tp <= 0.0)
      {
       LOG(StringFormat("[SAFETY] BLOCKING ORDER: Cannot execute %s on %s without valid SL/TP (SL=%.5f TP=%.5f)", 
                   EnumToString(order.order_type), m_symbol, sl, tp));
@@ -602,6 +602,23 @@ bool CTradeManager::ExecuteOrder(const TradeOrder &order)
     }
     ulong t_end = GetTickCount();
     LOG(StringFormat("OrderSend: total attempts=%d duration_ms=%d final_ok=%s", attempt, (int)(t_end-t_start), (ok?"true":"false")));
+    // Observe the server's position, not just the requested prices. Never
+    // report a filled order as unsent merely because protection needs review.
+    if(ok && m_trade.ResultDeal()>0 && HistoryDealSelect(m_trade.ResultDeal()))
+      {
+       long position_id=HistoryDealGetInteger(m_trade.ResultDeal(),DEAL_POSITION_ID);
+       for(int position_index=0;position_index<PositionsTotal();position_index++)
+         {
+          ulong ticket=PositionGetTicket(position_index);
+          if(ticket==0 || PositionGetInteger(POSITION_IDENTIFIER)!=position_id) continue;
+          double server_sl=PositionGetDouble(POSITION_SL),server_tp=PositionGetDouble(POSITION_TP);
+          LOG(StringFormat("[POSITION-PROTECTION] ticket=%I64u symbol=%s server_sl=%.8f server_tp=%.8f requested_sl=%.8f requested_tp=%.8f",
+                           ticket,m_symbol,server_sl,server_tp,sl,tp));
+          if(server_sl<=0 || server_tp<=0)
+             LOG("[PROTECTION-WARNING] Filled position has missing protection; inspect this ticket. No automatic duplicate entry or position rewrite.");
+          break;
+         }
+      }
     return ok;
    }
 
@@ -725,7 +742,7 @@ void CTradeManager::UpdateTrailingStops()
                       else
                         {
                        LOG(StringFormat("[TRAIL] %s BUY modify: old_sl=%.5f -> new_sl=%.5f bid=%.5f needDist=%.5f", sym, sl, new_sl_out, fbid2, needDist2));
-                       if(!m_trade.PositionModify(sym, new_sl_out, tp))
+                       if(!m_trade.PositionModify(tk, new_sl_out, tp))
                          { LOG(StringFormat("[TRAIL] %s BUY modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                         }
                      }
@@ -766,7 +783,7 @@ void CTradeManager::UpdateTrailingStops()
                       else
                         {
                        LOG(StringFormat("[TRAIL] %s SELL modify: old_sl=%.5f -> new_sl=%.5f ask=%.5f needDist=%.5f", sym, sl, new_sl_out, fask2, needDist2));
-                       if(!m_trade.PositionModify(sym, new_sl_out, tp))
+                       if(!m_trade.PositionModify(tk, new_sl_out, tp))
                          { LOG(StringFormat("[TRAIL] %s SELL modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                         }
                      }
@@ -816,7 +833,7 @@ void CTradeManager::UpdateTrailingStops()
                            else
                              {
                            LOG(StringFormat("[TRAIL] %s BUY(ATR) modify: old_sl=%.5f -> new_sl=%.5f bid=%.5f needDist=%.5f", sym, sl, new_sl_out, fbid, needDist));
-                           if(!m_trade.PositionModify(sym, new_sl_out, tp))
+                           if(!m_trade.PositionModify(tk, new_sl_out, tp))
                              { LOG(StringFormat("[TRAIL] %s BUY(ATR) modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                              }
                           }
@@ -852,7 +869,7 @@ void CTradeManager::UpdateTrailingStops()
                            else
                              {
                            LOG(StringFormat("[TRAIL] %s SELL(ATR) modify: old_sl=%.5f -> new_sl=%.5f ask=%.5f needDist=%.5f", sym, sl, new_sl_out, fask, needDist));
-                           if(!m_trade.PositionModify(sym, new_sl_out, tp))
+                           if(!m_trade.PositionModify(tk, new_sl_out, tp))
                              { LOG(StringFormat("[TRAIL] %s SELL(ATR) modify failed: ret=%d lastErr=%d", sym, m_trade.ResultRetcode(), GetLastError())); }
                              }
                           }

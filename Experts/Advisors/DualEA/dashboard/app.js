@@ -46,6 +46,9 @@ function render() {
   const ff=snapshot.forex_factory?.verification||{};$('feed-counts').replaceChildren(...[['Calendar',ff.calendar_rows],['FF headlines',ff.news_rows],['Forum excerpts',ff.forum_rows],['Public activity',ff.activity_rows],['Positioning',ff.positioning_rows]].map(([name,value])=>text('span',`${name}: ${number(value)?value:'unknown'}`)));
   const policies=policy?.policies||policy?.slices||[];$('policy-count').textContent=`${policies.length} policy entries · read only`;$('policy-json').textContent=JSON.stringify(policy,null,2);
   const evidence=[['Model SHA-256',v.model_sha256||'Unknown'],['Current EA build',model.tested_ea_matches?'Matches integration proof':'Not matched to current integration proof'],['Integration classifications',model.integration?.classification_events??'Unknown'],['Feed delivery latency','UNMEASURED'],['Profitability','NOT PROVEN'],['Calendar coverage',`${ff.calendar_rows??'Unknown'} exported events; no invented actual/forecast surprises`],['Collector verification',ff.verified_utc?stamp(ff.verified_utc):'Unknown'],['Policy source timestamp',policy?.snapshot_meta?.source_modified_utc?stamp(policy.snapshot_meta.source_modified_utc):'Unknown']];
+  for(const split of ['train','validation','test'])if(number(model.metrics?.[split]?.auc))evidence.push([`${split} AUC`,model.metrics[split].auc.toFixed(4)]);
+  const diagnostic=(model.diagnostics||[]).find(row=>row.group==='test');
+  if(diagnostic)evidence.push(['Test predictions at least 0.55',`${diagnostic.above55} / ${diagnostic.rows}`],['Highest test probability',diagnostic.maxProbability.toFixed(4)]);
   $('evidence-list').replaceChildren(...evidence.flatMap(([key,value])=>[text('dt',key),text('dd',String(value))]));renderExecution();renderNews();
 }
 async function refresh() {

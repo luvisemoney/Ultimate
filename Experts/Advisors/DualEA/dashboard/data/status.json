@@ -1,6 +1,6 @@
 {
     "schema_version":  1,
-    "exported_utc":  "2026-10-28T19:35:54.6690219Z",
+    "exported_utc":  "2026-10-28T20:50:22.7073780Z",
     "mode":  "STATIC_SNAPSHOT",
     "model":  {
                   "verification":  {
@@ -19,7 +19,7 @@
                   "integration":  {
                                       "status":  "PASS",
                                       "model_sha256":  "73e604c067ea197be3f14f093fd13bf7e67c5acdeb1e5a55804855bf4e54b325",
-                                      "ea_sha256":  "2b45bd1cfb063c3c91314e01266d7f12e4b1aa320edb0652e27f50b5ea3d2996",
+                                      "ea_sha256":  "42d28aa5eb743b08bf37870a3278406f777ad4899010c336ab807b9a4bc6ee69",
                                       "tested_symbols":  [
                                                              "USDCHF",
                                                              "EURUSD",
@@ -36,8 +36,8 @@
                                       "test_from":  "2026.10.05",
                                       "test_to":  "2026.10.07",
                                       "model":  "M1 OHLC",
-                                      "simulated_entry_requests":  0,
-                                      "verified_utc":  "2026-10-28T16:07:47.1247834Z"
+                                      "simulated_entry_requests":  9,
+                                      "verified_utc":  "2026-10-28T20:49:28.6077657Z"
                                   },
                   "supported_symbols":  [
                                             "EURUSD",
@@ -64,9 +64,79 @@
                                             "BTCUSD",
                                             "ETHUSD"
                                         ],
-                  "current_ea_sha256":  "e820eda1a596469b467bbe425374690dae38575ca14bf3eeaa79f4b1290c8332",
-                  "tested_ea_matches":  false,
-                  "performance_status":  "NOT_PROVEN_PROFITABLE"
+                  "current_ea_sha256":  "42d28aa5eb743b08bf37870a3278406f777ad4899010c336ab807b9a4bc6ee69",
+                  "tested_ea_matches":  true,
+                  "performance_status":  "NOT_PROVEN_PROFITABLE",
+                  "metrics":  {
+                                  "train":  {
+                                                "rows":  380892,
+                                                "positive":  184266,
+                                                "negative":  196626,
+                                                "auc":  0.5335831009435032,
+                                                "log_loss":  0.6908266126661418,
+                                                "constant_train_prior_log_loss":  0.6926205822163284,
+                                                "constant_train_prior_brier":  0.2497367470489381,
+                                                "constant_train_prior_accuracy":  0.5162250716738604,
+                                                "brier_score":  0.2488434239737340,
+                                                "accuracy":  0.5276955147390862
+                                            },
+                                  "validation":  {
+                                                     "rows":  44296,
+                                                     "positive":  21348,
+                                                     "negative":  22948,
+                                                     "auc":  0.5332209890082650,
+                                                     "log_loss":  0.6907773874910613,
+                                                     "constant_train_prior_log_loss":  0.6925014321441392,
+                                                     "constant_train_prior_brier":  0.2496771929302340,
+                                                     "constant_train_prior_accuracy":  0.5180603214737223,
+                                                     "brier_score":  0.2488191096897228,
+                                                     "accuracy":  0.5248103666245260
+                                                 },
+                                  "test":  {
+                                               "rows":  22036,
+                                               "positive":  10625,
+                                               "negative":  11411,
+                                               "auc":  0.5157937222597391,
+                                               "log_loss":  0.6922586023562983,
+                                               "constant_train_prior_log_loss":  0.6925160962403611,
+                                               "constant_train_prior_brier":  0.2496845224037555,
+                                               "constant_train_prior_accuracy":  0.5178344527137412,
+                                               "brier_score":  0.2495573896381625,
+                                               "accuracy":  0.5139317480486478
+                                           }
+                              },
+                  "diagnostics":  [
+                                      {
+                                          "group":  "train",
+                                          "rows":  380892,
+                                          "auc":  0.53358310094350314,
+                                          "above55":  2369,
+                                          "above60":  228,
+                                          "above70":  25,
+                                          "minProbability":  0.22913268799883588,
+                                          "maxProbability":  0.82724255668748214
+                                      },
+                                      {
+                                          "group":  "validation",
+                                          "rows":  44296,
+                                          "auc":  0.533220989008265,
+                                          "above55":  172,
+                                          "above60":  3,
+                                          "above70":  0,
+                                          "minProbability":  0.35609330620952273,
+                                          "maxProbability":  0.6228494513748466
+                                      },
+                                      {
+                                          "group":  "test",
+                                          "rows":  22036,
+                                          "auc":  0.51579372225973907,
+                                          "above55":  95,
+                                          "above60":  0,
+                                          "above70":  0,
+                                          "minProbability":  0.37067510947167975,
+                                          "maxProbability":  0.59059970109911475
+                                      }
+                                  ]
               },
     "benchmark":  {
                       "strategy":  "Separate tester-only ONNX four-hour strategy",
@@ -725,5 +795,5 @@
                         "Costs include explicit sensitivity assumptions; they are not broker quotations.",
                         "Static publication does not keep MT5 running when its computer is off."
                     ],
-    "source_fingerprint":  "dc15714ea7c11ca8644b0ed687eae3e63bd5c6281ae12100f9fb77275ec881a0"
+    "source_fingerprint":  "cfbb94dcb5b46d5315c9f77f2d28420d8ae2e6acd27fddc098519ddc2ecd5e4d"
 }
