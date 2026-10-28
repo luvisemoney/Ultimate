@@ -1,6 +1,6 @@
 {
     "schema_version":  1,
-    "exported_utc":  "2026-10-28T19:00:54.5025117Z",
+    "exported_utc":  "2026-10-28T19:05:55.0107452Z",
     "mode":  "STATIC_SNAPSHOT",
     "model":  {
                   "verification":  {
@@ -64,7 +64,7 @@
                                             "BTCUSD",
                                             "ETHUSD"
                                         ],
-                  "current_ea_sha256":  "13a66406e81b370002487ce56a5859b4e2acaadb92db2a46555f87531a4e7f92",
+                  "current_ea_sha256":  "67bb4eee377f46628096264467a4e73fd47962bb88ba2f75e9955e5d9795058a",
                   "tested_ea_matches":  false,
                   "performance_status":  "NOT_PROVEN_PROFITABLE"
               },
@@ -341,7 +341,7 @@
     "news":  [
                  {
                      "id":  "df496099d22cf769e8031404911fff9ebd4dabb92e0dab3e63b7b6b7ab9e4e7e",
-                     "observed_utc":  1793213888,
+                     "observed_utc":  1793214110,
                      "published_utc":  1793180840,
                      "expires_utc":  1793224040,
                      "target":  "CAD",
@@ -353,7 +353,7 @@
                  },
                  {
                      "id":  "a4e689c4183895f02bf3b32efe4d562d47a9d795a6b9389577f71b6e1b7e7379",
-                     "observed_utc":  1793213888,
+                     "observed_utc":  1793214110,
                      "published_utc":  1793180794,
                      "expires_utc":  1793223994,
                      "target":  "CAD",
@@ -365,7 +365,7 @@
                  },
                  {
                      "id":  "0698b5424bb53ec1dd061bda84b99cfb01021637793d753317562d2709b1180d",
-                     "observed_utc":  1793213888,
+                     "observed_utc":  1793214110,
                      "published_utc":  1793180735,
                      "expires_utc":  1793223935,
                      "target":  "CAD",
@@ -377,7 +377,7 @@
                  },
                  {
                      "id":  "a0c3e1be77e8b5a27f797ac2698e8181f11f02e52a904b55b7ef35c0555dc710",
-                     "observed_utc":  1793213888,
+                     "observed_utc":  1793214110,
                      "published_utc":  1793210400,
                      "expires_utc":  1793253600,
                      "target":  "USD",
@@ -388,10 +388,22 @@
                      "method":  "headline_policy_lexicon_v1"
                  },
                  {
+                     "id":  "ff_news_1433799",
+                     "observed_utc":  1793214103,
+                     "published_utc":  1793213713,
+                     "expires_utc":  1793256913,
+                     "target":  "USD",
+                     "rule_score":  0,
+                     "impact":  3,
+                     "source_url":  "https://www.forexfactory.com/news/1433799-feds-warsh-i-take-note-that-oil-futures",
+                     "headline":  "Fed\u0027s Warsh: I take note that oil futures prices have moved up",
+                     "method":  "headline_policy_lexicon_v1"
+                 },
+                 {
                      "id":  "ff_news_1433795",
-                     "observed_utc":  1793213580,
-                     "published_utc":  1793213538,
-                     "expires_utc":  1793256738,
+                     "observed_utc":  1793214103,
+                     "published_utc":  1793213880,
+                     "expires_utc":  1793257080,
                      "target":  "USD",
                      "rule_score":  0,
                      "impact":  3,
@@ -401,7 +413,7 @@
                  },
                  {
                      "id":  "ff_news_1433789",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793212882,
                      "expires_utc":  1793256082,
                      "target":  "USD",
@@ -413,9 +425,9 @@
                  },
                  {
                      "id":  "ff_news_1433786",
-                     "observed_utc":  1793213580,
-                     "published_utc":  1793213487,
-                     "expires_utc":  1793256687,
+                     "observed_utc":  1793214103,
+                     "published_utc":  1793212566,
+                     "expires_utc":  1793255766,
                      "target":  "USD",
                      "rule_score":  0,
                      "impact":  3,
@@ -425,7 +437,7 @@
                  },
                  {
                      "id":  "ff_news_1433784",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793212353,
                      "expires_utc":  1793255553,
                      "target":  "USD",
@@ -437,7 +449,7 @@
                  },
                  {
                      "id":  "ff_news_1433783",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793211336,
                      "expires_utc":  1793254536,
                      "target":  "USD",
@@ -449,7 +461,7 @@
                  },
                  {
                      "id":  "ff_news_1433779",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793210430,
                      "expires_utc":  1793253630,
                      "target":  "USD",
@@ -461,7 +473,7 @@
                  },
                  {
                      "id":  "ff_news_1433774",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793205175,
                      "expires_utc":  1793248375,
                      "target":  "USD",
@@ -473,7 +485,7 @@
                  },
                  {
                      "id":  "ff_news_1433742",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793199955,
                      "expires_utc":  1793243155,
                      "target":  "NZD",
@@ -485,7 +497,7 @@
                  },
                  {
                      "id":  "ff_news_1433748",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793199423,
                      "expires_utc":  1793242623,
                      "target":  "CAD",
@@ -497,7 +509,7 @@
                  },
                  {
                      "id":  "ff_news_1433747",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793198672,
                      "expires_utc":  1793241872,
                      "target":  "CAD",
@@ -509,7 +521,7 @@
                  },
                  {
                      "id":  "ff_news_1433735",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793197526,
                      "expires_utc":  1793240726,
                      "target":  "CAD",
@@ -521,7 +533,7 @@
                  },
                  {
                      "id":  "ff_news_1433737",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793196981,
                      "expires_utc":  1793240181,
                      "target":  "GBP",
@@ -533,7 +545,7 @@
                  },
                  {
                      "id":  "ff_news_1433733",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793195127,
                      "expires_utc":  1793238327,
                      "target":  "CAD",
@@ -545,7 +557,7 @@
                  },
                  {
                      "id":  "ff_news_1433741",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793195113,
                      "expires_utc":  1793238313,
                      "target":  "CAD",
@@ -557,7 +569,7 @@
                  },
                  {
                      "id":  "ff_news_1433726",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793192930,
                      "expires_utc":  1793236130,
                      "target":  "USD",
@@ -569,7 +581,7 @@
                  },
                  {
                      "id":  "ff_news_1433726",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793192930,
                      "expires_utc":  1793236130,
                      "target":  "SYMBOL:XAUUSD",
@@ -581,7 +593,7 @@
                  },
                  {
                      "id":  "ff_news_1433717",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793187047,
                      "expires_utc":  1793230247,
                      "target":  "USD",
@@ -593,7 +605,7 @@
                  },
                  {
                      "id":  "ff_news_1433717",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793187047,
                      "expires_utc":  1793230247,
                      "target":  "CAD",
@@ -605,7 +617,7 @@
                  },
                  {
                      "id":  "ff_news_1433717",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793187047,
                      "expires_utc":  1793230247,
                      "target":  "NZD",
@@ -617,7 +629,7 @@
                  },
                  {
                      "id":  "ff_news_1433704",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793180322,
                      "expires_utc":  1793223522,
                      "target":  "USD",
@@ -629,7 +641,7 @@
                  },
                  {
                      "id":  "ff_news_1433704",
-                     "observed_utc":  1793213580,
+                     "observed_utc":  1793214103,
                      "published_utc":  1793180322,
                      "expires_utc":  1793223522,
                      "target":  "JPY",
@@ -653,7 +665,7 @@
                                                "verified_utc":  "2026-10-28T18:03:15.3254211Z"
                                            },
                           "collector":  {
-                                            "attempted_utc":  "2026-10-28T18:52:54.5112990Z",
+                                            "attempted_utc":  "2026-10-28T19:01:38.1258801Z",
                                             "status":  "OK",
                                             "channels":  [
                                                              {
@@ -666,7 +678,7 @@
                                                                  "source":  "https://www.forexfactory.com/news",
                                                                  "status":  "OK",
                                                                  "channel":  "news",
-                                                                 "rows":  35
+                                                                 "rows":  36
                                                              },
                                                              {
                                                                  "source":  "https://www.forexfactory.com/forums",
@@ -681,7 +693,7 @@
                                                                  "rows":  48
                                                              }
                                                          ],
-                                            "news_context_rows":  21
+                                            "news_context_rows":  22
                                         },
                           "publication_note":  "Forum opinions and public trade returns are collected locally, not published as labels."
                       },
@@ -704,7 +716,7 @@
                     {
                         "source":  "forex_factory_browser",
                         "fetch":  "CACHED",
-                        "rows":  21
+                        "rows":  22
                     }
                 ],
     "limitations":  [
@@ -713,5 +725,5 @@
                         "Costs include explicit sensitivity assumptions; they are not broker quotations.",
                         "Static publication does not keep MT5 running when its computer is off."
                     ],
-    "source_fingerprint":  "1de02bb5330bd632a17e5f0ad7cce874f88ee542482d509c2de7ee7deb258a2d"
+    "source_fingerprint":  "2fe055f658dacac546673491339c2f8bfe9c35ba0f47053da13570702e4605f1"
 }

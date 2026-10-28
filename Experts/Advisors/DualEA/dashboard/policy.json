@@ -2455,7 +2455,7 @@
                      }
                  ],
     "snapshot_meta":  {
-                          "exported_utc":  "2026-10-28T19:00:54.5025117Z",
+                          "exported_utc":  "2026-10-28T19:05:55.0107452Z",
                           "source_modified_utc":  "2026-10-28T17:27:12.0905061Z",
                           "source_sha256":  "9fdaea36321795735d242a5ac5a441679e959fae48aaddcd93cb67e5034419d9",
                           "execution":  "MT5_ONLY",
